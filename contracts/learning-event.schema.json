@@ -18,9 +18,13 @@
   ],
   "properties": {
     "schemaVersion": { "const": 1 },
-    "eventId": { "type": "string", "minLength": 8, "maxLength": 160 },
-    "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 160 },
-    "learningSessionId": { "type": "string", "minLength": 8, "maxLength": 180 },
+    "eventId": { "$ref": "#/$defs/eventId" },
+    "idempotencyKey": { "$ref": "#/$defs/eventId" },
+    "learningSessionId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 180
+    },
     "occurredAt": { "type": "string", "format": "date-time" },
     "type": {
       "type": "string",
@@ -40,14 +44,254 @@
     },
     "capsuleId": {
       "oneOf": [
-        { "type": "string", "minLength": 8, "maxLength": 120 },
+        { "$ref": "#/$defs/capsuleId" },
         { "type": "null" }
       ]
     },
     "data": {
       "type": "object",
-      "description": "Sanitized event-specific fields. Raw conversations, prompts, file paths, credentials, and client content are prohibited.",
-      "additionalProperties": true
+      "description": "Event-specific, allowlisted learning facts. Raw conversations, prompts, file paths, credentials, and client content are prohibited.",
+      "required": ["summary", "revision"],
+      "properties": {
+        "summary": { "$ref": "#/$defs/summary" },
+        "revision": { "$ref": "#/$defs/revision" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "learning.context.loaded" } } },
+      "then": {
+        "properties": {
+          "actor": { "const": "ogram" },
+          "capsuleId": { "type": "null" },
+          "data": { "$ref": "#/$defs/contextLoadedData" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "learning.signals.submitted" } } },
+      "then": {
+        "properties": {
+          "actor": { "const": "codex" },
+          "capsuleId": { "type": "null" },
+          "data": { "$ref": "#/$defs/signalsSubmittedData" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "learning.capsule.published" } } },
+      "then": {
+        "properties": {
+          "actor": { "const": "codex" },
+          "capsuleId": { "$ref": "#/$defs/capsuleId" },
+          "data": { "$ref": "#/$defs/capsulePublishedData" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "learning.module.added" } } },
+      "then": {
+        "properties": {
+          "actor": { "const": "codex" },
+          "capsuleId": { "$ref": "#/$defs/capsuleId" },
+          "data": { "$ref": "#/$defs/moduleAddedData" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "learning.choice.recorded" } } },
+      "then": {
+        "properties": {
+          "actor": { "const": "learner" },
+          "capsuleId": { "$ref": "#/$defs/capsuleId" },
+          "data": { "$ref": "#/$defs/choiceRecordedData" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "learning.training.completed" } } },
+      "then": {
+        "properties": {
+          "actor": { "const": "learner" },
+          "capsuleId": { "$ref": "#/$defs/capsuleId" },
+          "data": { "$ref": "#/$defs/trainingCompletedData" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "learning.desktop_follow_up.queued" } } },
+      "then": {
+        "properties": {
+          "actor": { "const": "learner" },
+          "capsuleId": { "$ref": "#/$defs/capsuleId" },
+          "data": { "$ref": "#/$defs/followUpQueuedData" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "eventId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 160
+    },
+    "capsuleId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 120
+    },
+    "contextReceiptId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 160
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "focus": {
+      "type": "string",
+      "enum": [
+        "thread_hygiene",
+        "workspace_hygiene",
+        "effort_fit",
+        "task_shaping"
+      ]
+    },
+    "proofMode": {
+      "type": "string",
+      "enum": ["next_action", "observed_habit"]
+    },
+    "compiler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recipeId",
+        "recipeVersion",
+        "contextReceiptId",
+        "difficulty",
+        "practiceMode",
+        "proofMode"
+      ],
+      "properties": {
+        "recipeId": { "type": "string", "minLength": 8, "maxLength": 120 },
+        "recipeVersion": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "contextReceiptId": { "$ref": "#/$defs/contextReceiptId" },
+        "difficulty": { "type": "string", "enum": ["guided", "stretch"] },
+        "practiceMode": { "type": "string", "enum": ["decision", "rehearsal"] },
+        "proofMode": { "$ref": "#/$defs/proofMode" }
+      }
+    },
+    "contextLoadedData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "revision", "contextReceiptId"],
+      "properties": {
+        "summary": { "$ref": "#/$defs/summary" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "contextReceiptId": { "$ref": "#/$defs/contextReceiptId" }
+      }
+    },
+    "signalsSubmittedData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "revision",
+        "signalCount",
+        "reviewedTaskCount",
+        "rawTaskContentShared"
+      ],
+      "properties": {
+        "summary": { "$ref": "#/$defs/summary" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "signalCount": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "reviewedTaskCount": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "rawTaskContentShared": { "const": false }
+      }
+    },
+    "capsulePublishedData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "revision", "contextReceiptId", "focus", "compiler"],
+      "properties": {
+        "summary": { "$ref": "#/$defs/summary" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "contextReceiptId": { "$ref": "#/$defs/contextReceiptId" },
+        "focus": { "$ref": "#/$defs/focus" },
+        "compiler": { "$ref": "#/$defs/compiler" }
+      }
+    },
+    "moduleAddedData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "revision", "moduleId", "moduleKind"],
+      "properties": {
+        "summary": { "$ref": "#/$defs/summary" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "moduleId": { "type": "string", "minLength": 8, "maxLength": 160 },
+        "moduleKind": {
+          "type": "string",
+          "enum": ["video", "walkthrough", "mini_game"]
+        }
+      }
+    },
+    "choiceRecordedData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "revision", "choiceId", "correct"],
+      "properties": {
+        "summary": { "$ref": "#/$defs/summary" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "choiceId": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "correct": { "type": "boolean" }
+      }
+    },
+    "trainingCompletedData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "revision",
+        "contextReceiptId",
+        "proof",
+        "proofMode"
+      ],
+      "properties": {
+        "summary": { "$ref": "#/$defs/summary" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "contextReceiptId": { "$ref": "#/$defs/contextReceiptId" },
+        "proof": { "type": "string", "minLength": 8, "maxLength": 220 },
+        "proofMode": { "$ref": "#/$defs/proofMode" }
+      }
+    },
+    "followUpQueuedData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "revision",
+        "contextReceiptId",
+        "cue",
+        "response",
+        "proof",
+        "reason"
+      ],
+      "properties": {
+        "summary": { "$ref": "#/$defs/summary" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "contextReceiptId": { "$ref": "#/$defs/contextReceiptId" },
+        "cue": { "type": "string", "minLength": 8, "maxLength": 220 },
+        "response": { "type": "string", "minLength": 8, "maxLength": 220 },
+        "proof": { "type": "string", "minLength": 8, "maxLength": 220 },
+        "reason": { "type": "string", "minLength": 8, "maxLength": 180 }
+      }
     }
   }
 }

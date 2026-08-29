@@ -1,66 +1,106 @@
 # Ogram Learn
 
-> Ogram turns patterns from someone’s recent Codex work into one five-minute practice made for their role—and the person and their agent shape it together.
+> Declared context in. Bounded practice out. Durable proof forward.
 
-Ogram Learn is a local-first prototype for the [OpenAI WebMCP Challenge](https://openai.com/webmcp-challenge/). It exposes a structured learning workflow as site tools, renders the result in a shared human-agent lesson, and emits a narrow event contract that can continue the learning journey inside the Ogram desktop client.
+Ogram Learn turns patterns from authorized Codex work into one short practice for the learner’s role. The agent can gather and structure context, WebMCP can build the current capsule on the live page, and Ogram can record the resulting learning journey. The learner keeps the two decisions that matter: what they would do and what practice contract they are willing to carry into work.
 
-The demo uses explicitly synthetic `ogram-injected-context` and synthetic behavioural observations. It never needs an OpenAI API key and never sends raw Codex conversation content.
+This repository is a public, no-auth demonstration. Its Ogram profile, Codex observations, and prior journey are visibly synthetic. It does not require an OpenAI API key, and the practice-signal contract has no field for raw Codex conversations or free-text evidence.
 
-## The product loop
+## The Learning Ledger
 
 ```mermaid
 flowchart LR
-  A[Recent Codex tasks] -->|reviewed by Codex with user authority| B[Sanitized practice signals]
-  C[Ogram role + workshop context] --> D[Ogram Learn]
-  B -->|WebMCP| D
-  D --> E[One tailored daily lesson]
-  E --> F[Human decision + commitment]
-  F --> G[Learning event contract]
-  G --> H[Ogram desktop journey]
-  H -->|later behaviour becomes proof| A
+  A[Ogram role and workshop context] --> R[Immutable context receipt]
+  B[Structured Codex pattern counts] --> R
+  C[Prior learning journey] --> R
+  R --> K[Versioned capsule compiler]
+  K --> P[Visible five-minute practice]
+  P --> H[Learner choice and editable contract]
+  H --> O[Append-only event outbox]
+  O --> S[Ogram system of record]
+  S -->|later observed behaviour| C
 ```
 
-The division of labour is intentional:
+The page makes this pipeline inspectable:
 
-- **Codex reasons:** it reviews only the tasks the user authorizes and derives behavioural patterns.
-- **Ogram teaches:** the app owns privacy rules, curated lesson recipes, visual ergonomics, assignments, and journey state.
-- **The learner decides:** scenario answers and completion require an explicit human action.
-- **The desktop closes the loop:** it can notice the next matching working moment and record proof that the habit was applied.
+- **Gather context:** one receipt records the three inputs, their provenance IDs, versions, timestamps, and synthetic or production environment.
+- **Compile practice:** a deterministic Ogram recipe combines the receipt with a bounded focus, difficulty, practice mode, and proof mode.
+- **Record proof:** every mutation advances one stable v3 learning session, emits an ordered event, and reports whether that event is synced, queued, or needs attention.
 
-## Why WebMCP is essential
+The browser is the interaction surface and a recoverable cache/outbox. In production, the authenticated Ogram backend is the system of record.
 
-This is not a remote chatbot or a prompt wrapper. The agent and learner share the same signed-in, visible surface. Site-tool calls change that surface in front of the learner: a behavioural summary updates, a lesson is published, and an optional video, walkthrough, or mini-game appears. Answers and completion remain human-only page actions.
+## Context without conversation leakage
 
-An optional Codex Visualize micro-lab could later enrich a single exercise, but it is deliberately not the core. A webpage cannot directly invoke an installed Codex skill, and making Visualize the main experience would lose Ogram’s durable journey, brand system, permissions, and judge-visible WebMCP leverage. See [the architecture decision](docs/architecture.md#why-the-canvas-is-canonical).
+Codex reviews only tasks the learner authorized, using capabilities outside the page. The write boundary accepts one to four observations with exactly these fields:
 
-## Site tools
+```text
+id · level · confidence · occurrences · sampleSize
+```
 
-All tools are registered imperatively on the top-level page. Inputs are deliberately narrow.
+`id` and `level` are enums; counts are integers from 1–8; confidence is bounded from 0–1. There is no free-text evidence field. Ogram derives the visible evidence and recommendation from those counts using page-owned language.
 
-| Tool | Effect |
+When a capsule is published, its immutable context receipt contains only:
+
+- learner-authorized Ogram role, workshop, preference, and assigned-training context;
+- sanitized behavioural signals derived from the structured review;
+- the existing learning-journey projection;
+- opaque provenance IDs, source versions, capture times, and environment labels.
+
+Raw prompts, responses, task titles, source files, paths, credentials, and names or organizations found in reviewed tasks are outside the signal contract. Learner identity and organization can appear only as separately authorized Ogram profile context.
+
+## Six top-level WebMCP tools
+
+The tools are registered on the top-level page with the current promise-based WebMCP imperative API and abort cleanly across React lifecycle changes. The interface reports a tool as live only after its registration promise resolves. TypeBox schemas are the single source for runtime validation and TypeScript input types.
+
+| Tool | Contract |
 | --- | --- |
-| `ogram_get_learning_mission` | Returns the review rubric, privacy boundary, and safe tool sequence. |
-| `ogram_get_injected_context` | Reads synthetic role, workshop, preference, and required-training context. |
-| `ogram_get_learning_journey` | Reads the capsule, prior proofs, assignments, and sync state. |
-| `ogram_submit_practice_signals` | Adds 1–4 sanitized behavioural observations to the visible evidence panel. |
-| `ogram_publish_daily_capsule` | Selects a focus; Ogram combines it with injected context and a page-owned lesson recipe. |
-| `ogram_add_learning_module` | Adds a validated YouTube link, short walkthrough, or Ogram-owned mini-game template—never executable page code. |
-| `ogram_queue_desktop_follow_up` | Emits the practice contract through the shared desktop event envelope. |
+| `ogram_get_learning_mission` | Returns the review rubric, privacy boundary, safe sequence, and bounded signal IDs. |
+| `ogram_get_injected_context` | Reads the current Ogram context and context-receipt ID. |
+| `ogram_get_learning_journey` | Reads the active capsule, prior proof, assignment, receipt, revision, and delivery state. |
+| `ogram_submit_practice_signals` | Commits only structured counts and waits until the resulting revision is visible. |
+| `ogram_publish_daily_capsule` | Compiles one capsule from a committed focus and bounded compiler options. |
+| `ogram_add_learning_module` | Selects one Ogram-owned walkthrough or mini-game template; it accepts no teaching copy or URL. |
 
-The browser-test registry at `window.__OGRAM_WEBMCP_TOOLS__` exists only in development and tests. The real challenge path uses `document.modelContext.registerTool()`.
+All mutations return an event ID and committed revision. Tool success means the page state is committed and verifiable, not merely that a callback was requested. Answers, contract edits, capsule completion, and reminder consent are intentionally absent from the tool list; they remain visible learner actions.
 
-## Web primitives first
+The development/test registry at `window.__OGRAM_WEBMCP_TOOLS__` supports deterministic browser tests. The real path uses `document.modelContext.registerTool()`.
 
-The experience is an interactive lesson document, not an LMS dashboard. It deliberately uses the web platform before reaching for an abstraction:
+## A bounded capsule compiler
 
-- semantic `article`, `section`, `nav`, `figure`, `fieldset`, `legend`, and `label` elements;
-- native radio buttons, checkboxes, `details`, `summary`, and `progress`;
-- an inline SVG concept instrument whose state is driven by CSS `:has()`;
-- external links for videos rather than arbitrary embeds;
-- a single top-level imperative WebMCP adapter;
-- React only for lesson state, persistence, and safe component selection.
+Codex selects; Ogram compiles. The agent cannot write the core lesson, inject markup, or improvise executable UI.
 
-This takes inspiration from [The Way of Code](https://www.thewayofcode.com/): generous editorial space, a quiet numbered rail, and ideas learned by manipulating the page itself. The governing principles are recorded in [docs/design-principles.md](docs/design-principles.md).
+The compiler combines a context receipt with:
+
+- one focus: `thread_hygiene`, `workspace_hygiene`, `effort_fit`, or `task_shaping`;
+- `guided` or `stretch` difficulty;
+- `decision` or `rehearsal` practice;
+- `next_action` or `observed_habit` proof.
+
+Every capsule records its recipe ID, recipe version, receipt ID, and selected modes. The output is deterministic for the same inputs apart from capsule identity and creation time. Optional modules are selected only by Ogram-owned template ID; WebMCP never accepts module prose, URLs, HTML, CSS, JavaScript, iframe markup, screenshots, or recordings.
+
+## The learner’s authority
+
+The lesson follows three movements:
+
+1. **Notice** the pattern, rule, provenance, and a focus-specific visual explanation.
+2. **Choose** an action and compare its consequence.
+3. **Apply** by editing a cue → response → proof contract and optionally requesting a reminder.
+
+Only the learner can choose, edit, and complete. Completion adds the practice to the Learning Ledger; it does not pretend that transfer has already happened. A later observed or confirmed behaviour can become proof.
+
+## Journey recording
+
+State version 3 gives the learning run one stable session ID and a monotonic revision. Each mutation creates an append-only event envelope containing its event ID, idempotency key, session ID, revision, actor, timestamp, optional capsule ID, and privacy-minimized data.
+
+The transport always enqueues first, then flushes in order:
+
+1. use `window.ogramDesktop.learning.publishEvent()` when a narrow native preload bridge exists;
+2. otherwise post to `${VITE_OGRAM_MANAGEMENT_URL}/v1/learning/events` with the existing authenticated browser session;
+3. otherwise retain the event in the local outbox and display it honestly as queued.
+
+Every envelope is validated against the public JSON Schema before it can enter or leave the outbox. Recent event receipts plus a per-session delivered-revision cursor prevent acknowledged history from being re-enqueued after receipt pruning. A failed event stays at the head of the queue so later events cannot overtake it. Local storage is useful for refresh recovery; it is not the production record of truth.
+
+See [the architecture](docs/architecture.md) and [the public event contract](contracts/README.md) for the full boundary.
 
 ## Run locally
 
@@ -73,7 +113,7 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173).
 
-Useful checks:
+Run the verification suite with:
 
 ```bash
 npm run typecheck
@@ -81,59 +121,51 @@ npm run test:run
 npm run build
 ```
 
-## Test with Codex and WebMCP
+## Test the WebMCP path
 
-1. Open the local URL in ChatGPT’s built-in browser beside a Codex task.
-2. Use GPT-5.6 Sol or Terra; current OpenAI documentation says Luna has site tools disabled.
-3. Ask: **“Review my recent Codex work and use this page’s tools to build the one practice I need today.”**
-4. Inspect the available site tools and, after the run, the browser’s recently used tools/sources.
+1. Open the page in a browser/host with WebMCP site tools enabled.
+2. Inspect the six available Ogram tools.
+3. Ask the agent: **“Review the Codex work I authorize and use this page’s tools to build the one practice I need today.”**
+4. Verify the source receipt before the lesson, then make the scenario choice and edit the practice contract yourself.
+5. Inspect the recently used tools and the page’s journey-delivery status.
 
-The ChatGPT browser currently supports top-level imperative registration, not declarative form tools or tools inside iframes. Chrome testing requires WebMCP to be enabled through its experimental testing flag or origin trial. See the current [OpenAI site-tools guide](https://learn.chatgpt.com/docs/webmcp) and [Chrome WebMCP guide](https://developer.chrome.com/docs/ai/webmcp).
+For a browser-only demonstration, choose **Run the live build**. That control calls the same tool definitions with synthetic structured counts; it does not bypass the WebMCP action layer.
 
-## Privacy boundary
+Current host constraints and setup instructions belong to the official [OpenAI site-tools guide](https://learn.chatgpt.com/docs/webmcp) and [Chrome WebMCP documentation](https://developer.chrome.com/docs/ai/webmcp).
 
-The page never asks for task history. Codex uses its own authorized task-reading capabilities and sends only an enum, count, confidence, short behavioural summary, and recommendation.
+## Web primitives first
 
-Disallowed tool inputs include raw prompts, outputs, task titles, source files, file paths, people, companies, client names, and conversation transcripts. The mock context is visibly labelled `synthetic`. Production should add a user preview/accept/reject step before persistence, HttpOnly authenticated sessions, tenant authorization, CSRF protection, and retention controls.
+The experience is a learning document, not an LMS dashboard. It uses semantic regions, native forms, `details`, `progress`, accessible labels, focus-specific inline SVG figures, restrained CSS motion, and normal external links. React owns state consistency and safe component selection. Self-hosted fonts avoid a third-party font request.
 
-## Desktop integration
+The technology choices are deliberately small:
 
-The current Ogram desktop application discovered during this build is Electron/Svelte rather than Swift. The integration remains transport-neutral:
-
-- the web app emits [`contracts/learning-event.schema.json`](contracts/learning-event.schema.json);
-- an Electron preload bridge may provide `window.ogramDesktop.learning.publishEvent(envelope)`;
-- otherwise the app posts to `${VITE_OGRAM_MANAGEMENT_URL}/v1/learning/events` with the existing authenticated session;
-- local prototype mode queues the event and displays the expected state;
-- the deep-link target uses `app.ogram://learn/capsule/<id>`; production should append only a short-lived, one-use handoff code.
-
-Ogram’s existing background session shipper and feedback/eject pipeline should remain the sensor. WebMCP must not read the local filesystem or become a cross-app event bus. Full detail is in [docs/architecture.md](docs/architecture.md).
+- React + TypeScript + Vite for the visible application;
+- TypeBox for one runtime/type-level schema definition;
+- the native, promise-based WebMCP registration API with abortable lifecycle cleanup;
+- native browser storage for the recoverable v3 cache and delivery outbox;
+- an Ajv-generated standalone validator for the public event contract at the transport boundary;
+- Vitest and Testing Library for domain, adapter, transport, registration, and interaction tests.
 
 ## Project map
 
 ```text
-src/domain/lessonEngine.ts       Curated learning recipes and focus selection
-src/hooks/useLearningStore.ts    Versioned journey state and human actions
-src/lib/webmcp.ts                Seven site-tool schemas, validation, and registration
-src/lib/desktopBridge.ts         Shared event envelope and desktop/API transport
-src/components/                  Human-facing learning canvas
-contracts/                       Public desktop/backend integration contract
-docs/                            Architecture, challenge preflight, and demo script
+src/domain/contextEngine.ts       Immutable context receipts and provenance validation
+src/domain/signalEngine.ts        Structured counts → page-owned learning signals
+src/domain/lessonEngine.ts        Deterministic, versioned capsule recipes
+src/domain/learningSession.ts     Pure, revisioned learning-state transitions
+src/hooks/useLearningStore.ts     React commit receipts, persistence, and outbox effects
+src/lib/webmcpSchemas.ts          TypeBox input contracts
+src/lib/webmcp.ts                 Six tool definitions and committed-state responses
+src/lib/journeyTransport.ts       Ordered idempotent outbox and delivery channels
+src/generated/                    Build-generated standalone event validator
+src/components/                  Learning Ledger, receipt, lesson, and WebMCP bridge
+contracts/                       Public backend/desktop event boundary
+docs/                            Architecture, design principles, and demo script
 ```
 
-## Submission readiness
+## Production boundary
 
-- [x] Working local app and production build
-- [x] Non-trivial imperative WebMCP tool sequence
-- [x] Public-repository-ready MIT license
-- [x] Mock data and judgeable no-auth path
-- [x] Under-three-minute demo script
-- [ ] Deploy a live judge-accessible URL
-- [x] Publish the repository
-- [ ] Record and publish the public YouTube demo
-- [ ] Add final Devpost description, screenshots, and testing instructions
-- [ ] Freeze the submitted deployment/repository during judging
-
-The deadline shown by OpenAI is **September 3, 2026 at 1:00 p.m. PT**—**10:00 p.m. CEST in Zurich**. Always re-check the [official Devpost challenge page](https://webmcp.devpost.com/) and [official rules](https://webmcp.devpost.com/rules); those sources prevail.
+The public demo deliberately stops before identity, tenancy, and real Codex/Ogram data. Production still requires authenticated server context, learner preview/accept/reject controls, tenant authorization, CSRF protection, retention and deletion controls, secure desktop IPC, and a backend uniqueness constraint for idempotency. The synthetic path must remain available for public review without exposing proprietary Ogram systems or customer data.
 
 ## License
 

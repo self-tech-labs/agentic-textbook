@@ -30,13 +30,13 @@ describe("Ogram Learn", () => {
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("radio", { name: /keep going here/i }));
-    expect(screen.getByText("Try another answer.")).toBeInTheDocument();
+    expect(screen.getByText("What this route would cost")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /turn this into a reminder/i }),
     ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("radio", { name: /fork the task/i }));
-    expect(screen.getByText("That’s the best fit.")).toBeInTheDocument();
+    expect(screen.getByText("Why this route fits")).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: /turn this into a reminder/i }),
     );
@@ -45,13 +45,38 @@ describe("Ogram Learn", () => {
       screen.getByRole("heading", { name: /make the good choice easy/i }),
     ).toBeInTheDocument();
     const finish = screen.getByRole("button", {
-      name: /save reminder and finish/i,
+      name: /save practice and finish/i,
     });
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /bring this rule back/i }),
+    );
     fireEvent.click(finish);
 
     await waitFor(() =>
       expect(screen.getByText(/you’re done for today/i)).toBeInTheDocument(),
     );
-    expect(screen.getByText(/we’ll remind you in ogram/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/reminder request is awaiting delivery to ogram/i),
+    ).toBeInTheDocument();
+  });
+
+  it("respects a learner who declines the future reminder", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /see today’s decision/i }));
+    fireEvent.click(screen.getByRole("radio", { name: /fork the task/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /turn this into a reminder/i }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /save practice and finish/i }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText(/you’re done for today/i)).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText(/reminder request/i),
+    ).not.toBeInTheDocument();
   });
 });

@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { CompilationTrace } from "./components/CompilationTrace";
 import { Header } from "./components/Header";
 import { PracticeCanvas } from "./components/PracticeCanvas";
-import { mockPracticeSignals } from "./domain/mockData";
-import { useLearningStore } from "./hooks/useLearningStore";
 import {
-  registerOgramLearningTools,
-  type WebMcpRegistration,
-} from "./lib/webmcp";
+  WebMcpBridge,
+  type WebMcpBridgeStatus,
+} from "./components/WebMcpBridge";
+import type { PracticeContract } from "./domain/types";
+import { useLearningStore } from "./hooks/useLearningStore";
+import { createOgramLearningTools } from "./lib/webmcp";
 import "./styles.css";
 
 const wait = (milliseconds: number) =>
@@ -14,99 +16,88 @@ const wait = (milliseconds: number) =>
 
 export default function App() {
   const { state, actions } = useLearningStore();
-  const [registration, setRegistration] = useState<
-    Omit<WebMcpRegistration, "cleanup"> & { registering: boolean }
-  >({ supported: false, toolCount: 7, toolNames: [], registering: true });
+  const [registration, setRegistration] = useState<WebMcpBridgeStatus>({
+    supported: false,
+    ready: false,
+    toolCount: 6,
+    registeredCount: 0,
+    toolNames: [],
+    error: null,
+  });
   const [simulationRunning, setSimulationRunning] = useState(false);
   const [completing, setCompleting] = useState(false);
 
   const stableActions = useMemo(
     () => actions,
     [
-      actions.completeCapsule,
       actions.addLearningModule,
+      actions.awaitRevision,
+      actions.completeCapsule,
       actions.getState,
       actions.publishCapsule,
       actions.queueDesktopFollowUp,
       actions.recordChoice,
       actions.reset,
+      actions.retryJourneySync,
       actions.submitSignals,
     ],
   );
-
-  useEffect(() => {
-    let active = true;
-    let cleanup: () => void = () => {};
-    registerOgramLearningTools(stableActions)
-      .then((result) => {
-        cleanup = result.cleanup;
-        if (active) {
-          setRegistration({
-            supported: result.supported,
-            toolCount: result.toolCount,
-            toolNames: result.toolNames,
-            registering: false,
-          });
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setRegistration((current) => ({ ...current, registering: false }));
-        }
-      });
-    return () => {
-      active = false;
-      cleanup();
-    };
-  }, [stableActions]);
+  const webMcpTools = useMemo(
+    () => createOgramLearningTools(stableActions),
+    [stableActions],
+  );
 
   const replayAgentBuild = useCallback(async () => {
     if (simulationRunning) return;
     setSimulationRunning(true);
     try {
-      actions.submitSignals(mockPracticeSignals);
-      const evidence = document.getElementById("evidence-signals");
-      if (evidence instanceof HTMLDetailsElement) evidence.open = true;
-      evidence?.scrollIntoView({ behavior: "smooth", block: "center" });
-      await wait(700);
-      const { capsuleId } = actions.publishCapsule({
-        focus: "thread_hygiene",
-        personalizedScenario:
-          "You have used one Codex task to explore, reject, and finally approve a workshop plan. The next job is to turn those approved decisions into a standalone follow-up.",
-        coachNote:
-          "Bring the decisions the next task needs—not the whole path you took to reach them.",
-        sourceTaskCount: 8,
-      });
-      actions.addLearningModule(capsuleId, {
-        kind: "mini_game",
-        title: "Pack the context worth keeping",
-        description:
-          "A quick extra practice for deciding what should cross into a fork.",
-        prompt:
-          "You are forking an approved plan into a new production task. What should you bring across?",
-        options: [
+      const execute = async (name: string, input: unknown) => {
+        const tool = webMcpTools.find((candidate) => candidate.name === name);
+        if (!tool) throw new Error(`Missing site tool: ${name}`);
+        return tool.execute(input);
+      };
+
+      await execute("ogram_get_learning_mission", {});
+      await execute("ogram_get_injected_context", {});
+      await wait(260);
+      await execute("ogram_submit_practice_signals", {
+        signals: [
           {
-            id: "everything",
-            label: "The full conversation, including rejected ideas",
-            feedback:
-              "That brings the clutter with you. Carry only the decisions the next task needs.",
-            correct: false,
+            id: "thread_hygiene",
+            level: "priority",
+            confidence: 0.94,
+            occurrences: 6,
+            sampleSize: 8,
           },
           {
-            id: "decision_pack",
-            label: "Approved decisions, constraints, and the definition of done",
-            feedback:
-              "That is the useful context pack: enough to work well, without the whole exploration.",
-            correct: true,
+            id: "effort_fit",
+            level: "practice",
+            confidence: 0.86,
+            occurrences: 2,
+            sampleSize: 5,
           },
           {
-            id: "headline_only",
-            label: "Only the name of the new deliverable",
-            feedback:
-              "That is clean, but too thin. The new task still needs the agreed boundaries.",
-            correct: false,
+            id: "workspace_hygiene",
+            level: "watch",
+            confidence: 0.78,
+            occurrences: 2,
+            sampleSize: 4,
           },
         ],
+      });
+      await wait(340);
+      const published = (await execute("ogram_publish_daily_capsule", {
+        focus: "thread_hygiene",
+        difficulty: "stretch",
+        practiceMode: "rehearsal",
+        proofMode: "observed_habit",
+      })) as { capsuleId?: string };
+      const capsuleId =
+        published.capsuleId ?? stableActions.getState().activeCapsule.id;
+      await wait(340);
+      await execute("ogram_add_learning_module", {
+        capsuleId,
+        templateId: "context_packing",
       });
       document
         .getElementById("todays-practice")
@@ -114,61 +105,94 @@ export default function App() {
     } finally {
       setSimulationRunning(false);
     }
-  }, [actions, simulationRunning]);
+  }, [simulationRunning, stableActions, webMcpTools]);
 
   const choose = useCallback(
     (choiceId: string) => {
-      actions.recordChoice(state.activeCapsule.id, choiceId);
+      stableActions.recordChoice(state.activeCapsule.id, choiceId);
     },
-    [actions, state.activeCapsule.id],
+    [stableActions, state.activeCapsule.id],
   );
 
-  const complete = useCallback(async (reminderEnabled: boolean) => {
-    if (completing) return;
-    setCompleting(true);
-    try {
-      actions.completeCapsule(state.activeCapsule.id);
-      if (reminderEnabled) {
-        await actions.queueDesktopFollowUp(
+  const complete = useCallback(
+    async (reminderEnabled: boolean, contract: PracticeContract) => {
+      if (completing) return;
+      setCompleting(true);
+      try {
+        const result = stableActions.completeCapsule(
           state.activeCapsule.id,
-          "Remind the learner when the same decision comes up again.",
+          contract,
         );
+        await stableActions.awaitRevision(result.revision, result.eventId);
+        if (reminderEnabled) {
+          await stableActions.queueDesktopFollowUp(
+            state.activeCapsule.id,
+            "Watch for the same decision boundary in a future Codex task.",
+          );
+        }
+      } finally {
+        setCompleting(false);
       }
-    } finally {
-      setCompleting(false);
-    }
-  }, [actions, completing, state.activeCapsule.id]);
-
-  const focusSignal = state.signals.find(
-    (signal) => signal.id === state.activeCapsule.focus,
+    },
+    [completing, stableActions, state.activeCapsule.id],
   );
 
   const resetLesson = useCallback(() => {
-    actions.reset();
+    stableActions.reset();
     window.scrollTo({ top: 0, behavior: "auto" });
-  }, [actions.reset]);
+  }, [stableActions]);
+
+  const retrySync = useCallback(() => {
+    void stableActions.retryJourneySync();
+  }, [stableActions]);
+
+  const deliveryStatus =
+    state.journeySync.status === "idle"
+      ? "ready"
+      : state.journeySync.status;
+  const followUpRequested = state.events.some(
+    (event) =>
+      event.type === "desktop_follow_up_queued" &&
+      event.payload?.capsuleId === state.activeCapsule.id,
+  );
 
   return (
     <div className="app" id="top">
       <a className="skip-link" href="#todays-practice">
         Skip to today’s practice
       </a>
+
+      <WebMcpBridge tools={webMcpTools} onStatusChange={setRegistration} />
+
       <Header
         webMcpSupported={registration.supported}
         toolCount={registration.toolCount}
-        registering={registration.registering}
+        registeredCount={registration.registeredCount}
+        registering={!registration.ready}
+        webMcpError={registration.error}
+        contextEnvironment={state.contextReceipt.environment}
+        journeySync={state.journeySync}
         simulationRunning={simulationRunning}
         onReplay={replayAgentBuild}
+        onRetrySync={retrySync}
+      />
+
+      <CompilationTrace
+        sourceCount={Object.keys(state.contextReceipt.provenance).length}
+        signalCount={state.signals.length}
+        capsuleReady={state.activeCapsule.status !== "draft"}
+        eventCount={state.events.length}
+        deliveryStatus={deliveryStatus}
       />
 
       <main className="lesson-page">
         <PracticeCanvas
           key={state.activeCapsule.id}
           capsule={state.activeCapsule}
-          context={state.context}
-          focusSignal={focusSignal}
+          contextReceipt={state.contextReceipt}
           journey={state.journey}
-          desktopBridge={state.desktopBridge}
+          journeySync={state.journeySync}
+          followUpRequested={followUpRequested}
           onChoose={choose}
           onComplete={complete}
           completing={completing}
@@ -176,12 +200,12 @@ export default function App() {
       </main>
 
       <footer className="site-footer">
-        <span>ogram · Lausanne</span>
+        <span>ogram · learning ledger · Lausanne</span>
         <span className="footer-note">
-          We use task-level patterns, never your messages or files.
+          Declared context in. Bounded practice out. Durable proof forward.
         </span>
         <button className="footer-reset" type="button" onClick={resetLesson}>
-          Start this lesson again
+          Rebuild this learning session
         </button>
       </footer>
     </div>

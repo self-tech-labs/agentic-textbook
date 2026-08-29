@@ -1,420 +1,455 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { chooseFocus, createCapsule } from "../domain/lessonEngine";
-import { mockOgramContext, mockPracticeSignals } from "../domain/mockData";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  addLearningModuleTransition,
+  completeCapsuleTransition,
+  createInitialLearningState,
+  publishCapsuleTransition,
+  queueDesktopFollowUpTransition,
+  recordChoiceTransition,
+  resetLearningSession,
+  restoreLearningState,
+  retryJourneySyncTransition,
+  submitSignalsTransition,
+  systemLearningSessionDependencies,
+} from "../domain/learningSession";
+import type {
+  LearningTransition,
+  RevisionResult,
+} from "../domain/learningSession";
 import type {
   CapsuleDraftInput,
-  LearningEvent,
   LearningModuleInput,
   LearningState,
+  PracticeContract,
   PracticeSignal,
 } from "../domain/types";
-import { publishLearningEvent } from "../lib/desktopBridge";
+import {
+  enqueueLearningEvent,
+  flushLearningEventOutbox,
+  getJourneyOutbox,
+  retryLearningEventOutbox,
+  toLearningEventEnvelope,
+} from "../lib/journeyTransport";
+import type { JourneyDeliveryMode } from "../lib/journeyTransport";
 import {
   clearLearningState,
   loadLearningState,
   saveLearningState,
 } from "../lib/persistence";
 
-function makeId(prefix: string): string {
-  const suffix =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `${prefix}-${suffix}`;
-}
-
-function createEvent(
-  type: LearningEvent["type"],
-  actor: LearningEvent["actor"],
-  summary: string,
-  payload?: Record<string, unknown>,
-): LearningEvent {
-  return {
-    id: makeId("event"),
-    type,
-    at: new Date().toISOString(),
-    actor,
-    summary,
-    payload,
-  };
-}
-
-export function createInitialState(now = new Date()): LearningState {
-  const focus = chooseFocus(mockPracticeSignals);
-  const activeCapsule = createCapsule(
-    {
-      focus,
-      personalizedScenario: "",
-      coachNote:
-        "Your work often changes mode halfway through. Today, practise noticing that boundary before the context becomes a burden.",
-      sourceTaskCount: 8,
-    },
-    mockOgramContext,
-    mockPracticeSignals,
-    now,
-  );
-
-  return {
-    version: 2,
-    context: mockOgramContext,
-    signals: mockPracticeSignals,
-    activeCapsule,
-    journey: [
-      {
-        id: "journey-01",
-        dateLabel: "Wed",
-        title: "Make context portable",
-        focus: "task_shaping",
-        status: "completed",
-        proof: "Created a one-paragraph handoff brief.",
-      },
-      {
-        id: "journey-02",
-        dateLabel: "Thu",
-        title: "Give files a home",
-        focus: "workspace_hygiene",
-        status: "completed",
-        proof: "Started work inside a dedicated project.",
-      },
-      {
-        id: "journey-today",
-        dateLabel: "Today",
-        title: activeCapsule.title,
-        focus: activeCapsule.focus,
-        status: "today",
-      },
-      {
-        id: "journey-next",
-        dateLabel: "Next",
-        title: "Let evidence choose the next practice",
-        focus: "effort_fit",
-        status: "queued",
-      },
-    ],
-    events: [
-      createEvent(
-        "context_loaded",
-        "ogram",
-        "Synthetic workshop and role context loaded.",
-      ),
-      createEvent(
-        "coaching_signals_submitted",
-        "codex",
-        "Three privacy-preserving practice signals prepared from mock task metadata.",
-        { signalCount: 3, rawTaskContentShared: false },
-      ),
-      createEvent(
-        "capsule_published",
-        "codex",
-        "Today’s five-minute lesson was published.",
-        { capsuleId: activeCapsule.id },
-      ),
-    ],
-    desktopBridge: {
-      status: "ready",
-      detail: "Prototype bridge ready; no learning event queued yet.",
-    },
-  };
+interface RevisionWaiter {
+  revision: number;
+  eventId?: string;
+  resolve: (state: LearningState) => void;
+  reject: (reason: Error) => void;
 }
 
 export interface LearningActions {
   getState: () => LearningState;
-  reset: () => void;
-  submitSignals: (signals: PracticeSignal[]) => { eventId: string };
-  publishCapsule: (input: CapsuleDraftInput) => {
-    capsuleId: string;
-    eventId: string;
-  };
+  awaitRevision: (
+    revision: number,
+    eventId?: string,
+  ) => Promise<LearningState>;
+  reset: () => RevisionResult & { sessionId: string };
+  retryJourneySync: () => RevisionResult;
+  submitSignals: (signals: PracticeSignal[]) =>
+    RevisionResult & { eventId: string };
+  publishCapsule: (
+    input: CapsuleDraftInput,
+  ) => RevisionResult & { capsuleId: string; eventId: string };
   addLearningModule: (
     capsuleId: string,
     module: LearningModuleInput,
-  ) => { moduleId: string; eventId: string };
+  ) => RevisionResult & { moduleId: string; eventId: string };
   recordChoice: (
     capsuleId: string,
     choiceId: string,
-  ) => { correct: boolean; feedback: string; eventId: string };
-  completeCapsule: (capsuleId: string) => {
-    completedAt: string;
+  ) => RevisionResult & {
+    correct: boolean;
+    feedback: string;
     eventId: string;
   };
+  completeCapsule: (
+    capsuleId: string,
+    editedContract?: PracticeContract,
+  ) => RevisionResult & { completedAt: string; eventId: string };
   queueDesktopFollowUp: (
     capsuleId: string,
     reason: string,
-  ) => Promise<{ eventId: string; mode: string; detail: string }>;
+  ) => Promise<
+    RevisionResult & {
+      eventId: string;
+      mode: JourneyDeliveryMode;
+      detail: string;
+    }
+  >;
+}
+
+export function createInitialState(now = new Date()): LearningState {
+  return createInitialLearningState({
+    ...systemLearningSessionDependencies,
+    now: () => now,
+  });
+}
+
+function loadCachedState(): LearningState {
+  const restored = restoreLearningState(
+    loadLearningState(),
+    systemLearningSessionDependencies,
+  );
+  try {
+    restored.events.forEach((event) =>
+      toLearningEventEnvelope(event, { learningSessionId: event.sessionId }),
+    );
+    return restored;
+  } catch {
+    return createInitialLearningState(systemLearningSessionDependencies);
+  }
 }
 
 export function useLearningStore(): {
   state: LearningState;
   actions: LearningActions;
 } {
-  const [state, setState] = useState<LearningState>(
-    () => loadLearningState() ?? createInitialState(),
-  );
+  const [state, setState] = useState<LearningState>(loadCachedState);
+  const [syncAttempt, setSyncAttempt] = useState(0);
   const stateRef = useRef(state);
+  const committedStateRef = useRef(state);
+  const committedRevisionRef = useRef(state.revision);
+  const revisionWaitersRef = useRef<RevisionWaiter[]>([]);
+
+  useLayoutEffect(() => {
+    stateRef.current = state;
+    committedStateRef.current = state;
+    committedRevisionRef.current = state.revision;
+    const pending: RevisionWaiter[] = [];
+    revisionWaitersRef.current.forEach((waiter) => {
+      if (waiter.revision > state.revision) {
+        pending.push(waiter);
+        return;
+      }
+      const committedEvent = waiter.eventId
+        ? state.events.find((event) => event.id === waiter.eventId)
+        : undefined;
+      if (
+        waiter.eventId &&
+        (!committedEvent || committedEvent.revision !== waiter.revision)
+      ) {
+        waiter.reject(
+          new Error(
+            `Learning event ${waiter.eventId} was superseded before it committed.`,
+          ),
+        );
+        return;
+      }
+      waiter.resolve(state);
+    });
+    revisionWaitersRef.current = pending;
+  }, [state]);
 
   useEffect(() => {
-    stateRef.current = state;
     saveLearningState(state);
   }, [state]);
 
-  const getState = useCallback(() => stateRef.current, []);
-
-  const reset = useCallback(() => {
-    clearLearningState();
-    const nextState = createInitialState();
-    stateRef.current = nextState;
-    setState(nextState);
-  }, []);
-
-  const submitSignals = useCallback((signals: PracticeSignal[]) => {
-    const event = createEvent(
-      "coaching_signals_submitted",
-      "codex",
-      `${signals.length} reviewed practice signal${signals.length === 1 ? "" : "s"} added without raw task content.`,
-      { signalCount: signals.length, rawTaskContentShared: false },
-    );
-    const current = stateRef.current;
-    const nextState: LearningState = {
-      ...current,
-      signals,
-      events: [...current.events, event],
-    };
-    stateRef.current = nextState;
-    setState(nextState);
-    return { eventId: event.id };
-  }, []);
-
-  const publishCapsule = useCallback((input: CapsuleDraftInput) => {
-    const current = stateRef.current;
-    const capsule = createCapsule(
-      input,
-      current.context,
-      current.signals,
-      new Date(),
-    );
-    const event = createEvent(
-      "capsule_published",
-      "codex",
-      `Published “${capsule.title}” as today’s lesson.`,
-      { capsuleId: capsule.id, focus: capsule.focus },
-    );
-
-    const nextState: LearningState = {
-      ...current,
-      activeCapsule: capsule,
-      journey: current.journey.map((entry) =>
-        entry.id === "journey-today"
-          ? {
-              ...entry,
-              title: capsule.title,
-              focus: capsule.focus,
-              status: "today",
-              proof: undefined,
-            }
-          : entry,
-      ),
-      desktopBridge: {
-        status: "ready",
-        detail: "A new capsule is active; no desktop follow-up is queued yet.",
-      },
-      events: [...current.events, event],
-    };
-    stateRef.current = nextState;
-    setState(nextState);
-    return { capsuleId: capsule.id, eventId: event.id };
-  }, []);
-
-  const addLearningModule = useCallback(
-    (capsuleId: string, moduleInput: LearningModuleInput) => {
-      const capsule = stateRef.current.activeCapsule;
-      if (capsule.id !== capsuleId) {
-        throw new Error("That capsule is no longer active.");
-      }
-      if ((capsule.learningModules ?? []).length >= 2) {
-        throw new Error("A daily lesson can contain at most two optional modules.");
-      }
-
-      const moduleId = makeId("module");
-      const module =
-        moduleInput.kind === "video"
-          ? { ...moduleInput, id: moduleId, provider: "YouTube" as const }
-          : { ...moduleInput, id: moduleId };
-      const event = createEvent(
-        "learning_module_added",
-        "codex",
-        `Added an optional ${module.kind.replace("_", " ")} to today’s lesson.`,
-        { capsuleId, moduleId, moduleKind: module.kind },
+  useEffect(
+    () => () => {
+      const error = new Error(
+        "The learning store unmounted before the requested revision committed.",
       );
-
-      const current = stateRef.current;
-      const nextState: LearningState = {
-        ...current,
-        activeCapsule: {
-          ...current.activeCapsule,
-          learningModules: [
-            ...(current.activeCapsule.learningModules ?? []),
-            module,
-          ],
-        },
-        events: [...current.events, event],
-      };
-      stateRef.current = nextState;
-      setState(nextState);
-
-      return { moduleId, eventId: event.id };
+      revisionWaitersRef.current.forEach((waiter) => waiter.reject(error));
+      revisionWaitersRef.current = [];
     },
     [],
   );
 
-  const recordChoice = useCallback((capsuleId: string, choiceId: string) => {
-    const capsule = stateRef.current.activeCapsule;
-    if (capsule.id !== capsuleId) {
-      throw new Error("That capsule is no longer active.");
+  const getState = useCallback(() => committedStateRef.current, []);
+
+  const awaitRevision = useCallback((
+    revision: number,
+    eventId?: string,
+  ): Promise<LearningState> => {
+    if (!Number.isInteger(revision) || revision < 1) {
+      return Promise.reject(new Error("revision must be a positive integer."));
     }
-    const choice = capsule.choices.find((candidate) => candidate.id === choiceId);
-    if (!choice) throw new Error("Unknown scenario choice.");
-
-    const event = createEvent(
-      "choice_recorded",
-      "learner",
-      `Scenario response recorded: ${choice.label}.`,
-      { capsuleId, choiceId, correct: choice.correct },
-    );
-
-    const current = stateRef.current;
-    const nextState: LearningState = {
-      ...current,
-      activeCapsule: {
-        ...current.activeCapsule,
-        selectedChoiceId: choiceId,
-        checkpoints: current.activeCapsule.checkpoints.map((checkpoint) => ({
-          ...checkpoint,
-          status:
-            checkpoint.id === "apply"
-              ? "current"
-              : checkpoint.id === "notice" || checkpoint.id === "choose"
-                ? "done"
-                : checkpoint.status,
-        })),
-      },
-      events: [...current.events, event],
-    };
-    stateRef.current = nextState;
-    setState(nextState);
-
-    return {
-      correct: choice.correct,
-      feedback: choice.feedback,
-      eventId: event.id,
-    };
+    const committed = committedStateRef.current;
+    if (committedRevisionRef.current >= revision) {
+      if (eventId) {
+        const event = committed.events.find((candidate) => candidate.id === eventId);
+        if (!event || event.revision !== revision) {
+          return Promise.reject(
+            new Error(`Learning event ${eventId} did not commit at revision ${revision}.`),
+          );
+        }
+      }
+      return Promise.resolve(committed);
+    }
+    return new Promise<LearningState>((resolve, reject) => {
+      revisionWaitersRef.current.push({ revision, eventId, resolve, reject });
+    });
   }, []);
 
-  const completeCapsule = useCallback((capsuleId: string) => {
-    const capsule = stateRef.current.activeCapsule;
-    if (capsule.id !== capsuleId) {
-      throw new Error("That capsule is no longer active.");
-    }
-    const selectedChoice = capsule.choices.find(
-      (choice) => choice.id === capsule.selectedChoiceId,
-    );
-    if (!selectedChoice?.correct) {
-      throw new Error("Choose the recommended answer before finishing the lesson.");
-    }
+  const commitTransition = useCallback(
+    <R extends object>(
+      transition: (current: LearningState) => LearningTransition<R>,
+    ): R & RevisionResult => {
+      const current = stateRef.current;
+      const mutation = transition(current);
+      if (mutation.state.revision <= current.revision) {
+        throw new Error("A learning transition must advance the revision.");
+      }
+      stateRef.current = mutation.state;
+      setState(mutation.state);
+      return mutation.result;
+    },
+    [],
+  );
 
-    const completedAt = new Date().toISOString();
-    const event = createEvent(
-      "training_completed",
-      "learner",
-      `Completed “${capsule.title}” and committed a real-work practice cue.`,
-      { capsuleId, proof: capsule.practiceContract.proof },
-    );
+  const updateJourneySync = useCallback(
+    (
+      sessionId: string,
+      nextSync:
+        | LearningState["journeySync"]
+        | ((
+            current: LearningState["journeySync"],
+          ) => LearningState["journeySync"]),
+    ) => {
+      setState((current) => {
+        if (current.sessionId !== sessionId) return current;
+        const resolved =
+          typeof nextSync === "function"
+            ? nextSync(current.journeySync)
+            : nextSync;
+        if (
+          current.journeySync.status === resolved.status &&
+          current.journeySync.mode === resolved.mode &&
+          current.journeySync.pendingCount === resolved.pendingCount &&
+          current.journeySync.detail === resolved.detail &&
+          current.journeySync.lastSyncedAt === resolved.lastSyncedAt
+        ) {
+          return current;
+        }
+        const nextState = { ...current, journeySync: resolved };
+        stateRef.current = nextState;
+        return nextState;
+      });
+    },
+    [],
+  );
 
-    const current = stateRef.current;
-    const nextState: LearningState = {
-      ...current,
-      activeCapsule: {
-        ...current.activeCapsule,
-        status: "completed",
-        checkpoints: current.activeCapsule.checkpoints.map((checkpoint) => ({
-          ...checkpoint,
-          status: "done",
-        })),
-      },
-      journey: current.journey.map((entry) =>
-        entry.id === "journey-today"
-          ? {
-              ...entry,
-              status: "completed",
-              proof: current.activeCapsule.practiceContract.proof,
-            }
-          : entry,
+  const eventFingerprint = useMemo(
+    () => state.events.map((event) => event.id).join("|"),
+    [state.events],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const sessionId = state.sessionId;
+    const events = state.events;
+
+    const synchronize = async () => {
+      try {
+        for (const event of events) {
+          enqueueLearningEvent(event, { learningSessionId: event.sessionId });
+        }
+      } catch (error) {
+        if (cancelled) return;
+        updateJourneySync(sessionId, (current) => ({
+          ...current,
+          status: "error",
+          mode: "local-queue",
+          detail: `The learning event could not enter the durable outbox: ${error instanceof Error ? error.message : String(error)}`,
+        }));
+        return;
+      }
+
+      let pendingCount: number;
+      try {
+        pendingCount = getJourneyOutbox().items.length;
+      } catch (error) {
+        if (cancelled) return;
+        updateJourneySync(sessionId, (current) => ({
+          ...current,
+          status: "error",
+          mode: "local-queue",
+          detail: `The durable outbox could not be inspected: ${error instanceof Error ? error.message : String(error)}`,
+        }));
+        return;
+      }
+
+      if (!cancelled && pendingCount > 0) {
+        updateJourneySync(sessionId, (current) => ({
+          ...current,
+          status: "syncing",
+          mode: current.mode ?? "local-queue",
+          pendingCount,
+          detail: `Syncing ${pendingCount} learning event${pendingCount === 1 ? "" : "s"} from the durable outbox…`,
+        }));
+      }
+
+      const result =
+        syncAttempt > 0
+          ? await retryLearningEventOutbox()
+          : await flushLearningEventOutbox();
+      if (cancelled) return;
+
+      let finalPendingCount = result.pendingEventIds.length;
+      try {
+        finalPendingCount = getJourneyOutbox().items.length;
+      } catch {
+        // The transport result still gives a truthful lower-fidelity count.
+      }
+      const status: LearningState["journeySync"]["status"] =
+        result.status === "synced"
+          ? "synced"
+          : result.status === "error"
+            ? "error"
+            : "queued";
+      updateJourneySync(sessionId, (current) => ({
+        status,
+        mode: result.mode,
+        pendingCount: finalPendingCount,
+        detail: result.detail,
+        lastSyncedAt:
+          status === "synced" ? new Date().toISOString() : current.lastSyncedAt,
+      }));
+    };
+
+    void synchronize();
+    return () => {
+      cancelled = true;
+    };
+  }, [eventFingerprint, state.sessionId, syncAttempt, updateJourneySync]);
+
+  const reset = useCallback(() => {
+    const result = commitTransition((current) =>
+      resetLearningSession(current, systemLearningSessionDependencies),
+    );
+    clearLearningState();
+    return result;
+  }, [commitTransition]);
+
+  const retryJourneySync = useCallback(() => {
+    const result = commitTransition(retryJourneySyncTransition);
+    setSyncAttempt((attempt) => attempt + 1);
+    return result;
+  }, [commitTransition]);
+
+  const submitSignals = useCallback(
+    (signals: PracticeSignal[]) =>
+      commitTransition((current) =>
+        submitSignalsTransition(
+          current,
+          signals,
+          systemLearningSessionDependencies,
+        ),
       ),
-      events: [...current.events, event],
-    };
-    stateRef.current = nextState;
-    setState(nextState);
+    [commitTransition],
+  );
 
-    return { completedAt, eventId: event.id };
-  }, []);
+  const publishCapsule = useCallback(
+    (input: CapsuleDraftInput) =>
+      commitTransition((current) =>
+        publishCapsuleTransition(
+          current,
+          input,
+          systemLearningSessionDependencies,
+        ),
+      ),
+    [commitTransition],
+  );
+
+  const addLearningModule = useCallback(
+    (capsuleId: string, module: LearningModuleInput) =>
+      commitTransition((current) =>
+        addLearningModuleTransition(
+          current,
+          capsuleId,
+          module,
+          systemLearningSessionDependencies,
+        ),
+      ),
+    [commitTransition],
+  );
+
+  const recordChoice = useCallback(
+    (capsuleId: string, choiceId: string) =>
+      commitTransition((current) =>
+        recordChoiceTransition(
+          current,
+          capsuleId,
+          choiceId,
+          systemLearningSessionDependencies,
+        ),
+      ),
+    [commitTransition],
+  );
+
+  const completeCapsule = useCallback(
+    (capsuleId: string, editedContract?: PracticeContract) =>
+      commitTransition((current) =>
+        completeCapsuleTransition(
+          current,
+          capsuleId,
+          editedContract,
+          systemLearningSessionDependencies,
+        ),
+      ),
+    [commitTransition],
+  );
 
   const queueDesktopFollowUp = useCallback(
     async (capsuleId: string, reason: string) => {
-      const capsule = stateRef.current.activeCapsule;
-      if (capsule.id !== capsuleId) {
-        throw new Error("That capsule is no longer active.");
-      }
-      if (capsule.status !== "completed") {
-        throw new Error("Finish the lesson before scheduling a reminder.");
-      }
-      const event = createEvent(
-        "desktop_follow_up_queued",
-        "ogram",
-        `Desktop follow-up queued: ${reason}`,
-        {
+      const result = commitTransition((current) =>
+        queueDesktopFollowUpTransition(
+          current,
           capsuleId,
-          cue: capsule.practiceContract.cue,
-          proof: capsule.practiceContract.proof,
-        },
+          reason,
+          systemLearningSessionDependencies,
+        ),
       );
-
-      const current = stateRef.current;
-      const queuedState: LearningState = {
-        ...current,
-        desktopBridge: {
-          status: "queued",
-          detail: "Sending the practice contract to the desktop journey…",
-        },
-        events: [...current.events, event],
+      return {
+        ...result,
+        mode: "local-queue" as const,
+        detail:
+          "The human-confirmed follow-up is committed and waiting for the shared journey outbox effect.",
       };
-      stateRef.current = queuedState;
-      setState(queuedState);
-
-      const result = await publishLearningEvent(event);
-      const syncedState: LearningState = {
-        ...stateRef.current,
-        desktopBridge: {
-          status: result.mode === "local-queue" ? "queued" : "synced",
-          detail: result.detail,
-        },
-      };
-      stateRef.current = syncedState;
-      setState(syncedState);
-      return { eventId: result.eventId, mode: result.mode, detail: result.detail };
     },
-    [],
+    [commitTransition],
   );
 
-  return {
-    state,
-    actions: {
+  const actions = useMemo<LearningActions>(
+    () => ({
       getState,
+      awaitRevision,
       reset,
+      retryJourneySync,
       submitSignals,
       publishCapsule,
       addLearningModule,
       recordChoice,
       completeCapsule,
       queueDesktopFollowUp,
-    },
-  };
+    }),
+    [
+      getState,
+      awaitRevision,
+      reset,
+      retryJourneySync,
+      submitSignals,
+      publishCapsule,
+      addLearningModule,
+      recordChoice,
+      completeCapsule,
+      queueDesktopFollowUp,
+    ],
+  );
+
+  return { state, actions };
 }

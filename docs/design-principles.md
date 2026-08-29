@@ -1,65 +1,149 @@
 # Design principles
 
-## North star
+## North star: a Learning Ledger
 
-Build the most adaptable web-based learning experience possible from a learner’s consented context. Every architectural and visual choice must help a person understand, practise, or carry a useful habit into real work.
+The product is not a course player and not an agent transcript. It is a living ledger that shows how declared context became a practice, what the learner decided, and what evidence should exist next.
 
-The page is a living lesson document. It is not a dashboard, a prompt transcript, a generic course player, or a place for an agent to generate arbitrary code.
+Every important claim needs a visible receipt:
+
+- **Why this?** Show the context sources and behavioural pattern.
+- **Why this shape?** Show the compiler recipe and bounded modes.
+- **Who decided?** Separate agent actions from learner choices.
+- **Was it recorded?** Distinguish queued, syncing, synced, and error.
+- **Did it work?** Ask for observable proof, not a completion badge.
+
+If the interface cannot answer those questions, it is decoration rather than learning infrastructure.
+
+## One continuous thread
+
+The experience is organized as one causal line:
+
+```text
+declared source → observed pattern → live capsule → learner decision → proof
+```
+
+The visual system reinforces that line. A chartreuse thread and numbered nodes carry the eye across context, compilation, practice, and journey. Warm paper gives the work the seriousness of an annotated document; dark ink makes it readable; sharp orange/cobalt accents mark decisions and system state rather than decorating empty space.
+
+The composition should feel editorial and asymmetric, with generous breathing room and decisive typographic scale. Newsreader carries ideas and principles, Instrument Sans carries interface language, and IBM Plex Mono marks receipts, IDs, and machine state. The fonts are self-hosted so the learning page does not depend on a third-party font request.
+
+## Provenance is part of the interface
+
+Context is never a mysterious “personalization” sparkle. The source ribbon names Ogram context, Codex review, and prior journey before the learner sees the lesson. An expandable receipt exposes:
+
+- synthetic or production environment;
+- receipt and provenance IDs;
+- schema/source versions and timestamps;
+- a plain-language summary of what was used;
+- a plain-language list of what was excluded.
+
+Provenance should remain near the capsule, not buried in settings. A learner must be able to inspect why the lesson exists without reading code or trusting an agent’s narration.
 
 ## The web platform is the design material
 
-Use a native element when its meaning and behaviour already fit:
+Use native semantics whenever they already express the interaction:
 
-- `nav`, an ordered list, and `progress` for the lesson path;
-- `figure` and inline SVG for a concept that benefits from spatial manipulation;
-- `fieldset`, `legend`, radio buttons, and labels for a choice;
-- `details` and `summary` for optional rationale and technical context;
-- a checkbox for explicit reminder consent;
-- a normal external link for a third-party video;
-- headings and regions that remain coherent without styling.
+- `nav`, an ordered list, and `progress` for the learning path;
+- `article`, `section`, `header`, `footer`, and `aside` for a coherent document outline;
+- `figure` and inline SVG for focus-specific concept instruments;
+- `fieldset`, `legend`, radio inputs, and labels for consequential choices;
+- labelled text areas for the editable practice contract;
+- a checkbox for explicit reminder preference;
+- `details` and `summary` for provenance and rationale;
+- a normal external link for a third-party video.
 
-CSS expresses layout, state, and restrained motion. In particular, `:has()` lets the concept figure respond to a native radio group without adding another JavaScript state machine.
+CSS owns layout, hierarchy, focus, and restrained motion. React owns state consistency, safe component selection, and adapter lifecycle. No router, component library, animation framework, or arbitrary agent-rendered markup is needed for this product.
 
-React has three jobs only:
+## Codex selects; Ogram compiles
 
-1. keep the lesson and journey state consistent;
-2. choose an Ogram-owned component from validated structured data;
-3. connect the top-level WebMCP adapter and desktop event bridge.
+The most adaptive experience is not the one with the largest prompt. It is the one with the smallest useful intermediate representation and the strongest renderer.
 
-No component library, client router, animation library, iframe tool, or agent-authored HTML/CSS/JavaScript is needed.
+Codex may provide:
 
-## Lesson compiler
+- structured behavioural counts for one to four known focus IDs;
+- one capsule focus;
+- bounded difficulty, practice, and proof modes;
+- one Ogram-owned module template ID.
 
-Codex does not design a page pixel by pixel. It sends a small intermediate representation:
+Ogram owns:
 
-- one of four behavioural focus enums;
-- aggregate counts, confidence, and a redacted observation;
-- optionally, a validated YouTube video id, 2–6 walkthrough steps, or a known mini-game template id.
+- evidence and recommendation language;
+- lesson principles and cognitive load;
+- scenarios, choices, and feedback;
+- visual instruments and component composition;
+- default cue → response → proof contracts;
+- accessibility and motion rules;
+- recipe identity and versioning.
 
-Ogram compiles that input with role goals, workshop context, pedagogy, tone, accessibility rules, and visual recipes. The result can change every day while the experience remains coherent and safe.
+The resulting capsule can adapt every day without becoming visually incoherent, unsafe, or impossible to reproduce.
 
-## Human boundary
+## Make context transformation visible
 
-The agent may review authorized tasks, summarize behaviour, select a focus, publish a lesson, and add an optional learning aid. It cannot answer the exercise or mark the lesson complete. Those actions exist only as visible native page controls.
+The compilation trace has three verbs, not a dashboard full of metrics:
 
-The page accepts no raw task text, task title, file path, person, organisation, client name, transcript, screenshot, recording, HTML, CSS, or JavaScript through WebMCP.
+1. **Gather context** — three declared sources form one immutable receipt.
+2. **Compile practice** — one or more structured patterns select one versioned capsule.
+3. **Record proof** — learner events enter the ordered journey ledger.
 
-## Experience rhythm
+Counts are used only when they clarify state: source count, pattern count, event count, pending deliveries, and completed practices. Avoid vanity scores, generic streaks, fabricated intelligence indicators, or progress that confuses page completion with learned behaviour.
 
-The daily lesson has three movements:
+## Teach through consequence
 
-1. **Notice** — see the rule, manipulate one visual idea, and understand why it matters.
-2. **Choose** — make one decision in a role-relevant situation and receive formative feedback.
-3. **Apply** — save one cue, one response, and one observable sign of transfer.
+The lesson rhythm is deliberately short:
 
-The numbered rail, split editorial composition, warm paper palette, and generative line figure take directional inspiration from [The Way of Code](https://www.thewayofcode.com/) without copying its content or interaction model.
+1. **Notice** — understand one rule and its relevance.
+2. **Choose** — compare the downstream cost of plausible actions.
+3. **Apply** — rewrite the practice in language the learner will recognize at work.
 
-## Extension boundary
+Each focus gets its own explanatory instrument rather than a generic illustration:
 
-- **YouTube:** a host with web search may find a public resource, then pass only a validated video id. Ogram renders a plain link opened by the learner.
-- **Computer Use:** can demonstrate Codex only as a separate, explicitly authorized host capability. WebMCP cannot start it.
-- **Record & Replay:** can later produce an approved tutorial asset on supported macOS setups. WebMCP cannot silently record a screen or another app.
-- **Visualize:** remains an optional sidecar selected by the user; a page tool cannot invoke the plugin.
-- **Mini-games:** use page-owned templates and deterministic rubrics. The agent chooses a template, never supplies executable code.
+- thread hygiene maps continuity, forking, and fresh starts;
+- workspace hygiene shows boundaries and containment;
+- effort fit exposes a reasoning-gear dial;
+- task shaping measures brief completeness.
 
-These boundaries follow the current [OpenAI Site tools documentation](https://learn.chatgpt.com/docs/webmcp): the shared top-level page is the canonical canvas, and its tools remain narrow, visible, and verifiable.
+The visual should teach a relationship, not fill a card.
+
+## The practice contract belongs to the learner
+
+The generated cue, response, and proof are a draft. All three must be readable and editable before completion. The learner can also decline the future reminder.
+
+The editor should make the contract concrete:
+
+```text
+When [recognizable cue], I will [specific response], and we can see it worked when [observable proof].
+```
+
+Completion records the chosen contract. It does not retroactively prove the habit. Later Ogram or desktop evidence can mark the proof as observed or confirmed.
+
+## System truth is a visual requirement
+
+Never use reassuring copy to hide uncertain infrastructure state.
+
+- **Queued** means the event exists only in the recoverable browser outbox.
+- **Syncing** means delivery is in progress.
+- **Synced** means a configured Ogram channel acknowledged the event.
+- **Error** means the event remains retryable and requires attention.
+
+The local-only public demo should look complete as an experience while remaining explicit that no production server is configured.
+
+## Hard human and safety boundaries
+
+The agent may gather authorized context, submit structured patterns, select bounded compiler modes, and add an Ogram-owned module template. It cannot answer the scenario, edit the learner’s contract, mark the capsule complete, or request a follow-up.
+
+The practice-signal tool accepts no free-text evidence and no reviewed-task identifiers. The site-tool contract prohibits raw task content, task titles, file paths, credentials, task-derived names or organizations, client data, transcripts, arbitrary HTML/CSS/JavaScript, screenshots, and recordings. Separately authorized Ogram profile context may include the learner’s own name and organization.
+
+Video, Computer Use, Record & Replay, and visualization capabilities remain separate, explicitly authorized extensions. A web tool must not masquerade as permission to browse private work, record another application, or execute generated page code.
+
+These boundaries follow the current [OpenAI site-tools documentation](https://learn.chatgpt.com/docs/webmcp): top-level tools should be narrow, visible, and verifiable.
+
+## Accessibility is structural
+
+- Keep the DOM reading order meaningful before applying the asymmetric grid.
+- Preserve native inputs rather than replacing them with clickable `div`s.
+- Move focus to the new step heading after a stage change.
+- Announce choice feedback, contract saving, and delivery status through appropriate live regions.
+- Meet contrast requirements for text, focus rings, and status indicators; never encode state by color alone.
+- Respect reduced-motion preferences and keep animation subordinate to comprehension.
+- Make receipt IDs and long status copy wrap rather than overflow.
+
+The standard is not “technically keyboard reachable.” The learner should understand where they are, what changed, and what only they can do.
