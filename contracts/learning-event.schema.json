@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://learn.ogram.ch/contracts/learning-event.schema.json",
+  "title": "Ogram Learning Event Envelope",
+  "description": "Privacy-minimized, idempotent event shared by the learning web app, Ogram management service, and desktop companion.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "idempotencyKey",
+    "learningSessionId",
+    "occurredAt",
+    "type",
+    "actor",
+    "capsuleId",
+    "data"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "eventId": { "type": "string", "minLength": 8, "maxLength": 160 },
+    "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 160 },
+    "learningSessionId": { "type": "string", "minLength": 8, "maxLength": 180 },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "type": {
+      "type": "string",
+      "enum": [
+        "learning.context.loaded",
+        "learning.signals.submitted",
+        "learning.capsule.published",
+        "learning.choice.recorded",
+        "learning.training.completed",
+        "learning.desktop_follow_up.queued"
+      ]
+    },
+    "actor": {
+      "type": "string",
+      "enum": ["codex", "learner", "ogram"]
+    },
+    "capsuleId": {
+      "oneOf": [
+        { "type": "string", "minLength": 8, "maxLength": 120 },
+        { "type": "null" }
+      ]
+    },
+    "data": {
+      "type": "object",
+      "description": "Sanitized event-specific fields. Raw conversations, prompts, file paths, credentials, and client content are prohibited.",
+      "additionalProperties": true
+    }
+  }
+}
