@@ -1,8 +1,8 @@
-# Demo script — 2 minutes 35 seconds
+# Demo script — 2 minutes 40 seconds
 
 ## 0:00–0:18 — The problem
 
-Show the Ogram Practice Desk and the learning trace.
+Show Ogram Learn: the numbered rail, the changing boundary figure, and the first daily lesson.
 
 Voiceover:
 
@@ -10,7 +10,7 @@ Voiceover:
 
 ## 0:18–0:35 — Make WebMCP visible
 
-Open the browser’s available site tools. Briefly show the eight Ogram tools and the green “site tools ready” indicator.
+Open the browser’s available site tools. Briefly show the seven narrow Ogram tools inside the quiet **About this demo** disclosure.
 
 Prompt Codex:
 
@@ -28,7 +28,7 @@ Point to:
 
 - synthetic role and workshop context;
 - the assigned firm training;
-- the blue privacy boundary.
+- the explicit privacy boundary.
 
 Voiceover:
 
@@ -38,25 +38,27 @@ Voiceover:
 
 Call `ogram_submit_practice_signals` with synthetic summaries. Show the evidence cards update.
 
-Call `ogram_publish_daily_capsule` with `thread_hygiene`. Show the canvas transform into “Know when the task has changed.”
+Call `ogram_publish_daily_capsule` with `thread_hygiene`. The tool sends only the focus enum and aggregate task count. Show the page transform into “Know when to move to a new task.”
+
+Call `ogram_add_learning_module` with the `context_packing` mini-game template. Show the extra practice appear below the core lesson.
 
 Voiceover:
 
-> Codex chooses today’s focus and personalizes the scenario. Ogram controls the seven-minute recipe, visual system, feedback, and learning contract. This is a shared surface, not a chatbot bolted onto an LMS.
+> Codex chooses today’s focus. Ogram combines it with role context and compiles a five-minute lesson from page-owned primitives. The optional game is a safe template—not agent-generated page code.
 
 ## 1:25–1:55 — Human judgment stays central
 
-Choose **Fork the task**. Show “Good call.” and the checkpoints advance.
+Click **See today’s decision**, choose **Fork the task**, and show “That’s the best fit.”
 
 Voiceover:
 
-> The learner still makes the decision. The site tool explicitly forbids Codex from answering on their behalf or claiming completion early.
+> The learner still makes the decision. Answer and completion are not WebMCP tools at all; they exist only as visible page controls.
 
-Click **Commit this practice**.
+Click **Turn this into a reminder**, review the cue, and click **Save reminder and finish**.
 
 ## 1:55–2:20 — Close the Ogram loop
 
-Show the learning trace change to 3/4 and the desktop loop move to queued/synced. If the desktop companion is ready, cut to the same capsule appearing there.
+Show “You’re done for today,” journey progress at 3/4, and the Ogram reminder move to queued/synced. If the desktop companion is ready, cut to the same lesson appearing there.
 
 Voiceover:
 
@@ -72,4 +74,4 @@ Voiceover:
 
 End card:
 
-> Ogram Practice Desk — yesterday’s habit, today’s practice, tomorrow’s proof.
+> Ogram Learn — yesterday’s habit, today’s practice, tomorrow’s proof.

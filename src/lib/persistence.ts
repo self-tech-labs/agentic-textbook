@@ -1,6 +1,6 @@
 import type { LearningState } from "../domain/types";
 
-const storageKey = "ogram-practice-desk:v1";
+const storageKey = "ogram-practice-desk:v2";
 
 export function loadLearningState(): LearningState | null {
   if (typeof window === "undefined") return null;
@@ -8,7 +8,7 @@ export function loadLearningState(): LearningState | null {
     const value = window.localStorage.getItem(storageKey);
     if (!value) return null;
     const parsed = JSON.parse(value) as Partial<LearningState>;
-    return parsed.version === 1 ? (parsed as LearningState) : null;
+    return parsed.version === 2 ? (parsed as LearningState) : null;
   } catch {
     return null;
   }

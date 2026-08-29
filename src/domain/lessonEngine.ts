@@ -10,6 +10,7 @@ import type {
 interface LessonRecipe {
   eyebrow: string;
   title: string;
+  learningObjective: string;
   principle: string;
   challengePrompt: string;
   defaultScenario: string;
@@ -19,75 +20,79 @@ interface LessonRecipe {
 
 const recipes: Record<SignalId, LessonRecipe> = {
   thread_hygiene: {
-    eyebrow: "Practice 01 · The three doors",
-    title: "Know when the task has changed",
+    eyebrow: "Today’s lesson",
+    title: "Know when to move to a new task",
+    learningObjective:
+      "Choose when to keep going, fork the task, or start fresh.",
     principle:
-      "Continue for the same goal. Fork when the deliverable changes. Start fresh when the goal is unrelated.",
+      "Keep going while the goal stays the same. Fork when a new deliverable needs the decisions you have already made. Start fresh when the new goal is unrelated.",
     challengePrompt:
-      "The strategy is approved. The next task is a separate deliverable. Which door keeps the useful context without the debris?",
+      "The plan is approved. The next job is a separate deliverable. What would you do?",
     defaultScenario:
-      "After 38 turns shaping a workshop, the decisions are clear—but the thread still holds rejected agendas and dead ends. Now you need a polished follow-up page.",
+      "You have spent a long task shaping a workshop. The decisions are clear, but the conversation still contains rejected ideas and dead ends. Now you need to make a polished follow-up page.",
     choices: [
       {
         id: "continue",
-        label: "Continue here",
-        shorthand: "Same room",
-        description: "Keep every message and switch directly into production.",
+        label: "Keep going here",
+        shorthand: "Same task",
+        description: "Stay in the current task and begin the page straight away.",
         feedback:
-          "Reasonable only when the goal and working mode are still unchanged. Here the task has crossed from strategy into a new deliverable.",
+          "Keeping going works when the goal has not changed. Here, you are moving from planning to a new deliverable, so the old exploration will make the work harder to follow.",
         correct: false,
       },
       {
         id: "fork",
         label: "Fork the task",
-        shorthand: "Useful memory",
-        description: "Carry the approved decisions into a clean execution branch.",
+        shorthand: "Keep what matters",
+        description: "Carry the approved decisions into a clean new branch.",
         feedback:
-          "Exactly. A fork keeps the decisions worth inheriting while leaving exploration and rejected paths behind.",
+          "A fork keeps the approved decisions while leaving rejected ideas behind. The new deliverable gets a clean place to grow.",
         correct: true,
       },
       {
         id: "fresh",
-        label: "Start fresh",
+        label: "Start a fresh task",
         shorthand: "Clean slate",
-        description: "Open an unrelated task with no inherited context.",
+        description: "Open a new task without bringing any context across.",
         feedback:
-          "A fresh task is best when the goal is unrelated or the old context is actively misleading. Here you would lose useful approved decisions.",
+          "A fresh task is best for an unrelated goal. Here, you would lose the approved decisions that the next deliverable still needs.",
         correct: false,
       },
     ],
     practiceContract: {
-      cue: "The noun describing the deliverable changes.",
-      response: "Pause and choose: continue, fork, or fresh.",
-      proof: "The next production task begins in a fork with a one-paragraph brief.",
+      cue: "The deliverable changes, even though some earlier decisions still matter.",
+      response: "Pause and choose: keep going, fork, or start fresh.",
+      proof: "The next production task starts in a fork with a short handoff brief.",
     },
   },
   workspace_hygiene: {
-    eyebrow: "Practice 02 · Give work a home",
-    title: "Land before you build",
+    eyebrow: "Today’s lesson",
+    title: "Give every piece of work a clear home",
+    learningObjective:
+      "Set up the right project folder before Codex creates or changes files.",
     principle:
-      "A project folder is more than storage: it gives Codex boundaries, durable context, and a place where changes can be reviewed.",
+      "A dedicated project folder tells Codex where the work belongs, what it may change, and where you can review the result later.",
     challengePrompt:
-      "You are about to ask Codex for a small client-facing microsite. What should happen before the first file is generated?",
+      "You are about to ask Codex for a small microsite. What should you do first?",
     defaultScenario:
-      "A stakeholder asks for a quick prototype during a call. You have a blank Codex task open, but no project is selected and no folder has been created.",
+      "Someone asks for a quick prototype during a call. You have a blank Codex task open, but no project is selected and no folder has been created.",
     choices: [
       {
         id: "generate_first",
-        label: "Generate, then organise",
+        label: "Make the files, then organise them",
         shorthand: "Fast start",
         description: "Ask for the files now and decide where they belong afterward.",
         feedback:
-          "This often creates orphaned files and makes review harder. The thirty-second setup pays for itself almost immediately.",
+          "This can leave files scattered or hard to continue later. A short setup now makes the work safer and easier to review.",
         correct: false,
       },
       {
         id: "prepare_workspace",
-        label: "Create a landing zone",
-        shorthand: "Bounded work",
-        description: "Choose a dedicated folder, state the goal, then let Codex inspect it.",
+        label: "Create a project folder",
+        shorthand: "Clear home",
+        description: "Choose a dedicated folder, explain the goal, then let Codex inspect it.",
         feedback:
-          "Exactly. The folder gives the task a boundary and makes every created artifact easy to find, review, and continue later.",
+          "The folder gives the work a clear boundary. Everything Codex creates will be easier to find, review, and continue later.",
         correct: true,
       },
       {
@@ -96,7 +101,7 @@ const recipes: Record<SignalId, LessonRecipe> = {
         shorthand: "Visible pile",
         description: "Use a familiar broad folder so the output is easy to spot.",
         feedback:
-          "Visibility is not structure. A dedicated project is safer and leaves a reusable working context.",
+          "The Desktop is easy to see, but it is not a useful project boundary. A dedicated folder keeps the work together and reusable.",
         correct: false,
       },
     ],
@@ -107,14 +112,16 @@ const recipes: Record<SignalId, LessonRecipe> = {
     },
   },
   effort_fit: {
-    eyebrow: "Practice 03 · Match the gear",
-    title: "Spend reasoning where it changes the outcome",
+    eyebrow: "Today’s lesson",
+    title: "Match the model to the work",
+    learningObjective:
+      "Choose a model and reasoning level that fit the task’s real complexity.",
     principle:
-      "Task complexity—not importance or anxiety—should choose the reasoning gear. Escalate when dependencies, ambiguity, or verification demand it.",
+      "Choose more reasoning when the work is ambiguous, interconnected, or hard to verify—not simply because it feels important.",
     challengePrompt:
-      "This is a contained rewrite with a clear source and definition of done. Which setup is proportionate?",
+      "This is a short rewrite with a clear source and finish line. Which setup fits the work?",
     defaultScenario:
-      "You need a 250-word client email tightened for clarity. The facts are final, no tools are needed, and you will review the wording yourself.",
+      "You need a 250-word email tightened for clarity. The facts are final, no tools are needed, and you will review the wording yourself.",
     choices: [
       {
         id: "sol_ultra",
@@ -122,16 +129,16 @@ const recipes: Record<SignalId, LessonRecipe> = {
         shorthand: "Maximum depth",
         description: "Use the strongest model at the deepest reasoning setting.",
         feedback:
-          "That is more latency and reasoning than this bounded rewrite needs. Reserve it for genuinely difficult, interdependent work.",
+          "This would make a simple rewrite slower without meaningfully improving the result. Save this setup for difficult, interconnected work.",
         correct: false,
       },
       {
         id: "fast_lane",
-        label: "Fast model · Low",
-        shorthand: "Proportionate",
-        description: "Use a fast model with light reasoning and a crisp brief.",
+        label: "Fast model · Low reasoning",
+        shorthand: "Good fit",
+        description: "Use a fast model, light reasoning, and a clear brief.",
         feedback:
-          "Right. The task is narrow, reversible, and easy to verify. A fast lane is the professional choice, not a compromise.",
+          "This task is narrow, easy to review, and easy to redo. A fast model with light reasoning is a good fit.",
         correct: true,
       },
       {
@@ -140,7 +147,7 @@ const recipes: Record<SignalId, LessonRecipe> = {
         shorthand: "Extra analysis",
         description: "Add deeper reasoning in case the wording hides complexity.",
         feedback:
-          "Safe, but still disproportionate. Start light; escalate only if ambiguity or quality problems actually appear.",
+          "This would work, but it is more than the task needs. Start light and increase reasoning only if the work turns out to be ambiguous.",
         correct: false,
       },
     ],
@@ -151,14 +158,16 @@ const recipes: Record<SignalId, LessonRecipe> = {
     },
   },
   task_shaping: {
-    eyebrow: "Practice 04 · Define the finish line",
-    title: "Make done visible",
+    eyebrow: "Today’s lesson",
+    title: "Give Codex a clear finish line",
+    learningObjective:
+      "Turn a vague request into a brief with an outcome, boundaries, and a check.",
     principle:
-      "A useful brief names the outcome, relevant context, boundaries, and a check. More words are not automatically more context.",
+      "A useful brief explains the outcome, the context that matters, the boundaries, and how you will check the result.",
     challengePrompt:
-      "Which prompt gives Codex the clearest finish line without prescribing every keystroke?",
+      "Which request gives Codex the clearest finish line without telling it every tiny step?",
     defaultScenario:
-      "You need Codex to review a client proposal before it is sent. The document exists, but your first instinct is simply to write: ‘make this better.’",
+      "You need Codex to review a proposal before it is sent. The document exists, but your first instinct is simply to write: ‘make this better.’",
     choices: [
       {
         id: "vague",
@@ -166,16 +175,16 @@ const recipes: Record<SignalId, LessonRecipe> = {
         shorthand: "Open-ended",
         description: "Let Codex decide what improvement means.",
         feedback:
-          "Without a finish line, the result may be polished in ways that do not matter—or change things that should stay intact.",
+          "Without a finish line, Codex may improve things that do not matter or change things that should stay as they are.",
         correct: false,
       },
       {
         id: "brief",
-        label: "Outcome + boundaries + check",
-        shorthand: "Shaped task",
-        description: "Name the audience, decision, constraints, and how you will verify it.",
+        label: "Name the outcome, boundaries, and check",
+        shorthand: "Clear brief",
+        description: "Explain the audience, the decision, what must stay fixed, and how you will review it.",
         feedback:
-          "Exactly. This gives Codex enough judgment room while making success observable.",
+          "This leaves Codex room to make good decisions while making success easy for you to recognise.",
         correct: true,
       },
       {
@@ -184,14 +193,14 @@ const recipes: Record<SignalId, LessonRecipe> = {
         shorthand: "Manual recipe",
         description: "Write a long sequence of exact sentence-level instructions.",
         feedback:
-          "That can remove the useful judgment you hired the agent for. Specify the outcome and constraints, then let it propose the route.",
+          "This removes much of the useful judgment Codex can bring. Be precise about the result and constraints, then let it propose the route.",
         correct: false,
       },
     ],
     practiceContract: {
-      cue: "The first prompt contains an adjective such as ‘better’ or ‘professional.’",
-      response: "Replace it with an observable outcome, boundaries, and a verification step.",
-      proof: "The next task ends with an explicit definition of done.",
+      cue: "My request relies on a word such as ‘better’ or ‘professional.’",
+      response: "Replace it with an outcome, boundaries, and a way to check the result.",
+      proof: "The next task begins with a clear definition of done.",
     },
   },
 };
@@ -234,11 +243,12 @@ export function createCapsule(
     focus: input.focus,
     eyebrow: recipe.eyebrow,
     title: recipe.title,
+    learningObjective: recipe.learningObjective,
     principle: recipe.principle,
     whyToday:
       focusSignal?.evidence ??
       `This practice was selected from ${input.sourceTaskCount} recent task summaries.`,
-    durationMinutes: 7,
+    durationMinutes: 5,
     personalizedScenario: `${scenario} · Tailored for ${roleTailoring}.`,
     challengePrompt: recipe.challengePrompt,
     choices: recipe.choices,
@@ -266,6 +276,7 @@ export function createCapsule(
     practiceContract: recipe.practiceContract,
     coachNote:
       input.coachNote.trim() ||
-      "One deliberate choice in real work is worth more than ten generic tips.",
+      "Try this once in real work today. That is enough to make the lesson useful.",
+    learningModules: [],
   };
 }

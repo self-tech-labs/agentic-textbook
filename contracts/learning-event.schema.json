@@ -28,6 +28,7 @@
         "learning.context.loaded",
         "learning.signals.submitted",
         "learning.capsule.published",
+        "learning.module.added",
         "learning.choice.recorded",
         "learning.training.completed",
         "learning.desktop_follow_up.queued"

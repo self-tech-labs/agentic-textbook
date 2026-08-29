@@ -57,6 +57,46 @@ export interface CapsuleCheckpoint {
   status: CheckpointStatus;
 }
 
+interface LearningModuleBase {
+  id: string;
+  title: string;
+  description: string;
+}
+
+export interface VideoLearningModule extends LearningModuleBase {
+  kind: "video";
+  provider: "YouTube";
+  url: string;
+}
+
+export interface WalkthroughLearningModule extends LearningModuleBase {
+  kind: "walkthrough";
+  steps: string[];
+}
+
+export interface MiniGameOption {
+  id: string;
+  label: string;
+  feedback: string;
+  correct: boolean;
+}
+
+export interface MiniGameLearningModule extends LearningModuleBase {
+  kind: "mini_game";
+  prompt: string;
+  options: MiniGameOption[];
+}
+
+export type LearningModule =
+  | VideoLearningModule
+  | WalkthroughLearningModule
+  | MiniGameLearningModule;
+
+export type LearningModuleInput =
+  | Omit<VideoLearningModule, "id" | "provider">
+  | Omit<WalkthroughLearningModule, "id">
+  | Omit<MiniGameLearningModule, "id">;
+
 export interface LearningCapsule {
   id: string;
   createdAt: string;
@@ -64,6 +104,7 @@ export interface LearningCapsule {
   focus: SignalId;
   eyebrow: string;
   title: string;
+  learningObjective: string;
   principle: string;
   whyToday: string;
   durationMinutes: number;
@@ -78,12 +119,14 @@ export interface LearningCapsule {
     proof: string;
   };
   coachNote: string;
+  learningModules?: LearningModule[];
 }
 
 export type LearningEventType =
   | "context_loaded"
   | "coaching_signals_submitted"
   | "capsule_published"
+  | "learning_module_added"
   | "choice_recorded"
   | "training_completed"
   | "desktop_follow_up_queued";
@@ -107,7 +150,7 @@ export interface JourneyEntry {
 }
 
 export interface LearningState {
-  version: 1;
+  version: 2;
   context: OgramInjectedContext;
   signals: PracticeSignal[];
   activeCapsule: LearningCapsule;

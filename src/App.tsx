@@ -16,7 +16,7 @@ export default function App() {
   const { state, actions } = useLearningStore();
   const [registration, setRegistration] = useState<
     Omit<WebMcpRegistration, "cleanup"> & { registering: boolean }
-  >({ supported: false, toolCount: 8, toolNames: [], registering: true });
+  >({ supported: false, toolCount: 7, toolNames: [], registering: true });
   const [simulationRunning, setSimulationRunning] = useState(false);
   const [completing, setCompleting] = useState(false);
 
@@ -24,6 +24,7 @@ export default function App() {
     () => actions,
     [
       actions.completeCapsule,
+      actions.addLearningModule,
       actions.getState,
       actions.publishCapsule,
       actions.queueDesktopFollowUp,
@@ -68,13 +69,44 @@ export default function App() {
       if (evidence instanceof HTMLDetailsElement) evidence.open = true;
       evidence?.scrollIntoView({ behavior: "smooth", block: "center" });
       await wait(700);
-      actions.publishCapsule({
+      const { capsuleId } = actions.publishCapsule({
         focus: "thread_hygiene",
         personalizedScenario:
-          "A client-success lead has used one Codex task to explore, reject, and finally approve a workshop plan. The next job is to turn those approved decisions into a standalone client follow-up.",
+          "You have used one Codex task to explore, reject, and finally approve a workshop plan. The next job is to turn those approved decisions into a standalone follow-up.",
         coachNote:
-          "You do not need less context. You need the right context to cross the boundary with you.",
+          "Bring the decisions the next task needs—not the whole path you took to reach them.",
         sourceTaskCount: 8,
+      });
+      actions.addLearningModule(capsuleId, {
+        kind: "mini_game",
+        title: "Pack the context worth keeping",
+        description:
+          "A quick extra practice for deciding what should cross into a fork.",
+        prompt:
+          "You are forking an approved plan into a new production task. What should you bring across?",
+        options: [
+          {
+            id: "everything",
+            label: "The full conversation, including rejected ideas",
+            feedback:
+              "That brings the clutter with you. Carry only the decisions the next task needs.",
+            correct: false,
+          },
+          {
+            id: "decision_pack",
+            label: "Approved decisions, constraints, and the definition of done",
+            feedback:
+              "That is the useful context pack: enough to work well, without the whole exploration.",
+            correct: true,
+          },
+          {
+            id: "headline_only",
+            label: "Only the name of the new deliverable",
+            feedback:
+              "That is clean, but too thin. The new task still needs the agreed boundaries.",
+            correct: false,
+          },
+        ],
       });
       document
         .getElementById("todays-practice")
@@ -91,15 +123,17 @@ export default function App() {
     [actions, state.activeCapsule.id],
   );
 
-  const complete = useCallback(async () => {
+  const complete = useCallback(async (reminderEnabled: boolean) => {
     if (completing) return;
     setCompleting(true);
     try {
       actions.completeCapsule(state.activeCapsule.id);
-      await actions.queueDesktopFollowUp(
-        state.activeCapsule.id,
-        "Watch for the next matching decision point and capture proof of application.",
-      );
+      if (reminderEnabled) {
+        await actions.queueDesktopFollowUp(
+          state.activeCapsule.id,
+          "Remind the learner when the same decision comes up again.",
+        );
+      }
     } finally {
       setCompleting(false);
     }
@@ -108,6 +142,11 @@ export default function App() {
   const focusSignal = state.signals.find(
     (signal) => signal.id === state.activeCapsule.focus,
   );
+
+  const resetLesson = useCallback(() => {
+    actions.reset();
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [actions.reset]);
 
   return (
     <div className="app" id="top">
@@ -124,9 +163,11 @@ export default function App() {
 
       <main className="lesson-page">
         <PracticeCanvas
+          key={state.activeCapsule.id}
           capsule={state.activeCapsule}
           context={state.context}
           focusSignal={focusSignal}
+          journey={state.journey}
           desktopBridge={state.desktopBridge}
           onChoose={choose}
           onComplete={complete}
@@ -136,9 +177,11 @@ export default function App() {
 
       <footer className="site-footer">
         <span>ogram · Lausanne</span>
-        <span className="footer-note">Private practice, shaped from behaviour—not content.</span>
-        <button className="footer-reset" type="button" onClick={actions.reset}>
-          Reset lesson
+        <span className="footer-note">
+          We use task-level patterns, never your messages or files.
+        </span>
+        <button className="footer-reset" type="button" onClick={resetLesson}>
+          Start this lesson again
         </button>
       </footer>
     </div>

@@ -1,8 +1,8 @@
-# Ogram Practice Desk
+# Ogram Learn
 
-> Ogram turns the way someone actually used Codex yesterday into the exact seven-minute practice they need today—and the person and their agent shape it together.
+> Ogram turns patterns from someone’s recent Codex work into one five-minute practice made for their role—and the person and their agent shape it together.
 
-Practice Desk is a local-first prototype for the [OpenAI WebMCP Challenge](https://openai.com/webmcp-challenge/). It exposes a structured learning workflow as site tools, renders the result in a shared human-agent canvas, and emits a narrow event contract that can continue the learning journey inside the Ogram desktop client.
+Ogram Learn is a local-first prototype for the [OpenAI WebMCP Challenge](https://openai.com/webmcp-challenge/). It exposes a structured learning workflow as site tools, renders the result in a shared human-agent lesson, and emits a narrow event contract that can continue the learning journey inside the Ogram desktop client.
 
 The demo uses explicitly synthetic `ogram-injected-context` and synthetic behavioural observations. It never needs an OpenAI API key and never sends raw Codex conversation content.
 
@@ -11,9 +11,9 @@ The demo uses explicitly synthetic `ogram-injected-context` and synthetic behavi
 ```mermaid
 flowchart LR
   A[Recent Codex tasks] -->|reviewed by Codex with user authority| B[Sanitized practice signals]
-  C[Ogram role + workshop context] --> D[Ogram Practice Desk]
+  C[Ogram role + workshop context] --> D[Ogram Learn]
   B -->|WebMCP| D
-  D --> E[One tailored daily capsule]
+  D --> E[One tailored daily lesson]
   E --> F[Human decision + commitment]
   F --> G[Learning event contract]
   G --> H[Ogram desktop journey]
@@ -29,7 +29,7 @@ The division of labour is intentional:
 
 ## Why WebMCP is essential
 
-This is not a remote chatbot or a prompt wrapper. The agent and learner share the same signed-in, visible surface. Site-tool calls change that surface in front of the learner: evidence cards update, a lesson is published, feedback is revealed, progress is recorded, and a desktop follow-up is queued.
+This is not a remote chatbot or a prompt wrapper. The agent and learner share the same signed-in, visible surface. Site-tool calls change that surface in front of the learner: a behavioural summary updates, a lesson is published, and an optional video, walkthrough, or mini-game appears. Answers and completion remain human-only page actions.
 
 An optional Codex Visualize micro-lab could later enrich a single exercise, but it is deliberately not the core. A webpage cannot directly invoke an installed Codex skill, and making Visualize the main experience would lose Ogram’s durable journey, brand system, permissions, and judge-visible WebMCP leverage. See [the architecture decision](docs/architecture.md#why-the-canvas-is-canonical).
 
@@ -43,12 +43,24 @@ All tools are registered imperatively on the top-level page. Inputs are delibera
 | `ogram_get_injected_context` | Reads synthetic role, workshop, preference, and required-training context. |
 | `ogram_get_learning_journey` | Reads the capsule, prior proofs, assignments, and sync state. |
 | `ogram_submit_practice_signals` | Adds 1–4 sanitized behavioural observations to the visible evidence panel. |
-| `ogram_publish_daily_capsule` | Combines a chosen focus and scenario with an Ogram-owned lesson recipe. |
-| `ogram_record_scenario_choice` | Records an explicit learner answer and reveals visible feedback. |
-| `ogram_complete_capsule` | Completes a capsule only after the learner has answered and confirmed. |
+| `ogram_publish_daily_capsule` | Selects a focus; Ogram combines it with injected context and a page-owned lesson recipe. |
+| `ogram_add_learning_module` | Adds a validated YouTube link, short walkthrough, or Ogram-owned mini-game template—never executable page code. |
 | `ogram_queue_desktop_follow_up` | Emits the practice contract through the shared desktop event envelope. |
 
-The browser-test registry at `window.__OGRAM_WEBMCP_TOOLS__` is a local fallback for unit tests and the “Replay agent build” button. The real challenge path uses `document.modelContext.registerTool()`.
+The browser-test registry at `window.__OGRAM_WEBMCP_TOOLS__` exists only in development and tests. The real challenge path uses `document.modelContext.registerTool()`.
+
+## Web primitives first
+
+The experience is an interactive lesson document, not an LMS dashboard. It deliberately uses the web platform before reaching for an abstraction:
+
+- semantic `article`, `section`, `nav`, `figure`, `fieldset`, `legend`, and `label` elements;
+- native radio buttons, checkboxes, `details`, `summary`, and `progress`;
+- an inline SVG concept instrument whose state is driven by CSS `:has()`;
+- external links for videos rather than arbitrary embeds;
+- a single top-level imperative WebMCP adapter;
+- React only for lesson state, persistence, and safe component selection.
+
+This takes inspiration from [The Way of Code](https://www.thewayofcode.com/): generous editorial space, a quiet numbered rail, and ideas learned by manipulating the page itself. The governing principles are recorded in [docs/design-principles.md](docs/design-principles.md).
 
 ## Run locally
 
@@ -101,7 +113,7 @@ Ogram’s existing background session shipper and feedback/eject pipeline should
 ```text
 src/domain/lessonEngine.ts       Curated learning recipes and focus selection
 src/hooks/useLearningStore.ts    Versioned journey state and human actions
-src/lib/webmcp.ts                Eight site-tool schemas, validation, and registration
+src/lib/webmcp.ts                Seven site-tool schemas, validation, and registration
 src/lib/desktopBridge.ts         Shared event envelope and desktop/API transport
 src/components/                  Human-facing learning canvas
 contracts/                       Public desktop/backend integration contract
@@ -116,7 +128,7 @@ docs/                            Architecture, challenge preflight, and demo scr
 - [x] Mock data and judgeable no-auth path
 - [x] Under-three-minute demo script
 - [ ] Deploy a live judge-accessible URL
-- [ ] Publish the repository
+- [x] Publish the repository
 - [ ] Record and publish the public YouTube demo
 - [ ] Add final Devpost description, screenshots, and testing instructions
 - [ ] Freeze the submitted deployment/repository during judging

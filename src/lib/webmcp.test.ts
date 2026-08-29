@@ -12,6 +12,10 @@ function mockActions(): LearningActions {
       capsuleId: "capsule-new",
       eventId: "event-capsule",
     })),
+    addLearningModule: vi.fn(() => ({
+      moduleId: "module-new",
+      eventId: "event-module",
+    })),
     recordChoice: vi.fn(() => ({
       correct: true,
       feedback: "Exactly.",
@@ -38,9 +42,9 @@ describe("Ogram WebMCP tools", () => {
     });
   });
 
-  it("publishes a narrow eight-tool surface and a strict privacy mission", async () => {
+  it("publishes a narrow seven-tool surface and a strict privacy mission", async () => {
     const tools = createOgramLearningTools(mockActions());
-    expect(tools).toHaveLength(8);
+    expect(tools).toHaveLength(7);
 
     const mission = (await tools[0]!.execute({})) as Record<string, unknown>;
     expect(mission.rawTaskContentAllowed).toBe(false);
@@ -50,6 +54,36 @@ describe("Ogram WebMCP tools", () => {
       "effort_fit",
       "task_shaping",
     ]);
+  });
+
+  it("accepts bounded learning modules but no executable canvas code", () => {
+    const actions = mockActions();
+    const tools = createOgramLearningTools(actions);
+    const moduleTool = tools.find(
+      (candidate) => candidate.name === "ogram_add_learning_module",
+    )!;
+
+    moduleTool.execute({
+      capsuleId: "capsule-1787997600000",
+      kind: "mini_game",
+      title: "Pack the right context",
+      description: "A short practice for choosing what belongs in a fork.",
+      gameTemplate: "context_packing",
+    });
+    expect(actions.addLearningModule).toHaveBeenCalledWith(
+      "capsule-1787997600000",
+      expect.objectContaining({ kind: "mini_game" }),
+    );
+
+    expect(() =>
+      moduleTool.execute({
+        capsuleId: "capsule-1787997600000",
+        kind: "html",
+        title: "Run this code",
+        description: "An arbitrary block that should never reach the page.",
+        html: "<script>alert(1)</script>",
+      }),
+    ).toThrow(/kind/);
   });
 
   it("rejects raw-shaped or underspecified observations before state mutation", () => {
@@ -78,7 +112,7 @@ describe("Ogram WebMCP tools", () => {
   it("keeps a browser-test registry when native WebMCP is unavailable", async () => {
     const registration = await registerOgramLearningTools(mockActions());
     expect(registration.supported).toBe(false);
-    expect(registration.toolCount).toBe(8);
+    expect(registration.toolCount).toBe(7);
     expect(window.__OGRAM_WEBMCP_TOOLS__?.ogram_get_learning_mission).toBeDefined();
     registration.cleanup();
     expect(window.__OGRAM_WEBMCP_TOOLS__).toBeUndefined();

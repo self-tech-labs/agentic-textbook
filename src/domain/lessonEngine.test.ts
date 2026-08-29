@@ -22,7 +22,7 @@ describe("lessonEngine", () => {
     );
 
     expect(capsule.id).toBe("capsule-1787997600000");
-    expect(capsule.title).toBe("Spend reasoning where it changes the outcome");
+    expect(capsule.title).toBe("Match the model to the work");
     expect(capsule.personalizedScenario).toContain("Client success & operations lead");
     expect(capsule.choices.filter((choice) => choice.correct)).toHaveLength(1);
     expect(capsule.status).toBe("active");

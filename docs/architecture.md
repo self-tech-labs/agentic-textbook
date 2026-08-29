@@ -4,15 +4,17 @@
 
 The Ogram web canvas is the canonical product and system of record. Codex Visualize is an optional companion micro-lab, never the main transport or persistence layer.
 
+The implementation follows a web-primitives-first constraint: semantic HTML, native forms and disclosures, inline SVG, CSS, one top-level imperative WebMCP adapter, and React only for state and safe component selection. See [design principles](design-principles.md).
+
 ### Why the canvas is canonical
 
-WebMCP is designed for a human, an agent, and a live web application to share state. Practice Desk uses that property directly:
+WebMCP is designed for a human, an agent, and a live web application to share state. Ogram Learn uses that property directly:
 
 1. Ogram exposes narrow site tools from the visible page.
 2. Codex reviews only user-authorized task history through its own capabilities.
 3. Codex submits privacy-minimized observations.
 4. Each tool call visibly changes the shared canvas.
-5. The learner answers and explicitly commits.
+5. The learner answers and explicitly commits through page-only controls that are not exposed as agent tools.
 6. Ogram persists the journey and lets the desktop companion look for later proof.
 
 A tool that merely returns “please invoke Visualize” would be a prompt trampoline: it is host-dependent, loses longitudinal state, weakens WebMCP leverage, and cannot guarantee Ogram’s visual or privacy system. A future tool may return a sanitized visualization recipe; Codex still decides whether to use it.
@@ -28,7 +30,7 @@ flowchart TB
   end
 
   subgraph X[Experience plane]
-    Page[Practice Desk canvas]
+    Page[Ogram Learn page]
     Tools[Top-level WebMCP tools]
     Human[Learner]
     Tools <--> Page
@@ -69,7 +71,7 @@ In production, the learner previews each signal before persistence and can accep
 
 ## Lesson ownership
 
-Codex chooses the focus and supplies a role-relevant scenario. Ogram’s recipe engine controls:
+Codex chooses the focus from a narrow enum. Ogram combines that choice with injected role and workshop context. Its recipe engine controls:
 
 - lesson duration and cognitive load;
 - concept explanation;
@@ -78,7 +80,19 @@ Codex chooses the focus and supplies a role-relevant scenario. Ogram’s recipe 
 - the cue → response → proof practice contract;
 - visual hierarchy and accessibility.
 
-This prevents an agent-generated lesson from becoming an unbounded page builder while still making the content genuinely personal.
+Codex may also select one bounded learning module: a validated YouTube id, a short walkthrough, or an Ogram-owned mini-game template. The page never accepts agent-authored HTML, CSS, JavaScript, iframe markup, screenshots, or recordings. This “lesson compiler” keeps the experience flexible without turning it into an unbounded page builder.
+
+## Capability boundary
+
+| Idea | Prototype decision |
+| --- | --- |
+| Relevant YouTube video | A host with browsing may find it separately, then pass only an 11-character video id. Ogram renders a normal external link. |
+| Computer Use tutorial | Host-dependent and explicitly authorized; WebMCP cannot start Computer Use. A later approved asset can become a walkthrough. |
+| Record & Replay | Separate macOS capability with recording consent; never triggered silently by a page tool. |
+| Visualize | Optional user-selected sidecar; the page cannot invoke the plugin. |
+| Mini web-app game | Page-owned React/HTML template with deterministic content and rubric; the agent selects only a template id. |
+
+Current ChatGPT Site tools discover top-level imperative registrations, not declarative tools or tools registered inside iframes. The challenge path therefore keeps all tools in the page’s small adapter and all learner interaction in visible native controls. See the [official OpenAI Site tools documentation](https://learn.chatgpt.com/docs/webmcp).
 
 ## Longitudinal desktop loop
 

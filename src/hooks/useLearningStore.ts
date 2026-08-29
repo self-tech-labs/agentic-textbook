@@ -4,6 +4,7 @@ import { mockOgramContext, mockPracticeSignals } from "../domain/mockData";
 import type {
   CapsuleDraftInput,
   LearningEvent,
+  LearningModuleInput,
   LearningState,
   PracticeSignal,
 } from "../domain/types";
@@ -54,7 +55,7 @@ export function createInitialState(now = new Date()): LearningState {
   );
 
   return {
-    version: 1,
+    version: 2,
     context: mockOgramContext,
     signals: mockPracticeSignals,
     activeCapsule,
@@ -105,7 +106,7 @@ export function createInitialState(now = new Date()): LearningState {
       createEvent(
         "capsule_published",
         "codex",
-        "Today’s seven-minute practice was published to the shared canvas.",
+        "Today’s five-minute lesson was published.",
         { capsuleId: activeCapsule.id },
       ),
     ],
@@ -124,6 +125,10 @@ export interface LearningActions {
     capsuleId: string;
     eventId: string;
   };
+  addLearningModule: (
+    capsuleId: string,
+    module: LearningModuleInput,
+  ) => { moduleId: string; eventId: string };
   recordChoice: (
     capsuleId: string,
     choiceId: string,
@@ -156,7 +161,9 @@ export function useLearningStore(): {
 
   const reset = useCallback(() => {
     clearLearningState();
-    setState(createInitialState());
+    const nextState = createInitialState();
+    stateRef.current = nextState;
+    setState(nextState);
   }, []);
 
   const submitSignals = useCallback((signals: PracticeSignal[]) => {
@@ -166,11 +173,14 @@ export function useLearningStore(): {
       `${signals.length} reviewed practice signal${signals.length === 1 ? "" : "s"} added without raw task content.`,
       { signalCount: signals.length, rawTaskContentShared: false },
     );
-    setState((current) => ({
+    const current = stateRef.current;
+    const nextState: LearningState = {
       ...current,
       signals,
       events: [...current.events, event],
-    }));
+    };
+    stateRef.current = nextState;
+    setState(nextState);
     return { eventId: event.id };
   }, []);
 
@@ -185,14 +195,14 @@ export function useLearningStore(): {
     const event = createEvent(
       "capsule_published",
       "codex",
-      `Published “${capsule.title}” to the shared learning canvas.`,
+      `Published “${capsule.title}” as today’s lesson.`,
       { capsuleId: capsule.id, focus: capsule.focus },
     );
 
-    setState((previous) => ({
-      ...previous,
+    const nextState: LearningState = {
+      ...current,
       activeCapsule: capsule,
-      journey: previous.journey.map((entry) =>
+      journey: current.journey.map((entry) =>
         entry.id === "journey-today"
           ? {
               ...entry,
@@ -207,10 +217,54 @@ export function useLearningStore(): {
         status: "ready",
         detail: "A new capsule is active; no desktop follow-up is queued yet.",
       },
-      events: [...previous.events, event],
-    }));
+      events: [...current.events, event],
+    };
+    stateRef.current = nextState;
+    setState(nextState);
     return { capsuleId: capsule.id, eventId: event.id };
   }, []);
+
+  const addLearningModule = useCallback(
+    (capsuleId: string, moduleInput: LearningModuleInput) => {
+      const capsule = stateRef.current.activeCapsule;
+      if (capsule.id !== capsuleId) {
+        throw new Error("That capsule is no longer active.");
+      }
+      if ((capsule.learningModules ?? []).length >= 2) {
+        throw new Error("A daily lesson can contain at most two optional modules.");
+      }
+
+      const moduleId = makeId("module");
+      const module =
+        moduleInput.kind === "video"
+          ? { ...moduleInput, id: moduleId, provider: "YouTube" as const }
+          : { ...moduleInput, id: moduleId };
+      const event = createEvent(
+        "learning_module_added",
+        "codex",
+        `Added an optional ${module.kind.replace("_", " ")} to today’s lesson.`,
+        { capsuleId, moduleId, moduleKind: module.kind },
+      );
+
+      const current = stateRef.current;
+      const nextState: LearningState = {
+        ...current,
+        activeCapsule: {
+          ...current.activeCapsule,
+          learningModules: [
+            ...(current.activeCapsule.learningModules ?? []),
+            module,
+          ],
+        },
+        events: [...current.events, event],
+      };
+      stateRef.current = nextState;
+      setState(nextState);
+
+      return { moduleId, eventId: event.id };
+    },
+    [],
+  );
 
   const recordChoice = useCallback((capsuleId: string, choiceId: string) => {
     const capsule = stateRef.current.activeCapsule;
@@ -227,7 +281,8 @@ export function useLearningStore(): {
       { capsuleId, choiceId, correct: choice.correct },
     );
 
-    setState((current) => ({
+    const current = stateRef.current;
+    const nextState: LearningState = {
       ...current,
       activeCapsule: {
         ...current.activeCapsule,
@@ -243,7 +298,9 @@ export function useLearningStore(): {
         })),
       },
       events: [...current.events, event],
-    }));
+    };
+    stateRef.current = nextState;
+    setState(nextState);
 
     return {
       correct: choice.correct,
@@ -257,8 +314,11 @@ export function useLearningStore(): {
     if (capsule.id !== capsuleId) {
       throw new Error("That capsule is no longer active.");
     }
-    if (!capsule.selectedChoiceId) {
-      throw new Error("Complete the scenario before finishing the capsule.");
+    const selectedChoice = capsule.choices.find(
+      (choice) => choice.id === capsule.selectedChoiceId,
+    );
+    if (!selectedChoice?.correct) {
+      throw new Error("Choose the recommended answer before finishing the lesson.");
     }
 
     const completedAt = new Date().toISOString();
@@ -269,7 +329,8 @@ export function useLearningStore(): {
       { capsuleId, proof: capsule.practiceContract.proof },
     );
 
-    setState((current) => ({
+    const current = stateRef.current;
+    const nextState: LearningState = {
       ...current,
       activeCapsule: {
         ...current.activeCapsule,
@@ -289,7 +350,9 @@ export function useLearningStore(): {
           : entry,
       ),
       events: [...current.events, event],
-    }));
+    };
+    stateRef.current = nextState;
+    setState(nextState);
 
     return { completedAt, eventId: event.id };
   }, []);
@@ -299,6 +362,9 @@ export function useLearningStore(): {
       const capsule = stateRef.current.activeCapsule;
       if (capsule.id !== capsuleId) {
         throw new Error("That capsule is no longer active.");
+      }
+      if (capsule.status !== "completed") {
+        throw new Error("Finish the lesson before scheduling a reminder.");
       }
       const event = createEvent(
         "desktop_follow_up_queued",
@@ -311,23 +377,28 @@ export function useLearningStore(): {
         },
       );
 
-      setState((current) => ({
+      const current = stateRef.current;
+      const queuedState: LearningState = {
         ...current,
         desktopBridge: {
           status: "queued",
           detail: "Sending the practice contract to the desktop journey…",
         },
         events: [...current.events, event],
-      }));
+      };
+      stateRef.current = queuedState;
+      setState(queuedState);
 
       const result = await publishLearningEvent(event);
-      setState((current) => ({
-        ...current,
+      const syncedState: LearningState = {
+        ...stateRef.current,
         desktopBridge: {
           status: result.mode === "local-queue" ? "queued" : "synced",
           detail: result.detail,
         },
-      }));
+      };
+      stateRef.current = syncedState;
+      setState(syncedState);
       return { eventId: result.eventId, mode: result.mode, detail: result.detail };
     },
     [],
@@ -340,6 +411,7 @@ export function useLearningStore(): {
       reset,
       submitSignals,
       publishCapsule,
+      addLearningModule,
       recordChoice,
       completeCapsule,
       queueDesktopFollowUp,
