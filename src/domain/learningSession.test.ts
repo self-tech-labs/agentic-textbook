@@ -7,14 +7,19 @@ import {
   publishCapsuleTransition,
   queueDesktopFollowUpTransition,
   recordChoiceTransition,
+  recordPracticeCoachingTransition,
+  resolvePracticeReviewTransition,
   resetLearningSession,
   restoreLearningState,
   retryJourneySyncTransition,
   submitSignalsTransition,
+  sharePracticeAttemptTransition,
+  withdrawPracticeConsentTransition,
 } from "./learningSession";
 import type { LearningSessionDependencies } from "./learningSession";
 import type {
   ContextReceiptProvenance,
+  ContextPackPlacement,
   LearningModuleInput,
   LearningState,
   OgramInjectedContext,
@@ -39,6 +44,25 @@ function correctChoiceId(state: LearningState): string {
   const choice = state.activeCapsule.choices.find((candidate) => candidate.correct);
   if (!choice) throw new Error("The fixture must contain a correct choice.");
   return choice.id;
+}
+
+function decisionCapsuleState(
+  dependencies: LearningSessionDependencies,
+): LearningState {
+  return publishCapsuleTransition(
+    createInitialLearningState(dependencies),
+    { focus: "task_shaping" },
+    dependencies,
+  ).state;
+}
+
+function expectedPlacements(state: LearningState): ContextPackPlacement[] {
+  const instrument = state.activeCapsule.practiceInstrument;
+  if (!instrument) throw new Error("The fixture must contain a shared instrument.");
+  return instrument.cards.map((card) => ({
+    cardId: card.id,
+    zone: card.expectedZone,
+  }));
 }
 
 function productionContext(): OgramInjectedContext {
@@ -334,7 +358,7 @@ describe("learningSession", () => {
 
   it("rejects optional modules once the learner has completed the capsule", () => {
     const dependencies = deterministicDependencies();
-    const initial = createInitialLearningState(dependencies);
+    const initial = decisionCapsuleState(dependencies);
     const selected = recordChoiceTransition(
       initial,
       initial.activeCapsule.id,
@@ -362,6 +386,246 @@ describe("learningSession", () => {
       ),
     ).toThrow("only be added to an active capsule");
     expect(completed.state.events.at(-1)?.type).toBe("training_completed");
+  });
+
+  it("shares only an explicit immutable practice revision and lets the learner withdraw access", () => {
+    const dependencies = deterministicDependencies("share");
+    const initial = createInitialLearningState(dependencies);
+    const placements = expectedPlacements(initial);
+    placements.find((placement) => placement.cardId === "done_when")!.zone =
+      "leave";
+
+    expect(() =>
+      completeCapsuleTransition(
+        initial,
+        initial.activeCapsule.id,
+        undefined,
+        dependencies,
+      ),
+    ).toThrow("Complete the shared practice");
+
+    const shared = sharePracticeAttemptTransition(
+      initial,
+      initial.activeCapsule.id,
+      placements,
+      dependencies,
+    );
+    expect(shared.state.activeCapsule.collaboration).toMatchObject({
+      phase: "awaiting_review",
+      consent: "granted",
+      attemptRevision: 1,
+    });
+    expect(shared.state.events.at(-1)).toMatchObject({
+      type: "practice_attempt_shared",
+      actor: "learner",
+      payload: {
+        attemptRevision: 1,
+        cardCount: 8,
+        availableForAgentReview: true,
+        consentGranted: true,
+        rawTaskContentShared: false,
+      },
+    });
+    expect(shared.state.events.at(-1)?.payload).not.toHaveProperty("placements");
+    expect(() =>
+      publishCapsuleTransition(
+        shared.state,
+        { focus: "thread_hygiene" },
+        dependencies,
+      ),
+    ).toThrow("learner has started this shared practice");
+
+    const withdrawn = withdrawPracticeConsentTransition(
+      shared.state,
+      shared.state.activeCapsule.id,
+      dependencies,
+    );
+    expect(withdrawn.state.activeCapsule.collaboration).toMatchObject({
+      phase: "drafting",
+      consent: "private",
+    });
+    expect(withdrawn.state.events.at(-1)).toMatchObject({
+      type: "practice_consent_withdrawn",
+      actor: "learner",
+      payload: {
+        attemptRevision: 1,
+        accessRevoked: true,
+      },
+    });
+    expect(() =>
+      recordPracticeCoachingTransition(
+        withdrawn.state,
+        withdrawn.state.activeCapsule.id,
+        1,
+        "reconsider_card",
+        "done_when",
+        dependencies,
+      ),
+    ).toThrow("has not granted access");
+
+    const capped = clone(initial);
+    capped.activeCapsule.collaboration!.attemptRevision = 12;
+    expect(() =>
+      sharePracticeAttemptTransition(
+        capped,
+        capped.activeCapsule.id,
+        expectedPlacements(capped),
+        dependencies,
+      ),
+    ).toThrow("at most 12 shared revisions");
+  });
+
+  it("supports revision-bound coaching, learner resolution, reinspection, and readiness", () => {
+    const dependencies = deterministicDependencies("turns");
+    const initial = createInitialLearningState(dependencies);
+    const firstPlacements = expectedPlacements(initial);
+    firstPlacements.find(
+      (placement) => placement.cardId === "full_conversation",
+    )!.zone = "carry";
+    const firstShare = sharePracticeAttemptTransition(
+      initial,
+      initial.activeCapsule.id,
+      firstPlacements,
+      dependencies,
+    );
+    expect(() =>
+      recordPracticeCoachingTransition(
+        firstShare.state,
+        firstShare.state.activeCapsule.id,
+        1,
+        "confirm_ready",
+        null,
+        dependencies,
+      ),
+    ).toThrow("still contains a misplaced");
+
+    const coached = recordPracticeCoachingTransition(
+      firstShare.state,
+      firstShare.state.activeCapsule.id,
+      1,
+      "reconsider_card",
+      "full_conversation",
+      dependencies,
+    );
+    expect(coached.state.activeCapsule.collaboration).toMatchObject({
+      phase: "revision_requested",
+      consent: "consumed",
+    });
+    expect(coached.state.events.at(-1)?.payload).toMatchObject({
+      attemptRevision: 1,
+      move: "reconsider_card",
+      cardId: "full_conversation",
+      ready: false,
+    });
+    expect(coached.state.events.at(-1)?.payload).not.toHaveProperty("message");
+    expect(() =>
+      recordPracticeCoachingTransition(
+        coached.state,
+        coached.state.activeCapsule.id,
+        1,
+        "reconsider_card",
+        "full_conversation",
+        dependencies,
+      ),
+    ).toThrow("has not granted access");
+
+    const reviewId = coached.result.reviewId;
+    const resolved = resolvePracticeReviewTransition(
+      coached.state,
+      coached.state.activeCapsule.id,
+      reviewId,
+      "accepted",
+      dependencies,
+    );
+    expect(resolved.state.events.at(-1)).toMatchObject({
+      type: "practice_review_resolved",
+      actor: "learner",
+      payload: {
+        attemptRevision: 1,
+        reviewId,
+        resolution: "accepted",
+      },
+    });
+    const secondShare = sharePracticeAttemptTransition(
+      resolved.state,
+      resolved.state.activeCapsule.id,
+      expectedPlacements(resolved.state),
+      dependencies,
+    );
+    expect(secondShare.result.attemptRevision).toBe(2);
+    expect(() =>
+      recordPracticeCoachingTransition(
+        secondShare.state,
+        secondShare.state.activeCapsule.id,
+        1,
+        "confirm_ready",
+        null,
+        dependencies,
+      ),
+    ).toThrow("is stale");
+
+    const verified = recordPracticeCoachingTransition(
+      secondShare.state,
+      secondShare.state.activeCapsule.id,
+      2,
+      "confirm_ready",
+      null,
+      dependencies,
+    );
+    expect(verified.result.ready).toBe(true);
+    expect(verified.state.activeCapsule.collaboration).toMatchObject({
+      phase: "ready",
+      consent: "consumed",
+      attemptRevision: 2,
+    });
+    const completed = completeCapsuleTransition(
+      verified.state,
+      verified.state.activeCapsule.id,
+      undefined,
+      dependencies,
+    );
+    expect(completed.state.activeCapsule.status).toBe("completed");
+  });
+
+  it("rejects malformed packs, misleading coaching, and cached active consent", () => {
+    const dependencies = deterministicDependencies("guards");
+    const initial = createInitialLearningState(dependencies);
+    const valid = expectedPlacements(initial);
+    expect(() =>
+      sharePracticeAttemptTransition(
+        initial,
+        initial.activeCapsule.id,
+        valid.slice(1),
+        dependencies,
+      ),
+    ).toThrow("Place all 8");
+    const shared = sharePracticeAttemptTransition(
+      initial,
+      initial.activeCapsule.id,
+      valid.map((placement) =>
+        placement.cardId === "done_when"
+          ? { ...placement, zone: "leave" }
+          : placement,
+      ),
+      dependencies,
+    );
+    expect(() =>
+      recordPracticeCoachingTransition(
+        shared.state,
+        shared.state.activeCapsule.id,
+        1,
+        "reconsider_card",
+        "outcome",
+        dependencies,
+      ),
+    ).toThrow("must target a card that is misplaced");
+
+    const restored = restoreLearningState(shared.state, dependencies);
+    expect(restored.activeCapsule.collaboration).toMatchObject({
+      phase: "drafting",
+      consent: "private",
+      attemptRevision: 1,
+    });
   });
 
   it("advances every learning mutation without changing the session identity", () => {
@@ -424,7 +688,7 @@ describe("learningSession", () => {
 
   it("normalizes the learner contract and records an explicit, non-duplicable reminder", () => {
     const dependencies = deterministicDependencies();
-    const initial = createInitialLearningState(dependencies);
+    const initial = decisionCapsuleState(dependencies);
     const selected = recordChoiceTransition(
       initial,
       initial.activeCapsule.id,
@@ -487,7 +751,7 @@ describe("learningSession", () => {
 
   it("rejects incomplete contracts before committing completion", () => {
     const dependencies = deterministicDependencies();
-    const initial = createInitialLearningState(dependencies);
+    const initial = decisionCapsuleState(dependencies);
     const selected = recordChoiceTransition(
       initial,
       initial.activeCapsule.id,
@@ -537,6 +801,32 @@ describe("learningSession", () => {
     const brokenModuleText = clone(withModule);
     const cachedTextModule = brokenModuleText.activeCapsule.learningModules?.[0];
     if (cachedTextModule) cachedTextModule.title = "x";
+    const readyCacheDependencies = deterministicDependencies("ready-cache");
+    const readyShare = sharePracticeAttemptTransition(
+      state,
+      state.activeCapsule.id,
+      expectedPlacements(state),
+      readyCacheDependencies,
+    );
+    const readyState = recordPracticeCoachingTransition(
+      readyShare.state,
+      readyShare.state.activeCapsule.id,
+      1,
+      "confirm_ready",
+      null,
+      readyCacheDependencies,
+    ).state;
+    expect(isUsableLearningState(readyState)).toBe(true);
+    const tamperedInstrument = clone(readyState);
+    tamperedInstrument.activeCapsule.practiceInstrument!.cards[0]!.expectedZone =
+      "leave";
+    const forgedReady = clone(readyState);
+    forgedReady.activeCapsule.collaboration!.snapshots[0]!.placements.find(
+      (placement) => placement.cardId === "done_when",
+    )!.zone = "leave";
+    const forgedCoachingCopy = clone(readyState);
+    forgedCoachingCopy.activeCapsule.collaboration!.reviews[0]!.message =
+      "Untrusted cached coaching copy.";
 
     expect(isUsableLearningState(receiptMismatch)).toBe(false);
     expect(isUsableLearningState(brokenJourney)).toBe(false);
@@ -544,6 +834,9 @@ describe("learningSession", () => {
     expect(isUsableLearningState(brokenSync)).toBe(false);
     expect(isUsableLearningState(brokenModule)).toBe(false);
     expect(isUsableLearningState(brokenModuleText)).toBe(false);
+    expect(isUsableLearningState(tamperedInstrument)).toBe(false);
+    expect(isUsableLearningState(forgedReady)).toBe(false);
+    expect(isUsableLearningState(forgedCoachingCopy)).toBe(false);
 
     const restored = restoreLearningState(
       receiptMismatch,

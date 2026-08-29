@@ -1,8 +1,10 @@
 # Ogram Learn
 
-> Declared context in. Bounded practice out. Durable proof forward.
+> Declared context in. Shared practice in motion. Durable proof forward.
 
-Ogram Learn turns patterns from authorized Codex work into one short practice for the learner’s role. The agent can gather and structure context, WebMCP can build the current capsule on the live page, and Ogram can record the resulting learning journey. The learner keeps the two decisions that matter: what they would do and what practice contract they are willing to carry into work.
+Ogram Learn turns patterns from authorized Codex work into one short practice for the learner’s role. Its flagship lesson is a shared context-packing instrument: the learner composes a private draft on the live page, explicitly shares immutable revision `r1`, Codex adds one bounded margin note, and the learner decides how to revise and share `r2`. Ogram then records the resulting learning journey.
+
+This is where WebMCP is indispensable rather than decorative. Chat alone can explain thread hygiene; a static web app can provide a quiz. WebMCP lets the person, agent, and page inspect and change one visible, revisioned object over several turns without handing the agent control of the learner’s work.
 
 This repository is a public, no-auth demonstration. Its Ogram profile, Codex observations, and prior journey are visibly synthetic. It does not require an OpenAI API key, and the practice-signal contract has no field for raw Codex conversations or free-text evidence.
 
@@ -15,7 +17,11 @@ flowchart LR
   C[Prior learning journey] --> R
   R --> K[Versioned capsule compiler]
   K --> P[Visible five-minute practice]
-  P --> H[Learner choice and editable contract]
+  P --> D[Private learner draft]
+  D -->|explicit share| R1[Immutable attempt r1]
+  R1 -->|one bounded Codex note| D
+  D -->|learner revises and shares| R2[Immutable attempt r2]
+  R2 --> H[Learner-owned practice contract]
   H --> O[Append-only event outbox]
   O --> S[Ogram system of record]
   S -->|later observed behaviour| C
@@ -25,7 +31,8 @@ The page makes this pipeline inspectable:
 
 - **Gather context:** one receipt records the three inputs, their provenance IDs, versions, timestamps, and synthetic or production environment.
 - **Compile practice:** a deterministic Ogram recipe combines the receipt with a bounded focus, difficulty, practice mode, and proof mode.
-- **Record proof:** every mutation advances one stable v3 learning session, emits an ordered event, and reports whether that event is synced, queued, or needs attention.
+- **Co-manipulate visibly:** a learner shares one frozen attempt, Codex annotates that exact revision once, and the learner alone changes the pack before sharing again.
+- **Record proof:** every mutation advances one stable v4 learning session, emits an ordered event, and reports whether that event is synced, queued, or needs attention.
 
 The browser is the interaction surface and a recoverable cache/outbox. In production, the authenticated Ogram backend is the system of record.
 
@@ -48,7 +55,7 @@ When a capsule is published, its immutable context receipt contains only:
 
 Raw prompts, responses, task titles, source files, paths, credentials, and names or organizations found in reviewed tasks are outside the signal contract. Learner identity and organization can appear only as separately authorized Ogram profile context.
 
-## Six top-level WebMCP tools
+## Seven top-level WebMCP tools
 
 The tools are registered on the top-level page with the current promise-based WebMCP imperative API and abort cleanly across React lifecycle changes. The interface reports a tool as live only after its registration promise resolves. TypeBox schemas are the single source for runtime validation and TypeScript input types.
 
@@ -59,9 +66,14 @@ The tools are registered on the top-level page with the current promise-based We
 | `ogram_get_learning_journey` | Reads the active capsule, prior proof, assignment, receipt, revision, and delivery state. |
 | `ogram_submit_practice_signals` | Commits only structured counts and waits until the resulting revision is visible. |
 | `ogram_publish_daily_capsule` | Compiles one capsule from a committed focus and bounded compiler options. |
-| `ogram_add_learning_module` | Selects one Ogram-owned walkthrough or mini-game template; it accepts no teaching copy or URL. |
+| `ogram_inspect_practice_attempt` | Reads the exact immutable context-pack revision the learner explicitly shared; it fails closed outside that revision’s granted review cycle. |
+| `ogram_record_coaching_move` | Attaches one page-authored note to that exact revision or confirms it ready; it accepts no prose and moves zero cards. |
 
-All mutations return an event ID and committed revision. Tool success means the page state is committed and verifiable, not merely that a callback was requested. Answers, contract edits, capsule completion, and reminder consent are intentionally absent from the tool list; they remain visible learner actions.
+All mutations return an event ID and committed revision. Tool success means the page state is committed and verifiable, not merely that a callback was requested. Identical retries of signal submission, capsule publication, and a coaching write return the existing durable `eventId` and revision with `replayed: true`; they do not create a second mutation. A conflicting coaching retry against an already reviewed attempt is rejected.
+
+`ogram_inspect_practice_attempt` exposes only eight page-owned category IDs, labels, descriptions, and their current `carry`/`leave` zones. It excludes raw task content, private draft movements, expected answers, prompts, responses, files, paths, people, and client data.
+
+The grant opens one review cycle scoped to one frozen revision. Codex may inspect that exact snapshot and record one coaching move; recording the move consumes the grant and closes the cycle. The learner can withdraw before coaching, and reload revokes an outstanding grant. Codex cannot move a card, write arbitrary coaching copy, resolve its own note, edit the practice contract, complete the capsule, or request a reminder. Those remain visible learner actions.
 
 The development/test registry at `window.__OGRAM_WEBMCP_TOOLS__` supports deterministic browser tests. The real path uses `document.modelContext.registerTool()`.
 
@@ -76,21 +88,21 @@ The compiler combines a context receipt with:
 - `decision` or `rehearsal` practice;
 - `next_action` or `observed_habit` proof.
 
-Every capsule records its recipe ID, recipe version, receipt ID, and selected modes. The output is deterministic for the same inputs apart from capsule identity and creation time. Optional modules are selected only by Ogram-owned template ID; WebMCP never accepts module prose, URLs, HTML, CSS, JavaScript, iframe markup, screenshots, or recordings.
+Every capsule records its recipe ID, recipe version, receipt ID, and selected modes. The output is deterministic for the same inputs apart from capsule identity and creation time. The `thread_hygiene` recipe includes the shared context-packing instrument as its core practice; it is not an agent-selected mini-game. The other focus recipes retain their short consequence exercise. The challenge-facing WebMCP surface deliberately has no generic module-addition tool and never accepts lesson prose, URLs, HTML, CSS, JavaScript, iframe markup, screenshots, or recordings.
 
 ## The learner’s authority
 
 The lesson follows three movements:
 
 1. **Notice** the pattern, rule, provenance, and a focus-specific visual explanation.
-2. **Choose** an action and compare its consequence.
+2. **Practice** on the live canvas. In the flagship flow, the learner composes → shares → receives one Codex note → revises → shares again. Other focus recipes use a bounded consequence choice.
 3. **Apply** by editing a cue → response → proof contract and optionally requesting a reminder.
 
-Only the learner can choose, edit, and complete. Completion adds the practice to the Learning Ledger; it does not pretend that transfer has already happened. A later observed or confirmed behaviour can become proof.
+Only the learner can place cards, accept or dismiss a note, edit the contract, and complete. The interface keeps a visible `r1 → r2` comparison and states that Codex moved zero cards. Completion adds the practice to the Learning Ledger; it does not pretend that transfer has already happened. A later observed or confirmed behaviour can become proof.
 
 ## Journey recording
 
-State version 3 gives the learning run one stable session ID and a monotonic revision. Each mutation creates an append-only event envelope containing its event ID, idempotency key, session ID, revision, actor, timestamp, optional capsule ID, and privacy-minimized data.
+State version 4 gives the learning run one stable session ID and a monotonic revision. It adds immutable practice snapshots, one bounded review per attempt revision, and explicit `private`, `granted`, and `consumed` consent states. Collaboration emits four privacy-minimized facts: attempt shared, consent withdrawn, coaching recorded, and review resolved. Each mutation creates an append-only event envelope containing its event ID, idempotency key, session ID, revision, actor, timestamp, optional capsule ID, and allowlisted data.
 
 The transport always enqueues first, then flushes in order:
 
@@ -123,13 +135,14 @@ npm run build
 
 ## Test the WebMCP path
 
-1. Open the page in a browser/host with WebMCP site tools enabled.
-2. Inspect the six available Ogram tools.
-3. Ask the agent: **“Review the Codex work I authorize and use this page’s tools to build the one practice I need today.”**
-4. Verify the source receipt before the lesson, then make the scenario choice and edit the practice contract yourself.
-5. Inspect the recently used tools and the page’s journey-delivery status.
-
-For a browser-only demonstration, choose **Run the live build**. That control calls the same tool definitions with synthetic structured counts; it does not bypass the WebMCP action layer.
+1. Open the page in ChatGPT Work with native WebMCP site tools enabled.
+2. Inspect the seven registered Ogram site tools.
+3. Ask ChatGPT Work: **“Review the Codex work I authorize and use this page’s native site tools to build the one practice I need today.”**
+4. Open the Practice step, place all eight structural cards, deliberately leave one useful card on the wrong side, tick the per-revision consent box, and share `r1`.
+5. Ask: **“Inspect my shared Ogram attempt and leave one coaching move.”** Codex must inspect `r1` and attach one page-owned note; it must not move a card.
+6. Choose **Use this note** or **Keep my placement**. Revise privately, grant access again, and share `r2`.
+7. Let Codex inspect `r2` and call `confirm_ready`. Then edit and save the learner-owned cue → response → proof contract.
+8. Inspect the visible turn trace, `r1 → r2` comparison, recently used tools, and journey-delivery status.
 
 Current host constraints and setup instructions belong to the official [OpenAI site-tools guide](https://learn.chatgpt.com/docs/webmcp) and [Chrome WebMCP documentation](https://developer.chrome.com/docs/ai/webmcp).
 
@@ -142,7 +155,7 @@ The technology choices are deliberately small:
 - React + TypeScript + Vite for the visible application;
 - TypeBox for one runtime/type-level schema definition;
 - the native, promise-based WebMCP registration API with abortable lifecycle cleanup;
-- native browser storage for the recoverable v3 cache and delivery outbox;
+- native browser storage for the recoverable v4 cache and delivery outbox;
 - an Ajv-generated standalone validator for the public event contract at the transport boundary;
 - Vitest and Testing Library for domain, adapter, transport, registration, and interaction tests.
 
@@ -152,13 +165,14 @@ The technology choices are deliberately small:
 src/domain/contextEngine.ts       Immutable context receipts and provenance validation
 src/domain/signalEngine.ts        Structured counts → page-owned learning signals
 src/domain/lessonEngine.ts        Deterministic, versioned capsule recipes
+src/domain/practiceEngine.ts      Context-pack rubric and page-owned coaching copy
 src/domain/learningSession.ts     Pure, revisioned learning-state transitions
 src/hooks/useLearningStore.ts     React commit receipts, persistence, and outbox effects
 src/lib/webmcpSchemas.ts          TypeBox input contracts
-src/lib/webmcp.ts                 Six tool definitions and committed-state responses
+src/lib/webmcp.ts                 Seven tool definitions and committed-state responses
 src/lib/journeyTransport.ts       Ordered idempotent outbox and delivery channels
 src/generated/                    Build-generated standalone event validator
-src/components/                  Learning Ledger, receipt, lesson, and WebMCP bridge
+src/components/                  Shared instrument, ledger, receipt, lesson, and WebMCP bridge
 contracts/                       Public backend/desktop event boundary
 docs/                            Architecture, design principles, and demo script
 ```

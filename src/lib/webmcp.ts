@@ -1,23 +1,23 @@
 import type { TSchema } from "@sinclair/typebox";
+import { evaluateContextPack } from "../domain/practiceEngine";
 import { compilePracticeSignals } from "../domain/signalEngine";
 import { signalIds } from "../domain/types";
 import type {
   CapsuleDraftInput,
-  LearningModuleInput,
+  ContextPackCardId,
+  ContextPackCoachingMove,
   LearningState,
   PracticeSignal,
 } from "../domain/types";
 import {
   EmptyInputSchema,
-  LearningModuleInputSchema,
+  InspectPracticeAttemptInputSchema,
+  PracticeCoachingInputSchema,
   PracticeReviewInputSchema,
   PublishCapsuleInputSchema,
   parseToolInput,
 } from "./webmcpSchemas";
-import type {
-  LearningModuleToolInput,
-  PublishCapsuleInput,
-} from "./webmcpSchemas";
+import type { PracticeCoachingInput, PublishCapsuleInput } from "./webmcpSchemas";
 
 export interface WebMcpToolDefinition {
   name: string;
@@ -51,10 +51,16 @@ export interface LearningToolActions {
     capsuleId: string;
     eventId: string;
   };
-  addLearningModule(
+  recordPracticeCoaching(
     capsuleId: string,
-    module: LearningModuleInput,
-  ): RevisionResult & { moduleId: string; eventId: string };
+    attemptRevision: number,
+    move: ContextPackCoachingMove,
+    cardId: ContextPackCardId | null,
+  ): RevisionResult & {
+    reviewId: string;
+    eventId: string;
+    ready: boolean;
+  };
 }
 
 async function awaitCommittedRevision<T extends RevisionResult>(
@@ -67,115 +73,6 @@ async function awaitCommittedRevision<T extends RevisionResult>(
   return actions.awaitRevision(result.revision, result.eventId);
 }
 
-function miniGameFromTemplate(
-  template: "context_packing" | "reasoning_match",
-  title: string,
-  description: string,
-): LearningModuleInput {
-  if (template === "context_packing") {
-    return {
-      kind: "mini_game",
-      title,
-      description,
-      prompt:
-        "You are forking an approved plan into a new production task. What should you bring across?",
-      options: [
-        {
-          id: "everything",
-          label: "The full conversation, including rejected ideas",
-          feedback:
-            "That brings the clutter with you. Carry only the decisions the next task needs.",
-          correct: false,
-        },
-        {
-          id: "decision_pack",
-          label: "Approved decisions, constraints, and the definition of done",
-          feedback:
-            "That is the useful context pack: enough to work well, without carrying the whole exploration.",
-          correct: true,
-        },
-        {
-          id: "headline_only",
-          label: "Only the name of the new deliverable",
-          feedback:
-            "That is clean, but too thin. The new task still needs the agreed boundaries.",
-          correct: false,
-        },
-      ],
-    };
-  }
-
-  return {
-    kind: "mini_game",
-    title,
-    description,
-    prompt: "Which task is most likely to benefit from deeper reasoning?",
-    options: [
-      {
-        id: "short_rewrite",
-        label: "Tighten a short email whose facts are already final",
-        feedback:
-          "This is narrow and easy to review, so a fast model with light reasoning should be enough.",
-        correct: false,
-      },
-      {
-        id: "architecture_change",
-        label: "Plan a multi-file change with unclear dependencies and tests",
-        feedback:
-          "This has ambiguity, connected decisions, and a higher verification cost. Deeper reasoning can change the outcome.",
-        correct: true,
-      },
-      {
-        id: "format_list",
-        label: "Turn a finished list into a clean table",
-        feedback:
-          "This is a bounded transformation. More reasoning is unlikely to add much value.",
-        correct: false,
-      },
-    ],
-  };
-}
-
-function learningModuleFromToolInput(
-  input: LearningModuleToolInput,
-): LearningModuleInput {
-  if (input.templateId === "clean_handoff") {
-    return {
-      kind: "walkthrough",
-      title: "Build a clean handoff",
-      description:
-        "A short Ogram rehearsal for making a new task useful without carrying the whole exploration.",
-      steps: [
-        "Name the approved outcome in one sentence.",
-        "Carry only decisions, constraints, and the definition of done.",
-        "State what the new task must verify before it ships.",
-      ],
-    };
-  }
-  if (input.templateId === "effort_triage") {
-    return {
-      kind: "walkthrough",
-      title: "Triage the work before choosing effort",
-      description:
-        "Use three Ogram checks to match model effort to the real shape of the task.",
-      steps: [
-        "Name the ambiguity that could change the result.",
-        "Count the connected files, systems, or decisions.",
-        "Choose the lightest effort that can verify the outcome.",
-      ],
-    };
-  }
-  return miniGameFromTemplate(
-    input.templateId,
-    input.templateId === "context_packing"
-      ? "Pack only the context worth keeping"
-      : "Match effort to the task",
-    input.templateId === "context_packing"
-      ? "A second lens for deciding what should cross into a clean production fork."
-      : "A quick check for when deeper reasoning can materially change the outcome.",
-  );
-}
-
 function publicJourney(state: LearningState) {
   return {
     revision: state.revision,
@@ -186,6 +83,14 @@ function publicJourney(state: LearningState) {
       status: state.activeCapsule.status,
       compiler: state.activeCapsule.compiler,
       moduleCount: state.activeCapsule.learningModules?.length ?? 0,
+      collaboration: state.activeCapsule.collaboration
+        ? {
+            phase: state.activeCapsule.collaboration.phase,
+            attemptRevision: state.activeCapsule.collaboration.attemptRevision,
+            consent: state.activeCapsule.collaboration.consent,
+            reviewCount: state.activeCapsule.collaboration.reviews.length,
+          }
+        : null,
     },
     journey: state.journey,
     assignedTraining: state.context.requiredTraining,
@@ -258,17 +163,19 @@ export function createOgramLearningTools(
         parseToolInput(EmptyInputSchema, input);
         return {
           mission:
-            "Turn recent Codex working habits into one practical lesson on the visible Ogram page.",
+            "Turn recent Codex thread-hygiene patterns into one live context-packing lesson on the visible Ogram page.",
           consentBoundary:
             "Review only tasks the learner authorized. Submit structured counts only—never prompts, outputs, file contents, task titles, people, companies, or client data.",
           workflow: [
             "Read the Ogram context and current learning journey.",
             "Inspect at most 8 authorized recent tasks from the last 7 days with your own Codex task tools.",
             "Submit 1–4 structured observations with occurrence counts, sample size, level, and confidence.",
-            "Publish one capsule from a committed observation and optionally attach one bounded learning module.",
-            "Invite the learner to complete the visible exercise; learner answers and completion remain page actions.",
+            "Publish the thread-hygiene capsule from its committed observation. This challenge branch intentionally exposes one flagship shared instrument.",
+            "Wait for the learner to compose and explicitly share one live practice revision.",
+            "Inspect that exact revision and add one bounded coaching move. The learner revises, re-shares, and remains the only actor who can finish.",
           ],
           signalIds,
+          challengeFocus: "thread_hygiene",
           reviewWindowDays: 7,
           maximumTaskCount: 8,
           rawTaskContentAllowed: false,
@@ -316,11 +223,39 @@ export function createOgramLearningTools(
       execute: (input) => serializeWrite(async () => {
         const parsed = parseToolInput(PracticeReviewInputSchema, input);
         const signals = compilePracticeSignals(parsed.signals);
+        const before = actions.getState();
+        if (JSON.stringify(before.signals) === JSON.stringify(signals)) {
+          const existingEvent = [...before.events]
+            .reverse()
+            .find((event) => event.type === "coaching_signals_submitted");
+          if (!existingEvent) {
+            throw new Error(
+              "The existing practice observations have no durable event receipt.",
+            );
+          }
+          return {
+            ok: true,
+            replayed: true,
+            eventId: existingEvent.id,
+            revision: existingEvent.revision,
+            committedState: {
+              revision: before.revision,
+              signalCount: before.signals.length,
+            },
+            acceptedSignalIds: signals.map((signal) => signal.id),
+            reviewedTaskCount: Math.max(
+              ...signals.map((signal) => signal.sourceTaskCount),
+            ),
+            rawTaskContentStored: false,
+            nextTool: "ogram_publish_daily_capsule",
+          };
+        }
         const result = actions.submitSignals(signals);
         const state = await awaitCommittedRevision(actions, result);
 
         return {
           ok: true,
+          replayed: false,
           eventId: result.eventId,
           revision: result.revision,
           committedState: {
@@ -340,12 +275,61 @@ export function createOgramLearningTools(
       name: "ogram_publish_daily_capsule",
       title: "Publish daily capsule",
       description:
-        "Compile and commit one visible daily practice from a submitted focus. Difficulty, practice mode, and proof mode select bounded Ogram recipes.",
+        "Compile and commit the flagship thread-hygiene context-packing practice. Difficulty, practice mode, and proof mode select bounded Ogram recipes.",
       inputSchema: PublishCapsuleInputSchema,
       annotations: write,
       execute: (input) => serializeWrite(async () => {
         const parsed = parseToolInput(PublishCapsuleInputSchema, input);
-        const draft = capsuleDraft(parsed, actions.getState());
+        const before = actions.getState();
+        const draft = capsuleDraft(parsed, before);
+        const currentCapsule = before.activeCapsule;
+        const sameCompilerRequest =
+          currentCapsule.status === "active" &&
+          currentCapsule.focus === draft.focus &&
+          currentCapsule.compiler.contextReceiptId ===
+            (draft.contextReceiptId ?? before.contextReceipt.receiptId) &&
+          currentCapsule.compiler.difficulty === (draft.difficulty ?? "guided") &&
+          currentCapsule.compiler.practiceMode ===
+            (draft.practiceMode ?? "decision") &&
+          currentCapsule.compiler.proofMode ===
+            (draft.proofMode ?? "next_action");
+        const existingEvent = [...before.events]
+          .reverse()
+          .find(
+            (event) =>
+              event.type === "capsule_published" &&
+              event.payload?.capsuleId === currentCapsule.id,
+          );
+        const latestSignalEvent = [...before.events]
+          .reverse()
+          .find((event) => event.type === "coaching_signals_submitted");
+        if (
+          sameCompilerRequest &&
+          existingEvent &&
+          (!latestSignalEvent || existingEvent.revision > latestSignalEvent.revision)
+        ) {
+          return {
+            ok: true,
+            replayed: true,
+            eventId: existingEvent.id,
+            revision: existingEvent.revision,
+            capsuleId: currentCapsule.id,
+            capsule: {
+              id: currentCapsule.id,
+              title: currentCapsule.title,
+              focus: currentCapsule.focus,
+              status: currentCapsule.status,
+              durationMinutes: currentCapsule.durationMinutes,
+              compiler: currentCapsule.compiler,
+            },
+            learnerActionRequired:
+              "The learner composes and explicitly shares a context-pack revision through visible page controls.",
+            nextTools: [
+              "ogram_inspect_practice_attempt",
+              "ogram_record_coaching_move",
+            ],
+          };
+        }
         const result = actions.publishCapsule(draft);
         const state = await awaitCommittedRevision(actions, result);
         if (state.activeCapsule.id !== result.capsuleId) {
@@ -354,6 +338,7 @@ export function createOgramLearningTools(
 
         return {
           ok: true,
+          replayed: false,
           eventId: result.eventId,
           revision: result.revision,
           capsuleId: result.capsuleId,
@@ -366,45 +351,187 @@ export function createOgramLearningTools(
             compiler: state.activeCapsule.compiler,
           },
           learnerActionRequired:
-            "The learner completes the scenario through visible page controls.",
+            "The learner composes and explicitly shares a context-pack revision through visible page controls.",
+          nextTools: [
+            "ogram_inspect_practice_attempt",
+            "ogram_record_coaching_move",
+          ],
         };
       }),
     },
     {
-      name: "ogram_add_learning_module",
-      title: "Add learning module",
+      name: "ogram_inspect_practice_attempt",
+      title: "Inspect shared practice revision",
       description:
-        "Commit one Ogram-owned walkthrough or mini-game template to the active capsule. The input accepts no teaching copy or external URL.",
-      inputSchema: LearningModuleInputSchema,
-      annotations: write,
-      execute: (input) => serializeWrite(async () => {
-        const parsed = parseToolInput(LearningModuleInputSchema, input);
-        const module = learningModuleFromToolInput(parsed);
-        const result = actions.addLearningModule(parsed.capsuleId, module);
-        const state = await awaitCommittedRevision(actions, result);
-        const committedModule = state.activeCapsule.learningModules?.find(
-          (candidate) => candidate.id === result.moduleId,
-        );
-        if (!committedModule) {
-          throw new Error("The committed learning module could not be verified.");
+        "Read the exact context-pack revision the learner explicitly shared. Fails closed before consent, after withdrawal, and after one coaching move.",
+      inputSchema: InspectPracticeAttemptInputSchema,
+      annotations: untrustedRead,
+      execute: (input) => {
+        const parsed = parseToolInput(InspectPracticeAttemptInputSchema, input);
+        const state = actions.getState();
+        const capsule = state.activeCapsule;
+        const instrument = capsule.practiceInstrument;
+        const collaboration = capsule.collaboration;
+        if (capsule.id !== parsed.capsuleId || !instrument || !collaboration) {
+          throw new Error("That shared practice instrument is not active.");
         }
-
+        if (
+          collaboration.phase !== "awaiting_review" ||
+          collaboration.consent !== "granted"
+        ) {
+          throw new Error(
+            "Learner consent is not active. Ask the learner to share a revision from the visible page.",
+          );
+        }
+        const snapshot = collaboration.snapshots.at(-1);
+        if (
+          !snapshot ||
+          snapshot.attemptRevision !== collaboration.attemptRevision
+        ) {
+          throw new Error("The consented practice snapshot is unavailable.");
+        }
+        const evaluation = evaluateContextPack(instrument, snapshot.placements);
+        const cardById = new Map(instrument.cards.map((card) => [card.id, card]));
         return {
           ok: true,
-          eventId: result.eventId,
-          revision: result.revision,
-          capsuleId: state.activeCapsule.id,
-          moduleId: result.moduleId,
-          module: {
-            id: committedModule.id,
-            kind: committedModule.kind,
-            title: committedModule.title,
+          capsuleId: capsule.id,
+          attemptRevision: snapshot.attemptRevision,
+          consentScope: "this_revision_only",
+          cards: snapshot.placements.map((placement) => {
+            const card = cardById.get(placement.cardId)!;
+            return {
+              cardId: placement.cardId,
+              label: card.label,
+              description: card.description,
+              zone: placement.zone,
+            };
+          }),
+          rubric: {
+            sufficient: evaluation.indicators.sufficient,
+            lean: evaluation.indicators.lean,
+            private: evaluation.indicators.private,
           },
-          moduleCount: state.activeCapsule.learningModules?.length ?? 0,
-          safety:
-            "The module is rendered by an Ogram-owned component; no executable page code was accepted.",
+          previousBoundedReview: collaboration.reviews.at(-1)
+            ? {
+                attemptRevision: collaboration.reviews.at(-1)!.attemptRevision,
+                move: collaboration.reviews.at(-1)!.move,
+                cardId: collaboration.reviews.at(-1)!.cardId,
+                resolution: collaboration.reviews.at(-1)!.resolution,
+              }
+            : null,
+          privacy: {
+            rawTaskContentShared: false,
+            excluded: [
+              "prompts",
+              "responses",
+              "files",
+              "paths",
+              "people",
+              "client data",
+              "private draft movements",
+            ],
+          },
+          nextTool: "ogram_record_coaching_move",
         };
-      }),
+      },
+    },
+    {
+      name: "ogram_record_coaching_move",
+      title: "Add bounded practice coaching",
+      description:
+        "Attach one page-authored coaching marker to the exact consented revision. Accepts only a card ID or a ready confirmation—never prose or direct card changes.",
+      inputSchema: PracticeCoachingInputSchema,
+      annotations: write,
+      execute: (input) =>
+        serializeWrite(async () => {
+          const parsed = parseToolInput(
+            PracticeCoachingInputSchema,
+            input,
+          ) as PracticeCoachingInput;
+          const cardId =
+            parsed.move === "reconsider_card" ? parsed.cardId : null;
+          const before = actions.getState();
+          const existingReview = before.activeCapsule.collaboration?.reviews.find(
+            (candidate) =>
+              candidate.attemptRevision === parsed.attemptRevision,
+          );
+          if (existingReview) {
+            if (
+              before.activeCapsule.id !== parsed.capsuleId ||
+              existingReview.move !== parsed.move ||
+              existingReview.cardId !== cardId
+            ) {
+              throw new Error(
+                "That revision already has a different bounded coaching move.",
+              );
+            }
+            const existingEvent = before.events.find(
+              (event) =>
+                event.type === "practice_coaching_recorded" &&
+                event.payload?.capsuleId === parsed.capsuleId &&
+                event.payload?.attemptRevision === parsed.attemptRevision,
+            );
+            if (!existingEvent) {
+              throw new Error(
+                "The existing coaching move has no durable event receipt.",
+              );
+            }
+            return {
+              ok: true,
+              replayed: true,
+              eventId: existingEvent.id,
+              revision: existingEvent.revision,
+              capsuleId: before.activeCapsule.id,
+              attemptRevision: parsed.attemptRevision,
+              review: {
+                id: existingReview.id,
+                move: existingReview.move,
+                cardId: existingReview.cardId,
+                message: existingReview.message,
+              },
+              ready: existingReview.move === "confirm_ready",
+              consentConsumed: true,
+              agentMovedCards: 0,
+              learnerActionRequired:
+                existingReview.move === "confirm_ready"
+                  ? "The learner may carry the practice into the human-owned commitment step."
+                  : "The learner can accept, dismiss, or manually respond to this note before sharing a new revision.",
+            };
+          }
+          const result = actions.recordPracticeCoaching(
+            parsed.capsuleId,
+            parsed.attemptRevision,
+            parsed.move,
+            cardId,
+          );
+          const state = await awaitCommittedRevision(actions, result);
+          const review = state.activeCapsule.collaboration?.reviews.find(
+            (candidate) => candidate.id === result.reviewId,
+          );
+          if (!review) {
+            throw new Error("The committed coaching marker could not be verified.");
+          }
+          return {
+            ok: true,
+            replayed: false,
+            eventId: result.eventId,
+            revision: result.revision,
+            capsuleId: state.activeCapsule.id,
+            attemptRevision: parsed.attemptRevision,
+            review: {
+              id: review.id,
+              move: review.move,
+              cardId: review.cardId,
+              message: review.message,
+            },
+            ready: result.ready,
+            consentConsumed: true,
+            agentMovedCards: 0,
+            learnerActionRequired: result.ready
+              ? "The learner may carry the practice into the human-owned commitment step."
+              : "The learner can accept, dismiss, or manually respond to this note before sharing a new revision.",
+          };
+        }),
     },
   ];
 }

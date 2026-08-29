@@ -144,6 +144,67 @@ export interface PracticeContract {
   proof: string;
 }
 
+export const contextPackCardIds = [
+  "outcome",
+  "approved_decision",
+  "constraint",
+  "done_when",
+  "open_question",
+  "rejected_direction",
+  "full_conversation",
+  "sensitive_material",
+] as const;
+
+export type ContextPackCardId = (typeof contextPackCardIds)[number];
+export type ContextPackZone = "carry" | "leave";
+
+export interface ContextPackCard {
+  id: ContextPackCardId;
+  label: string;
+  description: string;
+  expectedZone: ContextPackZone;
+}
+
+export interface ContextPackingInstrument {
+  kind: "context_packing";
+  title: string;
+  prompt: string;
+  cards: ContextPackCard[];
+}
+
+export interface ContextPackPlacement {
+  cardId: ContextPackCardId;
+  zone: ContextPackZone;
+}
+
+export interface SharedContextPackSnapshot {
+  attemptRevision: number;
+  sharedAt: string;
+  placements: ContextPackPlacement[];
+}
+
+export type ContextPackCoachingMove = "reconsider_card" | "confirm_ready";
+export type ContextPackReviewResolution = "pending" | "accepted" | "dismissed";
+
+export interface ContextPackReview {
+  id: string;
+  attemptRevision: number;
+  at: string;
+  move: ContextPackCoachingMove;
+  cardId: ContextPackCardId | null;
+  message: string;
+  resolution: ContextPackReviewResolution;
+}
+
+export interface PracticeCollaboration {
+  phase: "drafting" | "awaiting_review" | "revision_requested" | "ready";
+  /** A single-attempt grant. Cached grants are revoked during restoration. */
+  consent: "private" | "granted" | "consumed";
+  attemptRevision: number;
+  snapshots: SharedContextPackSnapshot[];
+  reviews: ContextPackReview[];
+}
+
 export interface CapsuleCompilerMetadata {
   recipeId: string;
   recipeVersion: string;
@@ -173,6 +234,8 @@ export interface LearningCapsule {
   coachNote: string;
   compiler: CapsuleCompilerMetadata;
   learningModules?: LearningModule[];
+  practiceInstrument?: ContextPackingInstrument;
+  collaboration?: PracticeCollaboration;
 }
 
 export type LearningEventType =
@@ -180,6 +243,10 @@ export type LearningEventType =
   | "coaching_signals_submitted"
   | "capsule_published"
   | "learning_module_added"
+  | "practice_attempt_shared"
+  | "practice_consent_withdrawn"
+  | "practice_coaching_recorded"
+  | "practice_review_resolved"
   | "choice_recorded"
   | "training_completed"
   | "desktop_follow_up_queued";
@@ -234,7 +301,7 @@ export interface ContextReceipt {
 }
 
 export interface LearningState {
-  version: 3;
+  version: 4;
   sessionId: string;
   revision: number;
   context: OgramInjectedContext;

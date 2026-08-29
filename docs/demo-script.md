@@ -1,97 +1,122 @@
-# Demo script — about 2 minutes 45 seconds
+# Jury demo script — 3 minutes
 
-## 0:00–0:20 — Start with the system, not a generic course
+The demo should prove one claim: **Chat can explain a habit; WebMCP lets the agent and learner perform, refine, and verify it together on the live site.** Keep the browser, visible page state, and site-tool receipts in the same recording.
 
-Show the header and the three-stage compilation trace:
+## 0:00–0:20 — Start with the interaction thesis
+
+Show the header, synthetic-context badge, and the live learning canvas.
+
+Voiceover:
+
+> Ogram teaches people to use Codex better, one working habit at a time. This is not a chatbot beside a course. The page is a shared instrument: I manipulate the learning object, Codex inspects only the revision I authorize, and we iterate in public view.
+
+Open **Inspect system** just long enough to show that all seven top-level WebMCP tools are registered. Point out that the instrument uses semantic web controls, while the recorded agent turns run through ChatGPT Work’s native site-tool surface.
+
+## 0:20–0:42 — Establish provenance and the privacy boundary
+
+Open **Inspect context provenance**. Show the three declared sources, opaque IDs, versions, timestamps, and the Used/Excluded summary.
+
+Voiceover:
+
+> Codex can review only tasks I authorize through its own capabilities. The page receives bounded counts and enums, never prompts, responses, task titles, files, paths, people, credentials, or client content. The live exercise uses eight page-owned structural cards, not my raw work.
+
+## 0:42–1:02 — Build through the real action protocol
+
+Ask ChatGPT Work:
+
+> Read this page’s learning mission, context, and journey. Review only the Codex work I authorized, submit the bounded thread-hygiene signals, and publish the flagship practice through the page’s native site tools.
+
+Keep the native tool-call cards visible as ChatGPT Work traverses:
 
 ```text
-Gather context → Compile practice → Record proof
+get mission → get context → submit bounded signals → publish capsule
 ```
 
-Open **Inspect system**. Point to the context environment, six-tool status, and journey recorder.
+Voiceover:
+
+> Codex selects a bounded focus and modes. Ogram’s versioned recipe compiles the lesson and waits for the exact state revision before reporting success. The agent cannot inject markup, code, URLs, or teaching prose.
+
+If a host retry is visible, point out that an identical signal or publication write returns the existing durable event receipt with `replayed: true` instead of creating another mutation.
+
+Open the Practice step using the visible page control.
+
+## 1:02–1:30 — Compose and explicitly share r1
+
+Rapidly place the eight cards into **Carry into fork** or **Leave in source**, but put **Definition of done** in the wrong zone. Point to **Private by default** while moving cards.
+
+Tick:
+
+> Let Codex inspect this frozen revision’s 8 structural cards, zones, and three rubric indicators for one review cycle.
+
+Click **Share as r1**.
 
 Voiceover:
 
-> Generic training starts with a catalogue. Ogram starts with one question: what small practice would change how this person works today? The page is the instrument, and Ogram is the memory.
+> None of those movements were visible to the agent. Sharing freezes an immutable r1 and opens one review cycle scoped to that revision. Codex can inspect r1, but the cycle closes when it records its single coaching move. I can withdraw access before coaching, and a reload revokes the grant.
 
-## 0:20–0:42 — Make the privacy boundary inspectable
+## 1:30–2:02 — Let Codex annotate, never manipulate
 
-Open **Inspect context provenance**. Show the three sources:
+Ask ChatGPT Work:
 
-- Ogram role, workshop, preferences, and assigned training;
-- Codex’s structured pattern review;
-- the prior learning journey.
+> Inspect my shared Ogram attempt and leave one coaching move.
 
-Point out the **Synthetic demonstration** label, opaque provenance IDs, versions, timestamps, and the Used/Excluded summary.
-
-Voiceover:
-
-> This public path is synthetic. In a real run, Codex reviews only the tasks I authorize through its own capabilities. Its review reaches the page as counts and enums—never prompts, responses, task titles, files, paths, task-derived names, or client content. My Ogram profile is a separate consented source.
-
-## 0:42–1:08 — Build through the real action layer
-
-In a WebMCP-capable host, show the six top-level Ogram tools and use this prompt:
-
-> Review the Codex work I authorize and use this page’s tools to build the one practice I need today.
-
-For the deterministic browser recording, click **Run the live build**. Explain that this invokes the same tool definitions with synthetic structured observations:
+Show the two WebMCP calls and their receipts:
 
 ```text
-id · level · confidence · occurrences · sampleSize
+ogram_inspect_practice_attempt({ capsuleId })
+ogram_record_coaching_move({
+  capsuleId,
+  attemptRevision: 1,
+  move: "reconsider_card",
+  cardId: "done_when"
+})
 ```
 
-Show the compilation trace advance from patterns to one capsule.
+Point to the visible **Codex note** pinned to **Definition of done** and the collaboration trace.
 
 Voiceover:
 
-> There is no free-text evidence field. Ogram turns bounded counts into its own evidence language, then waits for the state revision to commit before a write tool reports success.
+> The read is tied to r1 and excludes expected answers, private edits, and raw task content. The write accepts a card ID, not prose; Ogram owns the coaching language and rejects stale or misleading moves. The receipt says `agentMovedCards: 0`, and this revision’s review cycle is now consumed. An identical coaching retry returns this same durable event receipt; a conflicting move is rejected.
 
-## 1:08–1:32 — Show compilation, not generation
+## 2:02–2:31 — Learner revision, new consent, verified r2
 
-Show the newly compiled thread-hygiene capsule and its context-receipt stamp. Point to the focus-specific fork map and the optional context-packing mini-game.
+Click **Use this note**. Show that the learner action changes the private draft. Tick the consent box again and click **Share as r2**.
 
-Voiceover:
+Ask Codex to inspect the new revision. The agent calls:
 
-> Codex selects a focus plus bounded difficulty, practice, and proof modes. A versioned Ogram recipe compiles the actual lesson. The agent cannot inject copy, markup, or executable code. Even the extra game is an Ogram-owned template.
+```text
+ogram_inspect_practice_attempt({ capsuleId })
+ogram_record_coaching_move({
+  capsuleId,
+  attemptRevision: 2,
+  move: "confirm_ready"
+})
+```
 
-Click **See today’s decision**.
-
-## 1:32–1:58 — Keep judgment human
-
-Choose a plausible wrong route first and show its downstream cost. Then choose **Fork the task** and show why that route fits.
-
-Voiceover:
-
-> The agent can prepare the practice, but it cannot answer it. The learner compares consequences and makes the decision through a native page control.
-
-Click **Turn this into a reminder**.
-
-## 1:58–2:25 — Edit the practice contract
-
-Change at least one line in the cue → response → proof editor. Turn the reminder on to make the separate consent visible. Click **Save practice and finish**.
+Show **Ready to fork**, the `r1 → r2` comparison, and the learner/Codex turn trace.
 
 Voiceover:
 
-> The generated contract is a draft. I decide the cue I will recognize, the response I will take, and the observable proof. Completion records my contract; it does not pretend the habit has already changed.
+> This is repeated co-manipulation with asymmetric authority. Codex changes the margin; I change the pack. A stale r1 call now fails, a second review of r2 fails, and the lesson cannot advance until the exact shared revision passes the page-owned rubric.
 
-## 2:25–2:45 — Tell the truth about persistence
+## 2:31–3:00 — Carry the habit into work and show durable truth
 
-Show the completion view, the proof contract, Learning Ledger, and journey status.
-
-For the public demo with no backend configured, point to **queued** and the pending event count. If a management API or native desktop bridge is configured, show **synced** only after acknowledgement.
+Click **Carry the habit forward**. Edit one line in the cue → response → proof contract and save it. Show the Learning Ledger and journey status.
 
 Voiceover:
 
-> Every mutation belongs to one stable learning session and one exact revision. Events enter an ordered, idempotent outbox first. Here they are honestly queued; in production, Ogram’s server is the system of record and later desktop evidence can confirm that the practice happened.
+> The final commitment is still mine. State v4 preserves immutable attempts and append-only learner and Codex events. Delivery enters an ordered, idempotent outbox first, so the public demo says queued unless a configured backend or desktop bridge actually acknowledges it. WebMCP supplied the live collaboration; progressive web primitives, exact revisions, and fail-closed permissions make it trustworthy.
 
 End card:
 
-> Ogram Learn — declared context in, bounded practice out, durable proof forward.
+> Ogram Learn — the learner owns the work; WebMCP makes the learning turn shared.
 
 ## Recording checks
 
 - Keep the synthetic badge visible whenever discussing context.
-- Capture the available or recently used site tools when the host exposes them.
+- Show the seven-tool registration state and at least one native WebMCP receipt.
+- Keep `r1`, its single Codex note, the learner’s `r2`, and the ready confirmation legible.
+- Show that Codex moved zero cards and that `r2` required a new revision-scoped review grant.
+- Record the challenge demo in ChatGPT Work with the native site-tool call cards visible; do not substitute an in-page simulation.
 - Do not call a local queue “synced” or “recorded by Ogram.”
-- Show one learner-authored contract edit; otherwise the human boundary is only a claim.
 - Keep browser developer overlays, personal tabs, task titles, and client data out of frame.

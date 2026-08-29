@@ -1,7 +1,7 @@
 import type { LearningState } from "../domain/types";
 
-const storageKey = "ogram-learning-ledger:v3";
-const legacyStorageKey = "ogram-practice-desk:v2";
+const storageKey = "ogram-learning-ledger:v4";
+const legacyStorageKeys = ["ogram-learning-ledger:v3", "ogram-practice-desk:v2"];
 
 export function loadLearningState(): unknown {
   if (typeof window === "undefined") return null;
@@ -26,5 +26,5 @@ export function saveLearningState(state: LearningState): void {
 export function clearLearningState(): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(storageKey);
-  window.localStorage.removeItem(legacyStorageKey);
+  legacyStorageKeys.forEach((key) => window.localStorage.removeItem(key));
 }

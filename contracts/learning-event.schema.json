@@ -33,6 +33,10 @@
         "learning.signals.submitted",
         "learning.capsule.published",
         "learning.module.added",
+        "learning.practice_attempt.shared",
+        "learning.practice_consent.withdrawn",
+        "learning.practice_coaching.recorded",
+        "learning.practice_review.resolved",
         "learning.choice.recorded",
         "learning.training.completed",
         "learning.desktop_follow_up.queued"
@@ -96,6 +100,46 @@
           "actor": { "const": "codex" },
           "capsuleId": { "$ref": "#/$defs/capsuleId" },
           "data": { "$ref": "#/$defs/moduleAddedData" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "learning.practice_attempt.shared" } } },
+      "then": {
+        "properties": {
+          "actor": { "const": "learner" },
+          "capsuleId": { "$ref": "#/$defs/capsuleId" },
+          "data": { "$ref": "#/$defs/practiceAttemptSharedData" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "learning.practice_consent.withdrawn" } } },
+      "then": {
+        "properties": {
+          "actor": { "const": "learner" },
+          "capsuleId": { "$ref": "#/$defs/capsuleId" },
+          "data": { "$ref": "#/$defs/practiceConsentWithdrawnData" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "learning.practice_coaching.recorded" } } },
+      "then": {
+        "properties": {
+          "actor": { "const": "codex" },
+          "capsuleId": { "$ref": "#/$defs/capsuleId" },
+          "data": { "$ref": "#/$defs/practiceCoachingRecordedData" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "learning.practice_review.resolved" } } },
+      "then": {
+        "properties": {
+          "actor": { "const": "learner" },
+          "capsuleId": { "$ref": "#/$defs/capsuleId" },
+          "data": { "$ref": "#/$defs/practiceReviewResolvedData" }
         }
       }
     },
@@ -240,6 +284,118 @@
           "type": "string",
           "enum": ["video", "walkthrough", "mini_game"]
         }
+      }
+    },
+    "practiceAttemptSharedData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "revision",
+        "attemptRevision",
+        "cardCount",
+        "availableForAgentReview",
+        "consentGranted",
+        "rawTaskContentShared"
+      ],
+      "properties": {
+        "summary": { "$ref": "#/$defs/summary" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "attemptRevision": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "cardCount": { "const": 8 },
+        "availableForAgentReview": { "const": true },
+        "consentGranted": { "const": true },
+        "rawTaskContentShared": { "const": false }
+      }
+    },
+    "practiceConsentWithdrawnData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "revision",
+        "attemptRevision",
+        "accessRevoked"
+      ],
+      "properties": {
+        "summary": { "$ref": "#/$defs/summary" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "attemptRevision": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "accessRevoked": { "const": true }
+      }
+    },
+    "practiceCoachingRecordedData": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "summary",
+            "revision",
+            "attemptRevision",
+            "move",
+            "cardId",
+            "ready"
+          ],
+          "properties": {
+            "summary": { "$ref": "#/$defs/summary" },
+            "revision": { "$ref": "#/$defs/revision" },
+            "attemptRevision": { "type": "integer", "minimum": 1, "maximum": 12 },
+            "move": { "const": "reconsider_card" },
+            "cardId": {
+              "type": "string",
+              "enum": [
+                "outcome",
+                "approved_decision",
+                "constraint",
+                "done_when",
+                "open_question",
+                "rejected_direction",
+                "full_conversation",
+                "sensitive_material"
+              ]
+            },
+            "ready": { "const": false }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "summary",
+            "revision",
+            "attemptRevision",
+            "move",
+            "cardId",
+            "ready"
+          ],
+          "properties": {
+            "summary": { "$ref": "#/$defs/summary" },
+            "revision": { "$ref": "#/$defs/revision" },
+            "attemptRevision": { "type": "integer", "minimum": 1, "maximum": 12 },
+            "move": { "const": "confirm_ready" },
+            "cardId": { "type": "null" },
+            "ready": { "const": true }
+          }
+        }
+      ]
+    },
+    "practiceReviewResolvedData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "revision",
+        "attemptRevision",
+        "reviewId",
+        "resolution"
+      ],
+      "properties": {
+        "summary": { "$ref": "#/$defs/summary" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "attemptRevision": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "reviewId": { "type": "string", "minLength": 8, "maxLength": 160 },
+        "resolution": { "type": "string", "enum": ["accepted", "dismissed"] }
       }
     },
     "choiceRecordedData": {

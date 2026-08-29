@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type {
+  ContextPackPlacement,
   ContextReceipt as ContextReceiptRecord,
   JourneyEntry,
   LearningCapsule,
@@ -7,6 +8,7 @@ import type {
   PracticeContract,
 } from "../domain/types";
 import { ConceptFigure } from "./ConceptFigure";
+import { ContextPackingInstrument } from "./ContextPackingInstrument";
 import { ContextReceipt } from "./ContextReceipt";
 import { JourneyLedger } from "./JourneyLedger";
 import { LearningModules } from "./LearningModules";
@@ -18,7 +20,16 @@ interface PracticeCanvasProps {
   journey: JourneyEntry[];
   journeySync: LearningState["journeySync"];
   followUpRequested: boolean;
+  webMcpReady: boolean;
   onChoose: (choiceId: string) => void;
+  onShareAttempt: (
+    placements: ContextPackPlacement[],
+  ) => void | Promise<void>;
+  onWithdrawAttempt: () => void;
+  onResolveReview: (
+    reviewId: string,
+    resolution: "accepted" | "dismissed",
+  ) => void;
   onComplete: (
     reminderEnabled: boolean,
     contract: PracticeContract,
@@ -28,7 +39,7 @@ interface PracticeCanvasProps {
 
 type LessonStep = 0 | 1 | 2;
 
-const lessonSteps = ["Notice", "Choose", "Apply"] as const;
+const lessonSteps = ["Notice", "Practice", "Apply"] as const;
 
 const syncLabels: Record<LearningState["journeySync"]["status"], string> = {
   idle: "Journey ready",
@@ -52,7 +63,11 @@ export function PracticeCanvas({
   journey,
   journeySync,
   followUpRequested,
+  webMcpReady,
   onChoose,
+  onShareAttempt,
+  onWithdrawAttempt,
+  onResolveReview,
   onComplete,
   completing,
 }: PracticeCanvasProps) {
@@ -78,7 +93,10 @@ export function PracticeCanvas({
   const completedPractices = journey.filter(
     (entry) => entry.status === "completed",
   ).length;
-  const currentStep = step === 2 && !selected?.correct ? 1 : step;
+  const practiceReady = capsule.practiceInstrument
+    ? capsule.collaboration?.phase === "ready"
+    : selected?.correct === true;
+  const currentStep = step === 2 && !practiceReady ? 1 : step;
   const sourceCount = Object.keys(contextReceipt.provenance).length;
 
   useEffect(() => {
@@ -115,7 +133,7 @@ export function PracticeCanvas({
   }, [complete]);
 
   const moveTo = (nextStep: LessonStep) => {
-    if (nextStep === 2 && !selected?.correct) return;
+    if (nextStep === 2 && !practiceReady) return;
     setStep(nextStep);
     window.scrollTo({ top: 0, behavior: "auto" });
   };
@@ -353,13 +371,20 @@ export function PracticeCanvas({
           <LearningModules modules={capsule.learningModules ?? []} />
 
           <footer className="screen-actions">
-            <p>One decision, its consequence, then a rule to carry into work.</p>
+            <p>
+              {capsule.practiceInstrument
+                ? "One private draft, one bounded Codex note, then a learner-owned revision."
+                : "One decision, its consequence, then a rule to carry into work."}
+            </p>
             <button
               className="primary-button"
               type="button"
               onClick={() => moveTo(1)}
             >
-              See today’s decision <span aria-hidden="true">→</span>
+              {capsule.practiceInstrument
+                ? "Open the shared practice"
+                : "See today’s decision"}{" "}
+              <span aria-hidden="true">→</span>
             </button>
           </footer>
         </section>
@@ -372,9 +397,15 @@ export function PracticeCanvas({
           aria-labelledby="choose-title"
         >
           <header className="screen-heading">
-            <p className="eyebrow">Compare the consequence</p>
+            <p className="eyebrow">
+              {capsule.practiceInstrument
+                ? "Compose · inspect · revise"
+                : "Compare the consequence"}
+            </p>
             <h1 id="choose-title" ref={headingRef} tabIndex={-1}>
-              What would you do next?
+              {capsule.practiceInstrument
+                ? "Pack a clean Codex fork together."
+                : "What would you do next?"}
             </h1>
           </header>
 
@@ -383,85 +414,116 @@ export function PracticeCanvas({
             <p>{scenario}</p>
           </div>
 
-          <fieldset className="choice-fieldset consequence-fieldset">
-            <legend>{capsule.challengePrompt}</legend>
-            <div className="choice-list">
-              {capsule.choices.map((choice, index) => {
-                const isSelected = choice.id === capsule.selectedChoiceId;
-                const isRecommended = isSelected && choice.correct;
-                return (
-                  <label
-                    className={`choice-row ${isSelected ? "is-selected" : ""} ${isRecommended ? "is-correct is-recommended" : ""}`}
-                    data-consequence={choice.correct ? "recommended" : "tradeoff"}
-                    key={choice.id}
-                  >
-                    <input
-                      type="radio"
-                      name={`lesson-choice-${capsule.id}`}
-                      value={choice.id}
-                      checked={isSelected}
-                      onChange={() => onChoose(choice.id)}
-                    />
-                    <span className="choice-index" aria-hidden="true">
-                      {String.fromCharCode(65 + index)}
-                    </span>
-                    <span className="choice-copy">
-                      <strong>{choice.label}</strong>
-                      <span>{choice.description}</span>
-                    </span>
-                    <span className="choice-marker" aria-hidden="true">
-                      {isRecommended ? "→" : isSelected ? "•" : ""}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </fieldset>
-
-          {selected ? (
-            <div
-              className={`answer-feedback consequence-comparison ${selected.correct ? "is-correct is-recommended" : "is-rethink is-tradeoff"}`}
-              aria-live="polite"
-            >
-              <strong>
-                {selected.correct
-                  ? "Why this route fits"
-                  : "What this route would cost"}
-              </strong>
-              <div>
-                <p>{selected.feedback}</p>
-                {!selected.correct ? (
-                  <small>
-                    Compare that consequence with the other routes before you
-                    commit.
-                  </small>
-                ) : null}
-              </div>
-            </div>
+          {capsule.practiceInstrument && capsule.collaboration ? (
+            <>
+              <ContextPackingInstrument
+                capsuleId={capsule.id}
+                instrument={capsule.practiceInstrument}
+                collaboration={capsule.collaboration}
+                nativeWebMcpReady={webMcpReady}
+                onShare={onShareAttempt}
+                onWithdraw={onWithdrawAttempt}
+                onResolveReview={onResolveReview}
+                onContinue={() => moveTo(2)}
+              />
+              <footer className="screen-actions instrument-screen-actions">
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => moveTo(0)}
+                >
+                  ← Review the rule
+                </button>
+                <p>
+                  The agent changes the margin. Only you change the pack.
+                </p>
+              </footer>
+            </>
           ) : (
-            <p className="choice-hint">
-              Choose a route to reveal what it would change downstream.
-            </p>
-          )}
+            <>
+              <fieldset className="choice-fieldset consequence-fieldset">
+                <legend>{capsule.challengePrompt}</legend>
+                <div className="choice-list">
+                  {capsule.choices.map((choice, index) => {
+                    const isSelected = choice.id === capsule.selectedChoiceId;
+                    const isRecommended = isSelected && choice.correct;
+                    return (
+                      <label
+                        className={`choice-row ${isSelected ? "is-selected" : ""} ${isRecommended ? "is-correct is-recommended" : ""}`}
+                        data-consequence={
+                          choice.correct ? "recommended" : "tradeoff"
+                        }
+                        key={choice.id}
+                      >
+                        <input
+                          type="radio"
+                          name={`lesson-choice-${capsule.id}`}
+                          value={choice.id}
+                          checked={isSelected}
+                          onChange={() => onChoose(choice.id)}
+                        />
+                        <span className="choice-index" aria-hidden="true">
+                          {String.fromCharCode(65 + index)}
+                        </span>
+                        <span className="choice-copy">
+                          <strong>{choice.label}</strong>
+                          <span>{choice.description}</span>
+                        </span>
+                        <span className="choice-marker" aria-hidden="true">
+                          {isRecommended ? "→" : isSelected ? "•" : ""}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
 
-          <footer className="screen-actions">
-            <button
-              className="text-button"
-              type="button"
-              onClick={() => moveTo(0)}
-            >
-              ← Review the rule
-            </button>
-            {selected?.correct ? (
-              <button
-                className="primary-button"
-                type="button"
-                onClick={() => moveTo(2)}
-              >
-                Turn this into a reminder <span aria-hidden="true">→</span>
-              </button>
-            ) : null}
-          </footer>
+              {selected ? (
+                <div
+                  className={`answer-feedback consequence-comparison ${selected.correct ? "is-correct is-recommended" : "is-rethink is-tradeoff"}`}
+                  aria-live="polite"
+                >
+                  <strong>
+                    {selected.correct
+                      ? "Why this route fits"
+                      : "What this route would cost"}
+                  </strong>
+                  <div>
+                    <p>{selected.feedback}</p>
+                    {!selected.correct ? (
+                      <small>
+                        Compare that consequence with the other routes before you
+                        commit.
+                      </small>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <p className="choice-hint">
+                  Choose a route to reveal what it would change downstream.
+                </p>
+              )}
+
+              <footer className="screen-actions">
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => moveTo(0)}
+                >
+                  ← Review the rule
+                </button>
+                {selected?.correct ? (
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={() => moveTo(2)}
+                  >
+                    Turn this into a reminder <span aria-hidden="true">→</span>
+                  </button>
+                ) : null}
+              </footer>
+            </>
+          )}
         </section>
       ) : null}
 

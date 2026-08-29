@@ -14,6 +14,17 @@ const SignalLevelSchema = Type.Union([
   Type.Literal("priority"),
 ]);
 
+const ContextPackCardIdSchema = Type.Union([
+  Type.Literal("outcome"),
+  Type.Literal("approved_decision"),
+  Type.Literal("constraint"),
+  Type.Literal("done_when"),
+  Type.Literal("open_question"),
+  Type.Literal("rejected_direction"),
+  Type.Literal("full_conversation"),
+  Type.Literal("sensitive_material"),
+]);
+
 export const EmptyInputSchema = Type.Object({}, { additionalProperties: false });
 
 export const PracticeReviewInputSchema = Type.Object(
@@ -37,7 +48,7 @@ export const PracticeReviewInputSchema = Type.Object(
 
 export const PublishCapsuleInputSchema = Type.Object(
   {
-    focus: SignalIdSchema,
+    focus: Type.Literal("thread_hygiene"),
     difficulty: Type.Optional(
       Type.Union([Type.Literal("guided"), Type.Literal("stretch")]),
     ),
@@ -64,9 +75,40 @@ export const LearningModuleInputSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const InspectPracticeAttemptInputSchema = Type.Object(
+  {
+    capsuleId: Type.String({ minLength: 8, maxLength: 120 }),
+  },
+  { additionalProperties: false },
+);
+
+export const PracticeCoachingInputSchema = Type.Union([
+  Type.Object(
+    {
+      capsuleId: Type.String({ minLength: 8, maxLength: 120 }),
+      attemptRevision: Type.Integer({ minimum: 1, maximum: 12 }),
+      move: Type.Literal("reconsider_card"),
+      cardId: ContextPackCardIdSchema,
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      capsuleId: Type.String({ minLength: 8, maxLength: 120 }),
+      attemptRevision: Type.Integer({ minimum: 1, maximum: 12 }),
+      move: Type.Literal("confirm_ready"),
+    },
+    { additionalProperties: false },
+  ),
+]);
+
 export type PracticeReviewInput = Static<typeof PracticeReviewInputSchema>;
 export type PublishCapsuleInput = Static<typeof PublishCapsuleInputSchema>;
 export type LearningModuleToolInput = Static<typeof LearningModuleInputSchema>;
+export type InspectPracticeAttemptInput = Static<
+  typeof InspectPracticeAttemptInputSchema
+>;
+export type PracticeCoachingInput = Static<typeof PracticeCoachingInputSchema>;
 
 export function parseToolInput<T extends TSchema>(
   schema: T,

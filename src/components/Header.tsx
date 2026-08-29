@@ -8,8 +8,6 @@ interface HeaderProps {
   webMcpError: string | null;
   contextEnvironment: "synthetic" | "production";
   journeySync: LearningState["journeySync"];
-  simulationRunning: boolean;
-  onReplay: () => void;
   onRetrySync: () => void;
 }
 
@@ -21,8 +19,6 @@ export function Header({
   webMcpError,
   contextEnvironment,
   journeySync,
-  simulationRunning,
-  onReplay,
   onRetrySync,
 }: HeaderProps) {
   const toolStatus = !webMcpSupported
@@ -73,8 +69,8 @@ export function Header({
           <h2>The page is the instrument. Ogram is the memory.</h2>
           <p>
             Codex can compile this visible practice through {toolCount} bounded
-            site tools. Learner decisions remain human-only. Every state change
-            enters the append-only journey outbox.
+            site tools. Learner decisions remain human-only. Durable learning
+            and consent milestones enter the append-only journey outbox.
           </p>
           <dl className="inspector-facts">
             <div>
@@ -87,15 +83,10 @@ export function Header({
             </div>
           </dl>
           <div className="inspector-actions">
-            <button
-              className="rebuild-button"
-              type="button"
-              onClick={onReplay}
-              disabled={simulationRunning}
-            >
-              {simulationRunning ? "Compiling live…" : "Run the live build"}
-              <span aria-hidden="true">↗</span>
-            </button>
+            <p className="inspector-agent-prompt">
+              In ChatGPT Work, ask: “Read Ogram’s learning mission and guide the
+              live practice.”
+            </p>
             {journeySync.status === "error" || journeySync.pendingCount > 0 ? (
               <button className="text-button" type="button" onClick={onRetrySync}>
                 Retry ledger sync

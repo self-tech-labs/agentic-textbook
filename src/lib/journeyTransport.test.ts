@@ -10,6 +10,7 @@ import {
   publishLearningEvent,
   retryLearningEventOutbox,
   toLearningEventEnvelope,
+  type LearningEventEnvelope,
 } from "./journeyTransport";
 
 function learningEvent(
@@ -119,14 +120,60 @@ describe("durable learning journey transport", () => {
           moduleKind: "mini_game",
         },
       }),
-      learningEvent("event-choice-recorded", {
+      learningEvent("event-practice-attempt-shared", {
         revision: 5,
+        type: "practice_attempt_shared",
+        actor: "learner",
+        payload: {
+          capsuleId,
+          attemptRevision: 1,
+          cardCount: 8,
+          availableForAgentReview: true,
+          consentGranted: true,
+          rawTaskContentShared: false,
+        },
+      }),
+      learningEvent("event-practice-consent-withdrawn", {
+        revision: 6,
+        type: "practice_consent_withdrawn",
+        actor: "learner",
+        payload: {
+          capsuleId,
+          attemptRevision: 1,
+          accessRevoked: true,
+        },
+      }),
+      learningEvent("event-practice-coaching-recorded", {
+        revision: 7,
+        type: "practice_coaching_recorded",
+        actor: "codex",
+        payload: {
+          capsuleId,
+          attemptRevision: 1,
+          move: "reconsider_card",
+          cardId: "done_when",
+          ready: false,
+        },
+      }),
+      learningEvent("event-practice-review-resolved", {
+        revision: 8,
+        type: "practice_review_resolved",
+        actor: "learner",
+        payload: {
+          capsuleId,
+          attemptRevision: 1,
+          reviewId: "review-practice-r1",
+          resolution: "accepted",
+        },
+      }),
+      learningEvent("event-choice-recorded", {
+        revision: 9,
         type: "choice_recorded",
         actor: "learner",
         payload: { capsuleId, choiceId: "fork", correct: true },
       }),
       learningEvent("event-training-completed", {
-        revision: 6,
+        revision: 10,
         type: "training_completed",
         actor: "learner",
         payload: {
@@ -137,7 +184,7 @@ describe("durable learning journey transport", () => {
         },
       }),
       learningEvent("event-follow-up-queued", {
-        revision: 7,
+        revision: 11,
         type: "desktop_follow_up_queued",
         actor: "learner",
         payload: {
@@ -162,6 +209,190 @@ describe("durable learning journey transport", () => {
       actor: "learner",
     };
     expect(validate(invalid)).toBe(false);
+  });
+
+  it("projects privacy-minimal practice share and coaching envelopes", () => {
+    const ajv = new Ajv2020({ allErrors: true, strict: true });
+    addFormats(ajv);
+    const validate = ajv.compile(learningEventSchema);
+    const capsuleId = "capsule-shared";
+    const shared = toLearningEventEnvelope(
+      learningEvent("event-practice-shared", {
+        revision: 5,
+        type: "practice_attempt_shared",
+        actor: "learner",
+        summary: "Shared context pack r1.",
+        payload: {
+          capsuleId,
+          attemptRevision: 1,
+          cardCount: 8,
+          availableForAgentReview: true,
+          consentGranted: true,
+          rawTaskContentShared: false,
+        },
+      }),
+    );
+    const coached = toLearningEventEnvelope(
+      learningEvent("event-practice-coached", {
+        revision: 6,
+        type: "practice_coaching_recorded",
+        actor: "codex",
+        summary: "Recorded one bounded coaching move for r1.",
+        payload: {
+          capsuleId,
+          attemptRevision: 1,
+          move: "reconsider_card",
+          cardId: "done_when",
+          ready: false,
+        },
+      }),
+    );
+
+    expect(validate(shared), JSON.stringify(validate.errors)).toBe(true);
+    expect(shared).toMatchObject({
+      type: "learning.practice_attempt.shared",
+      actor: "learner",
+      capsuleId,
+    });
+    expect(shared.data).toEqual({
+      attemptRevision: 1,
+      cardCount: 8,
+      availableForAgentReview: true,
+      consentGranted: true,
+      rawTaskContentShared: false,
+      summary: "Shared context pack r1.",
+      revision: 5,
+    });
+
+    expect(validate(coached), JSON.stringify(validate.errors)).toBe(true);
+    expect(coached).toMatchObject({
+      type: "learning.practice_coaching.recorded",
+      actor: "codex",
+      capsuleId,
+    });
+    expect(coached.data).toEqual({
+      attemptRevision: 1,
+      move: "reconsider_card",
+      cardId: "done_when",
+      ready: false,
+      summary: "Recorded one bounded coaching move for r1.",
+      revision: 6,
+    });
+
+    expect(shared.data).not.toHaveProperty("placements");
+    expect(shared.data).not.toHaveProperty("rawTaskContent");
+    expect(coached.data).not.toHaveProperty("message");
+    expect(coached.data).not.toHaveProperty("expectedZone");
+
+    const leaked = {
+      ...shared,
+      data: { ...shared.data, placements: { done_when: "leave" } },
+    };
+    expect(validate(leaked)).toBe(false);
+    const inconsistentCoaching = {
+      ...coached,
+      data: { ...coached.data, ready: true },
+    };
+    expect(validate(inconsistentCoaching)).toBe(false);
+    const ready = toLearningEventEnvelope(
+      learningEvent("event-practice-ready", {
+        revision: 7,
+        type: "practice_coaching_recorded",
+        actor: "codex",
+        payload: {
+          capsuleId,
+          attemptRevision: 2,
+          move: "confirm_ready",
+          cardId: null,
+          ready: true,
+        },
+      }),
+    );
+    expect(validate(ready), JSON.stringify(validate.errors)).toBe(true);
+  });
+
+  it("delivers practice share then coaching once, preserving queue order", async () => {
+    const capsuleId = "capsule-shared";
+    const shared = learningEvent("event-practice-r1-shared", {
+      revision: 5,
+      type: "practice_attempt_shared",
+      actor: "learner",
+      payload: {
+        capsuleId,
+        attemptRevision: 1,
+        cardCount: 8,
+        availableForAgentReview: true,
+        consentGranted: true,
+        rawTaskContentShared: false,
+      },
+    });
+    const coached = learningEvent("event-practice-r1-coached", {
+      revision: 6,
+      type: "practice_coaching_recorded",
+      actor: "codex",
+      payload: {
+        capsuleId,
+        attemptRevision: 1,
+        move: "reconsider_card",
+        cardId: "done_when",
+        ready: false,
+      },
+    });
+
+    expect(enqueueLearningEvent(shared).enqueued).toBe(true);
+    expect(enqueueLearningEvent(shared)).toMatchObject({
+      enqueued: false,
+      alreadyDelivered: false,
+      pendingCount: 1,
+    });
+    expect(enqueueLearningEvent(coached).enqueued).toBe(true);
+
+    const publishEvent = vi.fn(async (_envelope: LearningEventEnvelope) => ({}));
+    window.ogramDesktop = { learning: { publishEvent } };
+
+    await expect(flushLearningEventOutbox()).resolves.toMatchObject({
+      status: "synced",
+      deliveredEventIds: [
+        "event-practice-r1-shared",
+        "event-practice-r1-coached",
+      ],
+      pendingEventIds: [],
+    });
+    expect(
+      publishEvent.mock.calls.map(([envelope]) => ({
+        eventId: (envelope as { eventId: string }).eventId,
+        type: (envelope as { type: string }).type,
+      })),
+    ).toEqual([
+      {
+        eventId: "event-practice-r1-shared",
+        type: "learning.practice_attempt.shared",
+      },
+      {
+        eventId: "event-practice-r1-coached",
+        type: "learning.practice_coaching.recorded",
+      },
+    ]);
+
+    expect(enqueueLearningEvent(shared)).toMatchObject({
+      enqueued: false,
+      alreadyDelivered: true,
+      pendingCount: 0,
+    });
+    expect(enqueueLearningEvent(coached)).toMatchObject({
+      enqueued: false,
+      alreadyDelivered: true,
+      pendingCount: 0,
+    });
+    await expect(retryLearningEventOutbox()).resolves.toMatchObject({
+      status: "synced",
+      deliveredEventIds: [],
+    });
+    expect(publishEvent).toHaveBeenCalledTimes(2);
+    expect(getJourneyOutbox()).toMatchObject({
+      items: [],
+      deliveredThrough: { "learning-session-shared": 6 },
+    });
   });
 
   it("persists an idempotent outbox entry and rejects event-id collisions", () => {

@@ -22,6 +22,10 @@ export interface LearningEventEnvelope {
     | "learning.signals.submitted"
     | "learning.capsule.published"
     | "learning.module.added"
+    | "learning.practice_attempt.shared"
+    | "learning.practice_consent.withdrawn"
+    | "learning.practice_coaching.recorded"
+    | "learning.practice_review.resolved"
     | "learning.choice.recorded"
     | "learning.training.completed"
     | "learning.desktop_follow_up.queued";
@@ -99,6 +103,10 @@ const eventTypeMap: Record<
   coaching_signals_submitted: "learning.signals.submitted",
   capsule_published: "learning.capsule.published",
   learning_module_added: "learning.module.added",
+  practice_attempt_shared: "learning.practice_attempt.shared",
+  practice_consent_withdrawn: "learning.practice_consent.withdrawn",
+  practice_coaching_recorded: "learning.practice_coaching.recorded",
+  practice_review_resolved: "learning.practice_review.resolved",
   choice_recorded: "learning.choice.recorded",
   training_completed: "learning.training.completed",
   desktop_follow_up_queued: "learning.desktop_follow_up.queued",

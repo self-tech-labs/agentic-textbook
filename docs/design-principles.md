@@ -2,13 +2,14 @@
 
 ## North star: a Learning Ledger
 
-The product is not a course player and not an agent transcript. It is a living ledger that shows how declared context became a practice, what the learner decided, and what evidence should exist next.
+The product is not a course player and not an agent transcript. It is a shared learning instrument backed by a living ledger: it shows how declared context became a practice, which exact page revision the learner shared, what Codex annotated, what the learner changed, and what evidence should exist next.
 
 Every important claim needs a visible receipt:
 
 - **Why this?** Show the context sources and behavioural pattern.
 - **Why this shape?** Show the compiler recipe and bounded modes.
-- **Who decided?** Separate agent actions from learner choices.
+- **Who changed what?** Separate the agent’s bounded marginalia from the learner’s card placement and commitment.
+- **What was shared?** Name the immutable attempt revision and its revision-scoped review-cycle state.
 - **Was it recorded?** Distinguish queued, syncing, synced, and error.
 - **Did it work?** Ask for observable proof, not a completion badge.
 
@@ -19,7 +20,7 @@ If the interface cannot answer those questions, it is decoration rather than lea
 The experience is organized as one causal line:
 
 ```text
-declared source → observed pattern → live capsule → learner decision → proof
+declared source → live capsule → private draft → shared r1 → Codex note → learner r2 → proof
 ```
 
 The visual system reinforces that line. A chartreuse thread and numbered nodes carry the eye across context, compilation, practice, and journey. Warm paper gives the work the seriousness of an annotated document; dark ink makes it readable; sharp orange/cobalt accents mark decisions and system state rather than decorating empty space.
@@ -45,6 +46,8 @@ Use native semantics whenever they already express the interaction:
 - `nav`, an ordered list, and `progress` for the learning path;
 - `article`, `section`, `header`, `footer`, and `aside` for a coherent document outline;
 - `figure` and inline SVG for focus-specific concept instruments;
+- labelled buttons and `aria-pressed` for accessible `carry`/`leave` placement;
+- a checkbox for explicit, per-revision agent inspection consent;
 - `fieldset`, `legend`, radio inputs, and labels for consequential choices;
 - labelled text areas for the editable practice contract;
 - a checkbox for explicit reminder preference;
@@ -62,14 +65,14 @@ Codex may provide:
 - structured behavioural counts for one to four known focus IDs;
 - one capsule focus;
 - bounded difficulty, practice, and proof modes;
-- one Ogram-owned module template ID.
+- one bounded coaching move against an exact learner-shared attempt revision.
 
 Ogram owns:
 
 - evidence and recommendation language;
 - lesson principles and cognitive load;
 - scenarios, choices, and feedback;
-- visual instruments and component composition;
+- the context-pack cards, rubric, coaching copy, visual instruments, and component composition;
 - default cue → response → proof contracts;
 - accessibility and motion rules;
 - recipe identity and versioning.
@@ -81,17 +84,17 @@ The resulting capsule can adapt every day without becoming visually incoherent, 
 The compilation trace has three verbs, not a dashboard full of metrics:
 
 1. **Gather context** — three declared sources form one immutable receipt.
-2. **Compile practice** — one or more structured patterns select one versioned capsule.
-3. **Record proof** — learner events enter the ordered journey ledger.
+2. **Compile and practise** — one or more structured patterns select one versioned capsule, then the learner and Codex exchange exact practice revisions on its live instrument.
+3. **Record proof** — learner and Codex events enter the ordered journey ledger with explicit actors.
 
 Counts are used only when they clarify state: source count, pattern count, event count, pending deliveries, and completed practices. Avoid vanity scores, generic streaks, fabricated intelligence indicators, or progress that confuses page completion with learned behaviour.
 
-## Teach through consequence
+## Teach through co-manipulation
 
 The lesson rhythm is deliberately short:
 
 1. **Notice** — understand one rule and its relevance.
-2. **Choose** — compare the downstream cost of plausible actions.
+2. **Practice** — manipulate a visible object and observe the consequence. In the flagship flow, compose → share → inspect → annotate → revise → re-share.
 3. **Apply** — rewrite the practice in language the learner will recognize at work.
 
 Each focus gets its own explanatory instrument rather than a generic illustration:
@@ -101,7 +104,21 @@ Each focus gets its own explanatory instrument rather than a generic illustratio
 - effort fit exposes a reasoning-gear dial;
 - task shaping measures brief completeness.
 
-The visual should teach a relationship, not fill a card.
+The visual should teach a relationship, not fill a card. Thread hygiene therefore uses a real context-packing workbench rather than a multiple-choice proxy. Other focus recipes may still use consequence choices when that is the smallest truthful instrument.
+
+## Repeated turns need asymmetric authority
+
+The learner and Codex operate on the same live object, but they do not have the same powers:
+
+```text
+learner: place cards → freeze r1 → accept/dismiss note → revise → freeze r2 → commit
+codex:   inspect r1 → attach one bounded note → inspect r2 → confirm ready
+page:    enforce rubric, revision, consent, copy, receipts, and history
+```
+
+This asymmetry is the product. The agent changes the margin; only the learner changes the pack. The page makes the turn structure legible with an immutable snapshot, one review cycle and one coaching move per revision, a visible `r1 → r2` comparison, and an explicit “Codex moved 0 cards” receipt.
+
+Consent is an interaction, not fine print. Draft movements remain private. The learner must tick a plain-language checkbox to open a review cycle for each frozen revision, may withdraw access before coaching, and must grant again for `r2`. The cycle is consumed by its coaching move; reload revokes an outstanding grant. The interface should never imply that opening the page gives the agent standing access.
 
 ## The practice contract belongs to the learner
 
@@ -126,11 +143,13 @@ Never use reassuring copy to hide uncertain infrastructure state.
 
 The local-only public demo should look complete as an experience while remaining explicit that no production server is configured.
 
+Tool receipts must be equally truthful. An identical host retry returns the existing durable event ID and revision with `replayed: true`; it must not look like a second learner or Codex turn. Conflicting retries fail closed.
+
 ## Hard human and safety boundaries
 
-The agent may gather authorized context, submit structured patterns, select bounded compiler modes, and add an Ogram-owned module template. It cannot answer the scenario, edit the learner’s contract, mark the capsule complete, or request a follow-up.
+The agent may gather authorized context, submit structured patterns, select bounded compiler modes, inspect one explicitly shared attempt, and attach one allowlisted coaching move. It cannot inspect the private draft, infer authority from an older share, move a card, provide arbitrary teaching copy, resolve its own note, edit the learner’s contract, mark the capsule complete, or request a follow-up.
 
-The practice-signal tool accepts no free-text evidence and no reviewed-task identifiers. The site-tool contract prohibits raw task content, task titles, file paths, credentials, task-derived names or organizations, client data, transcripts, arbitrary HTML/CSS/JavaScript, screenshots, and recordings. Separately authorized Ogram profile context may include the learner’s own name and organization.
+The practice-signal tool accepts no free-text evidence and no reviewed-task identifiers. Attempt inspection exposes only page-owned card IDs, labels, descriptions, and the zones in the frozen revision; expected zones and private movements remain page-side. The site-tool contract prohibits raw task content, task titles, file paths, credentials, task-derived names or organizations, client data, transcripts, arbitrary HTML/CSS/JavaScript, screenshots, and recordings. Separately authorized Ogram profile context may include the learner’s own name and organization.
 
 Video, Computer Use, Record & Replay, and visualization capabilities remain separate, explicitly authorized extensions. A web tool must not masquerade as permission to browse private work, record another application, or execute generated page code.
 
@@ -141,7 +160,7 @@ These boundaries follow the current [OpenAI site-tools documentation](https://le
 - Keep the DOM reading order meaningful before applying the asymmetric grid.
 - Preserve native inputs rather than replacing them with clickable `div`s.
 - Move focus to the new step heading after a stage change.
-- Announce choice feedback, contract saving, and delivery status through appropriate live regions.
+- Announce coaching marginalia, ready state, contract saving, and delivery status through appropriate live regions.
 - Meet contrast requirements for text, focus rings, and status indicators; never encode state by color alone.
 - Respect reduced-motion preferences and keep animation subordinate to comprehension.
 - Make receipt IDs and long status copy wrap rather than overflow.

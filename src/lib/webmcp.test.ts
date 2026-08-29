@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
-  LearningModule,
   LearningState,
   PracticeSignal,
 } from "../domain/types";
@@ -12,7 +11,8 @@ import {
   type LearningToolActions,
 } from "./webmcp";
 import {
-  LearningModuleInputSchema,
+  InspectPracticeAttemptInputSchema,
+  PracticeCoachingInputSchema,
   PracticeReviewInputSchema,
   PublishCapsuleInputSchema,
 } from "./webmcpSchemas";
@@ -30,7 +30,7 @@ function testState(): LearningState {
     new Date("2026-08-29T10:00:00.000Z"),
   );
   return {
-    version: 3,
+    version: 4,
     sessionId: "learn-session-test",
     revision: 1,
     context: mockOgramContext,
@@ -63,7 +63,31 @@ function mockActions() {
   });
   const submitSignals = vi.fn((signals: PracticeSignal[]) => {
     const revision = state.revision + 1;
-    state = { ...state, revision, signals };
+    state = {
+      ...state,
+      revision,
+      signals,
+      events: [
+        ...state.events,
+        {
+          id: "event-signals",
+          sessionId: state.sessionId,
+          revision,
+          type: "coaching_signals_submitted",
+          at: "2026-08-29T10:00:15.000Z",
+          actor: "codex",
+          summary: "Committed bounded practice observations.",
+          payload: {
+            revision,
+            signalCount: signals.length,
+            reviewedTaskCount: Math.max(
+              ...signals.map((signal) => signal.sourceTaskCount),
+            ),
+            rawTaskContentShared: false,
+          },
+        },
+      ],
+    };
     return { eventId: "event-signals", revision };
   });
   const publishCapsule = vi.fn(
@@ -87,35 +111,99 @@ function mockActions() {
             proofMode: input.proofMode ?? "next_action",
           },
         },
+        events: [
+          ...state.events,
+          {
+            id: "event-capsule",
+            sessionId: state.sessionId,
+            revision,
+            type: "capsule_published",
+            at: "2026-08-29T10:00:30.000Z",
+            actor: "codex",
+            summary: "Published the flagship practice capsule.",
+            payload: {
+              revision,
+              capsuleId,
+              contextReceiptId: state.contextReceipt.receiptId,
+              focus: input.focus,
+              compiler: {
+                ...state.activeCapsule.compiler,
+                contextReceiptId:
+                  input.contextReceiptId ?? state.contextReceipt.receiptId,
+                difficulty: input.difficulty ?? "guided",
+                practiceMode: input.practiceMode ?? "decision",
+                proofMode: input.proofMode ?? "next_action",
+              },
+            },
+          },
+        ],
       };
       return { capsuleId, eventId: "event-capsule", revision };
     },
   );
-  const addLearningModule = vi.fn(
+  const recordPracticeCoaching = vi.fn(
     (
       capsuleId: string,
-      moduleInput: Parameters<LearningToolActions["addLearningModule"]>[1],
+      attemptRevision: number,
+      move: "reconsider_card" | "confirm_ready",
+      cardId: Parameters<LearningToolActions["recordPracticeCoaching"]>[3],
     ) => {
       const revision = state.revision + 1;
-      const moduleId = "module-new-12345678";
-      const module = {
-        ...moduleInput,
-        id: moduleId,
-        ...(moduleInput.kind === "video" ? { provider: "YouTube" as const } : {}),
-      } as LearningModule;
+      const reviewId = "review-new-12345678";
       state = {
         ...state,
         revision,
         activeCapsule: {
           ...state.activeCapsule,
           id: capsuleId,
-          learningModules: [
-            ...(state.activeCapsule.learningModules ?? []),
-            module,
-          ],
+          collaboration: state.activeCapsule.collaboration
+            ? {
+                ...state.activeCapsule.collaboration,
+                phase: move === "confirm_ready" ? "ready" : "revision_requested",
+                consent: "consumed",
+                reviews: [
+                  ...state.activeCapsule.collaboration.reviews,
+                  {
+                    id: reviewId,
+                    attemptRevision,
+                    at: "2026-08-29T10:01:00.000Z",
+                    move,
+                    cardId,
+                    message: "Page-owned coaching copy.",
+                    resolution:
+                      move === "confirm_ready" ? "accepted" : "pending",
+                  },
+                ],
+              }
+            : undefined,
         },
+        events: [
+          ...state.events,
+          {
+            id: "event-review",
+            sessionId: state.sessionId,
+            revision,
+            type: "practice_coaching_recorded",
+            at: "2026-08-29T10:01:00.000Z",
+            actor: "codex",
+            summary: "Recorded one bounded coaching move.",
+            payload: {
+              revision,
+              capsuleId,
+              attemptRevision,
+              move,
+              cardId,
+              ready: move === "confirm_ready",
+            },
+          },
+        ],
       };
-      return { moduleId, eventId: "event-module", revision };
+      return {
+        reviewId,
+        eventId: "event-review",
+        revision,
+        ready: move === "confirm_ready",
+      };
     },
   );
   const actions: LearningToolActions = {
@@ -123,7 +211,36 @@ function mockActions() {
     awaitRevision,
     submitSignals,
     publishCapsule,
-    addLearningModule,
+    recordPracticeCoaching,
+  };
+  const grantPracticeAttempt = (ready = false) => {
+    const instrument = state.activeCapsule.practiceInstrument!;
+    const placements = instrument.cards.map((card) => ({
+      cardId: card.id,
+      zone:
+        !ready && card.id === "full_conversation"
+          ? ("carry" as const)
+          : card.expectedZone,
+    }));
+    state = {
+      ...state,
+      activeCapsule: {
+        ...state.activeCapsule,
+        collaboration: {
+          phase: "awaiting_review",
+          consent: "granted",
+          attemptRevision: 1,
+          snapshots: [
+            {
+              attemptRevision: 1,
+              sharedAt: "2026-08-29T10:00:30.000Z",
+              placements,
+            },
+          ],
+          reviews: [],
+        },
+      },
+    };
   };
 
   return {
@@ -132,8 +249,9 @@ function mockActions() {
       awaitRevision,
       submitSignals,
       publishCapsule,
-      addLearningModule,
+      recordPracticeCoaching,
     },
+    grantPracticeAttempt,
   };
 }
 
@@ -150,7 +268,7 @@ describe("Ogram WebMCP tools", () => {
     });
   });
 
-  it("keeps a bounded six-tool surface with human-readable titles", async () => {
+  it("keeps a bounded seven-tool surface focused on the repeated coaching loop", async () => {
     const { actions } = mockActions();
     const tools = createOgramLearningTools(actions);
 
@@ -160,7 +278,8 @@ describe("Ogram WebMCP tools", () => {
       "ogram_get_learning_journey",
       "ogram_submit_practice_signals",
       "ogram_publish_daily_capsule",
-      "ogram_add_learning_module",
+      "ogram_inspect_practice_attempt",
+      "ogram_record_coaching_move",
     ]);
     expect(tools.every((tool) => tool.title.length > 0)).toBe(true);
 
@@ -193,6 +312,93 @@ describe("Ogram WebMCP tools", () => {
       readOnlyHint: true,
       untrustedContentHint: true,
     });
+    expect(toolNamed(actions, "ogram_inspect_practice_attempt").annotations).toMatchObject({
+      readOnlyHint: true,
+      untrustedContentHint: true,
+    });
+    expect(toolNamed(actions, "ogram_record_coaching_move").annotations).toMatchObject({
+      readOnlyHint: false,
+      untrustedContentHint: false,
+    });
+  });
+
+  it("fails closed before consent and returns only the learner-shared structural projection", async () => {
+    const { actions, grantPracticeAttempt } = mockActions();
+    const tool = toolNamed(actions, "ogram_inspect_practice_attempt");
+    expect(tool.inputSchema).toBe(InspectPracticeAttemptInputSchema);
+    const capsuleId = actions.getState().activeCapsule.id;
+
+    expect(() => tool.execute({ capsuleId })).toThrow(/consent is not active/i);
+    grantPracticeAttempt();
+    const result = (await tool.execute({ capsuleId })) as Record<string, unknown>;
+    expect(result).toMatchObject({
+      ok: true,
+      capsuleId,
+      attemptRevision: 1,
+      consentScope: "this_revision_only",
+      rubric: { sufficient: true, lean: false, private: true },
+      privacy: { rawTaskContentShared: false },
+    });
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("expectedZone");
+    expect(serialized).not.toContain("raw task");
+    expect(serialized).not.toContain("client data\":");
+  });
+
+  it("records one schema-bounded coaching move and consumes the exact revision", async () => {
+    const { actions, spies, grantPracticeAttempt } = mockActions();
+    grantPracticeAttempt();
+    const tool = toolNamed(actions, "ogram_record_coaching_move");
+    expect(tool.inputSchema).toBe(PracticeCoachingInputSchema);
+    const capsuleId = actions.getState().activeCapsule.id;
+
+    const result = (await tool.execute({
+      capsuleId,
+      attemptRevision: 1,
+      move: "reconsider_card",
+      cardId: "full_conversation",
+    })) as Record<string, unknown>;
+    expect(spies.recordPracticeCoaching).toHaveBeenCalledWith(
+      capsuleId,
+      1,
+      "reconsider_card",
+      "full_conversation",
+    );
+    expect(spies.awaitRevision).toHaveBeenCalledWith(2, "event-review");
+    expect(result).toMatchObject({
+      ok: true,
+      replayed: false,
+      attemptRevision: 1,
+      consentConsumed: true,
+      agentMovedCards: 0,
+      review: {
+        move: "reconsider_card",
+        cardId: "full_conversation",
+        message: "Page-owned coaching copy.",
+      },
+    });
+    const replayed = (await tool.execute({
+      capsuleId,
+      attemptRevision: 1,
+      move: "reconsider_card",
+      cardId: "full_conversation",
+    })) as Record<string, unknown>;
+    expect(replayed).toMatchObject({
+      ok: true,
+      replayed: true,
+      eventId: "event-review",
+      revision: 2,
+    });
+    expect(spies.recordPracticeCoaching).toHaveBeenCalledTimes(1);
+    await expect(
+      tool.execute({
+        capsuleId,
+        attemptRevision: 1,
+        move: "reconsider_card",
+        cardId: "full_conversation",
+        message: "Arbitrary model prose must not cross.",
+      }),
+    ).rejects.toThrow(/Invalid tool input/);
   });
 
   it("uses the TypeBox review schema and compiles counts into page-owned copy", async () => {
@@ -223,11 +429,30 @@ describe("Ogram WebMCP tools", () => {
     expect(spies.awaitRevision).toHaveBeenCalledWith(2, "event-signals");
     expect(result).toMatchObject({
       ok: true,
+      replayed: false,
       revision: 2,
       reviewedTaskCount: 8,
       rawTaskContentStored: false,
       committedState: { revision: 2, signalCount: 1 },
     });
+    const replayed = (await tool.execute({
+      signals: [
+        {
+          id: "thread_hygiene",
+          level: "priority",
+          confidence: 0.94,
+          occurrences: 6,
+          sampleSize: 8,
+        },
+      ],
+    })) as Record<string, unknown>;
+    expect(replayed).toMatchObject({
+      ok: true,
+      replayed: true,
+      eventId: "event-signals",
+      revision: 2,
+    });
+    expect(spies.submitSignals).toHaveBeenCalledTimes(1);
   });
 
   it("rejects raw prose, more than eight tasks, and impossible counts", async () => {
@@ -299,6 +524,7 @@ describe("Ogram WebMCP tools", () => {
     expect(spies.awaitRevision).toHaveBeenCalledWith(2, "event-capsule");
     expect(result).toMatchObject({
       ok: true,
+      replayed: false,
       revision: 2,
       capsuleId: "capsule-new-12345678",
       capsule: {
@@ -310,7 +536,25 @@ describe("Ogram WebMCP tools", () => {
           proofMode: "observed_habit",
         },
       },
+      nextTools: [
+        "ogram_inspect_practice_attempt",
+        "ogram_record_coaching_move",
+      ],
     });
+    const replayed = (await tool.execute({
+      focus: "thread_hygiene",
+      difficulty: "stretch",
+      practiceMode: "rehearsal",
+      proofMode: "observed_habit",
+    })) as Record<string, unknown>;
+    expect(replayed).toMatchObject({
+      ok: true,
+      replayed: true,
+      eventId: "event-capsule",
+      revision: 2,
+      capsuleId: "capsule-new-12345678",
+    });
+    expect(spies.publishCapsule).toHaveBeenCalledTimes(1);
 
     await expect(
       tool.execute({
@@ -319,37 +563,8 @@ describe("Ogram WebMCP tools", () => {
         sourceTaskCount: 20,
       }),
     ).rejects.toThrow(/Invalid tool input/);
-  });
-
-  it("commits only schema-bounded learning modules and awaits their revision", async () => {
-    const { actions, spies } = mockActions();
-    const tool = toolNamed(actions, "ogram_add_learning_module");
-    expect(tool.inputSchema).toBe(LearningModuleInputSchema);
-
-    const result = (await tool.execute({
-      capsuleId: "capsule-1787997600000",
-      templateId: "context_packing",
-    })) as Record<string, unknown>;
-
-    expect(spies.addLearningModule).toHaveBeenCalledWith(
-      "capsule-1787997600000",
-      expect.objectContaining({ kind: "mini_game" }),
-    );
-    expect(spies.awaitRevision).toHaveBeenCalledWith(2, "event-module");
-    expect(result).toMatchObject({
-      ok: true,
-      revision: 2,
-      moduleId: "module-new-12345678",
-      module: { id: "module-new-12345678", kind: "mini_game" },
-      moduleCount: 1,
-    });
-
     await expect(
-      tool.execute({
-        capsuleId: "capsule-1787997600000",
-        templateId: "context_packing",
-        title: "Model-authored copy must not cross this boundary.",
-      }),
+      tool.execute({ focus: "effort_fit" }),
     ).rejects.toThrow(/Invalid tool input/);
   });
 
@@ -406,7 +621,7 @@ describe("Ogram WebMCP tools", () => {
     const registration = await registerOgramLearningTools(actions);
 
     expect(registration.supported).toBe(false);
-    expect(registration.toolCount).toBe(6);
+    expect(registration.toolCount).toBe(7);
     expect(window.__OGRAM_WEBMCP_TOOLS__?.ogram_get_learning_mission).toBeDefined();
     registration.cleanup();
     expect(window.__OGRAM_WEBMCP_TOOLS__).toBeUndefined();

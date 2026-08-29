@@ -10,6 +10,10 @@ import type {
   ProofMode,
   SignalId,
 } from "./types";
+import {
+  createContextPackingInstrument,
+  createPracticeCollaboration,
+} from "./practiceEngine";
 
 interface LessonRecipe {
   recipeId: string;
@@ -551,6 +555,14 @@ export function createCapsule(
         : recipe.practiceContract.proof,
   };
 
+  const sharedInstrument =
+    input.focus === "thread_hygiene"
+      ? {
+          practiceInstrument: createContextPackingInstrument(),
+          collaboration: createPracticeCollaboration(),
+        }
+      : {};
+
   return {
     id: resolvedCapsuleId(capsuleId, now),
     createdAt,
@@ -575,11 +587,13 @@ export function createCapsule(
       },
       {
         id: "choose",
-        label: "Choose",
+        label: "Practice",
         detail:
-          practiceMode === "rehearsal"
-            ? "Rehearse the response and inspect the consequence."
-            : "Work the scenario and inspect the consequence.",
+          input.focus === "thread_hygiene"
+            ? "Compose, share, and revise one clean context pack with Codex."
+            : practiceMode === "rehearsal"
+              ? "Rehearse the response and inspect the consequence."
+              : "Work the scenario and inspect the consequence.",
         status: "locked",
       },
       {
@@ -604,5 +618,6 @@ export function createCapsule(
       proofMode,
     },
     learningModules: [],
+    ...sharedInstrument,
   };
 }

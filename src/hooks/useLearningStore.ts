@@ -13,11 +13,15 @@ import {
   publishCapsuleTransition,
   queueDesktopFollowUpTransition,
   recordChoiceTransition,
+  recordPracticeCoachingTransition,
+  resolvePracticeReviewTransition,
   resetLearningSession,
   restoreLearningState,
   retryJourneySyncTransition,
+  sharePracticeAttemptTransition,
   submitSignalsTransition,
   systemLearningSessionDependencies,
+  withdrawPracticeConsentTransition,
 } from "../domain/learningSession";
 import type {
   LearningTransition,
@@ -25,6 +29,9 @@ import type {
 } from "../domain/learningSession";
 import type {
   CapsuleDraftInput,
+  ContextPackCardId,
+  ContextPackCoachingMove,
+  ContextPackPlacement,
   LearningModuleInput,
   LearningState,
   PracticeContract,
@@ -68,6 +75,28 @@ export interface LearningActions {
     capsuleId: string,
     module: LearningModuleInput,
   ) => RevisionResult & { moduleId: string; eventId: string };
+  sharePracticeAttempt: (
+    capsuleId: string,
+    placements: ContextPackPlacement[],
+  ) => RevisionResult & { attemptRevision: number; eventId: string };
+  withdrawPracticeConsent: (
+    capsuleId: string,
+  ) => RevisionResult & { attemptRevision: number; eventId: string };
+  recordPracticeCoaching: (
+    capsuleId: string,
+    attemptRevision: number,
+    move: ContextPackCoachingMove,
+    cardId: ContextPackCardId | null,
+  ) => RevisionResult & {
+    reviewId: string;
+    eventId: string;
+    ready: boolean;
+  };
+  resolvePracticeReview: (
+    capsuleId: string,
+    reviewId: string,
+    resolution: "accepted" | "dismissed",
+  ) => RevisionResult & { reviewId: string; eventId: string };
   recordChoice: (
     capsuleId: string,
     choiceId: string,
@@ -378,6 +407,69 @@ export function useLearningStore(): {
     [commitTransition],
   );
 
+  const sharePracticeAttempt = useCallback(
+    (capsuleId: string, placements: ContextPackPlacement[]) =>
+      commitTransition((current) =>
+        sharePracticeAttemptTransition(
+          current,
+          capsuleId,
+          placements,
+          systemLearningSessionDependencies,
+        ),
+      ),
+    [commitTransition],
+  );
+
+  const withdrawPracticeConsent = useCallback(
+    (capsuleId: string) =>
+      commitTransition((current) =>
+        withdrawPracticeConsentTransition(
+          current,
+          capsuleId,
+          systemLearningSessionDependencies,
+        ),
+      ),
+    [commitTransition],
+  );
+
+  const recordPracticeCoaching = useCallback(
+    (
+      capsuleId: string,
+      attemptRevision: number,
+      move: ContextPackCoachingMove,
+      cardId: ContextPackCardId | null,
+    ) =>
+      commitTransition((current) =>
+        recordPracticeCoachingTransition(
+          current,
+          capsuleId,
+          attemptRevision,
+          move,
+          cardId,
+          systemLearningSessionDependencies,
+        ),
+      ),
+    [commitTransition],
+  );
+
+  const resolvePracticeReview = useCallback(
+    (
+      capsuleId: string,
+      reviewId: string,
+      resolution: "accepted" | "dismissed",
+    ) =>
+      commitTransition((current) =>
+        resolvePracticeReviewTransition(
+          current,
+          capsuleId,
+          reviewId,
+          resolution,
+          systemLearningSessionDependencies,
+        ),
+      ),
+    [commitTransition],
+  );
+
   const recordChoice = useCallback(
     (capsuleId: string, choiceId: string) =>
       commitTransition((current) =>
@@ -433,6 +525,10 @@ export function useLearningStore(): {
       submitSignals,
       publishCapsule,
       addLearningModule,
+      sharePracticeAttempt,
+      withdrawPracticeConsent,
+      recordPracticeCoaching,
+      resolvePracticeReview,
       recordChoice,
       completeCapsule,
       queueDesktopFollowUp,
@@ -445,6 +541,10 @@ export function useLearningStore(): {
       submitSignals,
       publishCapsule,
       addLearningModule,
+      sharePracticeAttempt,
+      withdrawPracticeConsent,
+      recordPracticeCoaching,
+      resolvePracticeReview,
       recordChoice,
       completeCapsule,
       queueDesktopFollowUp,

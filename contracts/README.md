@@ -2,7 +2,7 @@
 
 [`learning-event.schema.json`](learning-event.schema.json) is the transport-neutral boundary shared by the Ogram Learn page, the Ogram management backend, and a native desktop companion. It describes a privacy-minimized fact that already happened in one learning session.
 
-The application cache is state version 3; the public envelope is independently versioned as schema version 1. Changing one does not automatically require changing the other.
+The application cache is state version 4; the public envelope is independently versioned as schema version 1. Changing one does not automatically require changing the other. State v4 adds immutable context-pack attempt snapshots and fail-closed `private` / `granted` / `consumed` review consent.
 
 ## Guarantees
 
@@ -23,12 +23,27 @@ learning.context.loaded
 learning.signals.submitted
 learning.capsule.published
 learning.module.added
+learning.practice_attempt.shared
+learning.practice_consent.withdrawn
+learning.practice_coaching.recorded
+learning.practice_review.resolved
 learning.choice.recorded
 learning.training.completed
 learning.desktop_follow_up.queued
 ```
 
-Actors are equally explicit: `codex`, `learner`, or `ogram`. In particular, scenario choices and training completion must be learner-attributed.
+Actors are equally explicit: `codex`, `learner`, or `ogram`. Attempt sharing, consent withdrawal, review resolution, scenario choices, and training completion must be learner-attributed; bounded coaching is Codex-attributed.
+
+The four collaboration events are deliberately smaller than the browser snapshot:
+
+- `learning.practice_attempt.shared` records `attemptRevision`, the fixed card count, `availableForAgentReview: true`, `consentGranted: true`, and `rawTaskContentShared: false`.
+- `learning.practice_consent.withdrawn` records the exact attempt revision and `accessRevoked: true`.
+- `learning.practice_coaching.recorded` records the exact `attemptRevision`, an allowlisted `reconsider_card` or `confirm_ready` move, an allowlisted card ID or `null`, and the resulting ready flag. The visible coaching sentence is page-owned and is not transported as model-authored prose.
+- `learning.practice_review.resolved` records the exact attempt revision, the page-issued review ID, and the learner’s allowlisted `accepted` or `dismissed` resolution.
+
+None of these payloads records card placements, expected zones, private movements, or raw source content. The immutable `r1` / `r2` snapshots remain in the recoverable application state so the page can render the comparison. The event stream records that the review cycle opened, was withdrawn or consumed, and was resolved without turning the learning artifact into telemetry.
+
+At the site-tool boundary, an identical retry of signal submission, capsule publication, or a coaching write returns its existing durable event receipt and marks the result `replayed: true`; it does not append another event. A conflicting coaching retry is rejected. At the transport boundary, retry sends the identical envelope under the original idempotency key.
 
 The build compiles this file into a standalone Ajv validator. The runtime transport uses that generated validator to reject an envelope before enqueue or delivery when its event family, actor, capsule presence, or payload does not match. The suite also validates a representative envelope for every event family, so application payloads and backend expectations cannot drift silently.
 
@@ -70,4 +85,4 @@ The Electron main process owns authentication, schema validation, origin checks,
 
 `summary`, `cue`, `proof`, and `reason` are bounded operational learning text, not a place to smuggle source material. The backend should still apply length checks, content policy, retention, and audit controls after schema validation.
 
-Structured Codex observations are summarized before they reach this contract. The envelope may record signal count, focus, and `rawTaskContentShared: false`; it does not record the reviewed task content or agent-authored evidence.
+Structured Codex observations are summarized before they reach this contract. The envelope may record signal count, focus, attempt revision, an allowlisted coaching move, and `rawTaskContentShared: false`; it does not record reviewed task content, card placements, private edits, or agent-authored evidence.

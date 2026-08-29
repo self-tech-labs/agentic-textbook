@@ -5,9 +5,19 @@ import {
   validateLearningModuleInput,
 } from "./lessonEngine";
 import { mockOgramContext, mockPracticeSignals } from "./mockData";
-import { signalIds } from "./types";
+import {
+  compileContextPackReview,
+  createContextPackingInstrument,
+  evaluateContextPack,
+  normalizeContextPackPlacements,
+} from "./practiceEngine";
+import { contextPackCardIds, signalIds } from "./types";
 import type {
   CapsuleDraftInput,
+  ContextPackCardId,
+  ContextPackCoachingMove,
+  ContextPackPlacement,
+  ContextPackReviewResolution,
   ContextReceipt,
   ContextReceiptProvenance,
   JourneyEntry,
@@ -17,6 +27,7 @@ import type {
   OgramInjectedContext,
   PracticeContract,
   PracticeSignal,
+  SharedContextPackSnapshot,
 } from "./types";
 
 export interface LearningSessionDependencies {
@@ -414,7 +425,7 @@ export function createInitialLearningState(
   );
 
   return {
-    version: 3,
+    version: 4,
     sessionId,
     revision: capsuleRevision,
     context: mockOgramContext,
@@ -440,6 +451,10 @@ const eventTypes = new Set<LearningEvent["type"]>([
   "coaching_signals_submitted",
   "capsule_published",
   "learning_module_added",
+  "practice_attempt_shared",
+  "practice_consent_withdrawn",
+  "practice_coaching_recorded",
+  "practice_review_resolved",
   "choice_recorded",
   "training_completed",
   "desktop_follow_up_queued",
@@ -621,6 +636,175 @@ function isLearningModule(value: unknown): boolean {
   return false;
 }
 
+function isContextPackingCollaboration(
+  instrumentValue: unknown,
+  collaborationValue: unknown,
+): boolean {
+  if (!isRecord(instrumentValue) || instrumentValue.kind !== "context_packing") {
+    return false;
+  }
+  if (
+    !isNonEmptyString(instrumentValue.title) ||
+    !isNonEmptyString(instrumentValue.prompt) ||
+    !Array.isArray(instrumentValue.cards) ||
+    instrumentValue.cards.length !== contextPackCardIds.length
+  ) {
+    return false;
+  }
+  const cardIds = new Set<string>();
+  for (const card of instrumentValue.cards) {
+    if (
+      !isRecord(card) ||
+      typeof card.id !== "string" ||
+      !contextPackCardIds.includes(card.id as (typeof contextPackCardIds)[number]) ||
+      cardIds.has(card.id) ||
+      !isNonEmptyString(card.label) ||
+      !isNonEmptyString(card.description) ||
+      (card.expectedZone !== "carry" && card.expectedZone !== "leave")
+    ) {
+      return false;
+    }
+    cardIds.add(card.id);
+  }
+  const canonicalInstrument = createContextPackingInstrument();
+  if (JSON.stringify(instrumentValue) !== JSON.stringify(canonicalInstrument)) {
+    return false;
+  }
+  if (!isRecord(collaborationValue)) return false;
+  if (
+    !["drafting", "awaiting_review", "revision_requested", "ready"].includes(
+      String(collaborationValue.phase),
+    ) ||
+    !["private", "granted", "consumed"].includes(
+      String(collaborationValue.consent),
+    ) ||
+    !Number.isInteger(collaborationValue.attemptRevision) ||
+    Number(collaborationValue.attemptRevision) < 0 ||
+    !Array.isArray(collaborationValue.snapshots) ||
+    collaborationValue.snapshots.length > 12 ||
+    !Array.isArray(collaborationValue.reviews) ||
+    collaborationValue.reviews.length > 12
+  ) {
+    return false;
+  }
+  const instrument = canonicalInstrument;
+  let expectedRevision = 1;
+  for (const snapshot of collaborationValue.snapshots) {
+    if (
+      !isRecord(snapshot) ||
+      snapshot.attemptRevision !== expectedRevision ||
+      !isTimestamp(snapshot.sharedAt) ||
+      !Array.isArray(snapshot.placements)
+    ) {
+      return false;
+    }
+    try {
+      normalizeContextPackPlacements(
+        instrument,
+        snapshot.placements as ContextPackPlacement[],
+      );
+    } catch {
+      return false;
+    }
+    expectedRevision += 1;
+  }
+  if (
+    Number(collaborationValue.attemptRevision) !==
+    collaborationValue.snapshots.length
+  ) {
+    return false;
+  }
+  const reviewIds = new Set<string>();
+  const reviewedRevisions = new Set<number>();
+  for (const review of collaborationValue.reviews) {
+    if (
+      !isRecord(review) ||
+      !isNonEmptyString(review.id) ||
+      reviewIds.has(review.id) ||
+      !Number.isInteger(review.attemptRevision) ||
+      Number(review.attemptRevision) < 1 ||
+      Number(review.attemptRevision) > Number(collaborationValue.attemptRevision) ||
+      reviewedRevisions.has(Number(review.attemptRevision)) ||
+      !isTimestamp(review.at) ||
+      (review.move !== "reconsider_card" && review.move !== "confirm_ready") ||
+      (review.cardId !== null &&
+        (typeof review.cardId !== "string" ||
+          !contextPackCardIds.includes(
+            review.cardId as (typeof contextPackCardIds)[number],
+          ))) ||
+      !isNonEmptyString(review.message) ||
+      review.message.length > 320 ||
+      (review.resolution !== "pending" &&
+        review.resolution !== "accepted" &&
+        review.resolution !== "dismissed")
+    ) {
+      return false;
+    }
+    if (
+      (review.move === "confirm_ready" &&
+        (review.cardId !== null || review.resolution !== "accepted")) ||
+      (review.move === "reconsider_card" && review.cardId === null)
+    ) {
+      return false;
+    }
+    const snapshot = collaborationValue.snapshots.find(
+      (candidate) =>
+        isRecord(candidate) &&
+        candidate.attemptRevision === review.attemptRevision,
+    );
+    if (!snapshot) return false;
+    try {
+      const canonicalReview = compileContextPackReview(
+        instrument,
+        snapshot as unknown as SharedContextPackSnapshot,
+        review.move as ContextPackCoachingMove,
+        review.cardId as ContextPackCardId | null,
+        String(review.id),
+        String(review.at),
+      );
+      if (
+        canonicalReview.message !== review.message ||
+        canonicalReview.move !== review.move ||
+        canonicalReview.cardId !== review.cardId
+      ) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+    reviewIds.add(review.id);
+    reviewedRevisions.add(Number(review.attemptRevision));
+  }
+  const latestReview = collaborationValue.reviews.at(-1);
+  const latestSnapshot = collaborationValue.snapshots.at(-1);
+  if (
+    (collaborationValue.phase === "awaiting_review") !==
+      (collaborationValue.consent === "granted") ||
+    (collaborationValue.phase === "drafting" &&
+      collaborationValue.consent !== "private") ||
+    ((collaborationValue.phase === "revision_requested" ||
+      collaborationValue.phase === "ready") &&
+      collaborationValue.consent !== "consumed") ||
+    (collaborationValue.phase === "ready" &&
+      (!isRecord(latestReview) ||
+        latestReview.move !== "confirm_ready" ||
+        latestReview.attemptRevision !== collaborationValue.attemptRevision ||
+        !isRecord(latestSnapshot) ||
+        !Array.isArray(latestSnapshot.placements) ||
+        !evaluateContextPack(
+          instrument,
+          latestSnapshot.placements as ContextPackPlacement[],
+        ).isReady)) ||
+    (collaborationValue.phase === "revision_requested" &&
+      (!isRecord(latestReview) ||
+        latestReview.move !== "reconsider_card" ||
+        latestReview.attemptRevision !== collaborationValue.attemptRevision))
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function isCapsule(value: unknown): boolean {
   if (
     !isRecord(value) ||
@@ -707,12 +891,19 @@ function isCapsule(value: unknown): boolean {
     }
     checkpointIds.add(checkpoint.id);
   }
-  return (
+  const modulesValid =
     value.learningModules === undefined ||
     (Array.isArray(value.learningModules) &&
       value.learningModules.length <= 2 &&
-      value.learningModules.every(isLearningModule))
-  );
+      value.learningModules.every(isLearningModule));
+  if (!modulesValid) return false;
+  if (value.focus === "thread_hygiene") {
+    return isContextPackingCollaboration(
+      value.practiceInstrument,
+      value.collaboration,
+    );
+  }
+  return value.practiceInstrument === undefined && value.collaboration === undefined;
 }
 
 function isJourneySync(value: unknown): boolean {
@@ -821,7 +1012,7 @@ function hasValidReceiptAndContext(
 export function isUsableLearningState(state: unknown): state is LearningState {
   if (
     !isRecord(state) ||
-    state.version !== 3 ||
+    state.version !== 4 ||
     !isNonEmptyString(state.sessionId) ||
     state.sessionId.length < 8 ||
     !Number.isInteger(state.revision) ||
@@ -851,7 +1042,7 @@ export function restoreLearningState(
     return createInitialLearningState(dependencies);
   }
   const receipt = cached.contextReceipt;
-  const normalized: LearningState = {
+  let normalized: LearningState = {
     ...cached,
     contextReceipt: assembleContextReceipt({
       receiptId: receipt.receiptId,
@@ -862,6 +1053,48 @@ export function restoreLearningState(
       assembledAt: receipt.assembledAt,
     }),
   };
+  const collaboration = normalized.activeCapsule.collaboration;
+  if (collaboration) {
+    const practiceInstrument = createContextPackingInstrument();
+    normalized = {
+      ...normalized,
+      activeCapsule: {
+        ...normalized.activeCapsule,
+        practiceInstrument,
+        collaboration: {
+          ...collaboration,
+          reviews: collaboration.reviews.map((review) => {
+            const snapshot = collaboration.snapshots.find(
+              (candidate) =>
+                candidate.attemptRevision === review.attemptRevision,
+            )!;
+            const canonical = compileContextPackReview(
+              practiceInstrument,
+              snapshot,
+              review.move,
+              review.cardId,
+              review.id,
+              review.at,
+            );
+            return { ...review, message: canonical.message };
+          }),
+        },
+      },
+    };
+  }
+  if (normalized.activeCapsule.collaboration?.consent === "granted") {
+    normalized = {
+      ...normalized,
+      activeCapsule: {
+        ...normalized.activeCapsule,
+        collaboration: {
+          ...normalized.activeCapsule.collaboration,
+          consent: "private",
+          phase: "drafting",
+        },
+      },
+    };
+  }
   if (normalized.journeySync.status !== "syncing") return normalized;
   return {
     ...normalized,
@@ -941,6 +1174,14 @@ export function publishCapsuleTransition(
   input: CapsuleDraftInput,
   dependencies: LearningSessionDependencies,
 ): LearningTransition<{ capsuleId: string; eventId: string }> {
+  if (
+    current.activeCapsule.status === "active" &&
+    (current.activeCapsule.collaboration?.attemptRevision ?? 0) > 0
+  ) {
+    throw new Error(
+      "The learner has started this shared practice. Finish or reset it before publishing another capsule.",
+    );
+  }
   return advance(current, (revision) => {
     const now = validNow(dependencies);
     const signals = cloneSignals(current.signals);
@@ -1049,6 +1290,297 @@ export function addLearningModuleTransition(
   });
 }
 
+export function sharePracticeAttemptTransition(
+  current: LearningState,
+  capsuleId: string,
+  placements: ContextPackPlacement[],
+  dependencies: LearningSessionDependencies,
+): LearningTransition<{ attemptRevision: number; eventId: string }> {
+  return advance(current, (revision) => {
+    const capsule = current.activeCapsule;
+    const instrument = capsule.practiceInstrument;
+    const collaboration = capsule.collaboration;
+    if (capsule.id !== capsuleId) {
+      throw new Error("That capsule is no longer active.");
+    }
+    if (capsule.status !== "active" || !instrument || !collaboration) {
+      throw new Error("This capsule does not have an active shared instrument.");
+    }
+    if (collaboration.phase === "awaiting_review") {
+      throw new Error("Codex already has one shared revision to review.");
+    }
+    if (collaboration.phase === "ready") {
+      throw new Error("This context pack is already ready to carry forward.");
+    }
+    if (collaboration.reviews.at(-1)?.resolution === "pending") {
+      throw new Error("Accept or dismiss the current coaching note before sharing again.");
+    }
+    if (collaboration.attemptRevision >= 12) {
+      throw new Error("This practice supports at most 12 shared revisions.");
+    }
+    const normalized = normalizeContextPackPlacements(instrument, placements);
+    const now = validNow(dependencies);
+    const attemptRevision = collaboration.attemptRevision + 1;
+    const snapshot = {
+      attemptRevision,
+      sharedAt: now.toISOString(),
+      placements: normalized,
+    };
+    const event = createEvent(
+      dependencies,
+      current.sessionId,
+      revision,
+      "practice_attempt_shared",
+      "learner",
+      `Shared context-pack revision r${attemptRevision} for one bounded Codex review.`,
+      {
+        capsuleId,
+        attemptRevision,
+        cardCount: normalized.length,
+        availableForAgentReview: true,
+        consentGranted: true,
+        rawTaskContentShared: false,
+      },
+      now,
+    );
+    return {
+      state: {
+        ...current,
+        activeCapsule: {
+          ...capsule,
+          collaboration: {
+            ...collaboration,
+            phase: "awaiting_review",
+            consent: "granted",
+            attemptRevision,
+            snapshots: [...collaboration.snapshots, snapshot],
+          },
+        },
+        events: [...current.events, event],
+        journeySync: queuedSync(current.journeySync),
+      },
+      result: { attemptRevision, eventId: event.id },
+    };
+  });
+}
+
+export function withdrawPracticeConsentTransition(
+  current: LearningState,
+  capsuleId: string,
+  dependencies: LearningSessionDependencies,
+): LearningTransition<{ attemptRevision: number; eventId: string }> {
+  return advance(current, (revision) => {
+    const capsule = current.activeCapsule;
+    const collaboration = capsule.collaboration;
+    if (capsule.id !== capsuleId || !collaboration) {
+      throw new Error("That shared instrument is no longer active.");
+    }
+    if (
+      collaboration.phase !== "awaiting_review" ||
+      collaboration.consent !== "granted"
+    ) {
+      throw new Error("There is no active Codex review permission to withdraw.");
+    }
+    const now = validNow(dependencies);
+    const event = createEvent(
+      dependencies,
+      current.sessionId,
+      revision,
+      "practice_consent_withdrawn",
+      "learner",
+      `Withdrew Codex access to context-pack revision r${collaboration.attemptRevision}.`,
+      {
+        capsuleId,
+        attemptRevision: collaboration.attemptRevision,
+        accessRevoked: true,
+      },
+      now,
+    );
+    return {
+      state: {
+        ...current,
+        activeCapsule: {
+          ...capsule,
+          collaboration: {
+            ...collaboration,
+            phase: "drafting",
+            consent: "private",
+          },
+        },
+        events: [...current.events, event],
+        journeySync: queuedSync(current.journeySync),
+      },
+      result: {
+        attemptRevision: collaboration.attemptRevision,
+        eventId: event.id,
+      },
+    };
+  });
+}
+
+export function recordPracticeCoachingTransition(
+  current: LearningState,
+  capsuleId: string,
+  attemptRevision: number,
+  move: ContextPackCoachingMove,
+  cardId: ContextPackCardId | null,
+  dependencies: LearningSessionDependencies,
+): LearningTransition<{ reviewId: string; eventId: string; ready: boolean }> {
+  return advance(current, (revision) => {
+    const capsule = current.activeCapsule;
+    const instrument = capsule.practiceInstrument;
+    const collaboration = capsule.collaboration;
+    if (capsule.id !== capsuleId || !instrument || !collaboration) {
+      throw new Error("That shared instrument is no longer active.");
+    }
+    if (
+      collaboration.phase !== "awaiting_review" ||
+      collaboration.consent !== "granted"
+    ) {
+      throw new Error(
+        "The learner has not granted access to a current practice revision.",
+      );
+    }
+    if (
+      !Number.isInteger(attemptRevision) ||
+      attemptRevision !== collaboration.attemptRevision
+    ) {
+      throw new Error(
+        `Practice revision r${attemptRevision} is stale. Inspect the newly shared revision.`,
+      );
+    }
+    if (
+      collaboration.reviews.some(
+        (review) => review.attemptRevision === attemptRevision,
+      )
+    ) {
+      throw new Error("Codex has already coached this practice revision.");
+    }
+    const snapshot = collaboration.snapshots.find(
+      (candidate) => candidate.attemptRevision === attemptRevision,
+    );
+    if (!snapshot) throw new Error("The shared practice snapshot is unavailable.");
+    const now = validNow(dependencies);
+    const reviewId = dependencies.makeId("review");
+    const review = compileContextPackReview(
+      instrument,
+      snapshot,
+      move,
+      cardId,
+      reviewId,
+      now.toISOString(),
+    );
+    const ready = review.move === "confirm_ready";
+    const event = createEvent(
+      dependencies,
+      current.sessionId,
+      revision,
+      "practice_coaching_recorded",
+      "codex",
+      ready
+        ? `Confirmed context-pack revision r${attemptRevision} as ready.`
+        : `Added one bounded coaching marker to context-pack revision r${attemptRevision}.`,
+      {
+        capsuleId,
+        attemptRevision,
+        move: review.move,
+        cardId: review.cardId,
+        ready,
+      },
+      now,
+    );
+    return {
+      state: {
+        ...current,
+        activeCapsule: {
+          ...capsule,
+          collaboration: {
+            ...collaboration,
+            phase: ready ? "ready" : "revision_requested",
+            consent: "consumed",
+            reviews: [...collaboration.reviews, review],
+          },
+          checkpoints: ready
+            ? capsule.checkpoints.map((checkpoint) => ({
+                ...checkpoint,
+                status:
+                  checkpoint.id === "apply"
+                    ? "current"
+                    : checkpoint.id === "notice" || checkpoint.id === "choose"
+                      ? "done"
+                      : checkpoint.status,
+              }))
+            : capsule.checkpoints,
+        },
+        events: [...current.events, event],
+        journeySync: queuedSync(current.journeySync),
+      },
+      result: { reviewId, eventId: event.id, ready },
+    };
+  });
+}
+
+export function resolvePracticeReviewTransition(
+  current: LearningState,
+  capsuleId: string,
+  reviewId: string,
+  resolution: Exclude<ContextPackReviewResolution, "pending">,
+  dependencies: LearningSessionDependencies,
+): LearningTransition<{ reviewId: string; eventId: string }> {
+  return advance(current, (revision) => {
+    const capsule = current.activeCapsule;
+    const collaboration = capsule.collaboration;
+    if (capsule.id !== capsuleId || !collaboration) {
+      throw new Error("That shared instrument is no longer active.");
+    }
+    if (resolution !== "accepted" && resolution !== "dismissed") {
+      throw new Error("A coaching note can only be accepted or dismissed.");
+    }
+    const latestReview = collaboration.reviews.at(-1);
+    if (
+      !latestReview ||
+      latestReview.id !== reviewId ||
+      latestReview.move !== "reconsider_card" ||
+      latestReview.resolution !== "pending"
+    ) {
+      throw new Error("That coaching note is no longer awaiting a learner decision.");
+    }
+    const now = validNow(dependencies);
+    const event = createEvent(
+      dependencies,
+      current.sessionId,
+      revision,
+      "practice_review_resolved",
+      "learner",
+      `${resolution === "accepted" ? "Accepted" : "Dismissed"} the bounded coaching move on context-pack revision r${latestReview.attemptRevision}.`,
+      {
+        capsuleId,
+        attemptRevision: latestReview.attemptRevision,
+        reviewId,
+        resolution,
+      },
+      now,
+    );
+    return {
+      state: {
+        ...current,
+        activeCapsule: {
+          ...capsule,
+          collaboration: {
+            ...collaboration,
+            reviews: collaboration.reviews.map((review) =>
+              review.id === reviewId ? { ...review, resolution } : review,
+            ),
+          },
+        },
+        events: [...current.events, event],
+        journeySync: queuedSync(current.journeySync),
+      },
+      result: { reviewId, eventId: event.id },
+    };
+  });
+}
+
 export function recordChoiceTransition(
   current: LearningState,
   capsuleId: string,
@@ -1124,13 +1656,21 @@ export function completeCapsuleTransition(
     if (capsule.status !== "active") {
       throw new Error("That capsule has already been completed.");
     }
-    const selectedChoice = capsule.choices.find(
-      (choice) => choice.id === capsule.selectedChoiceId,
-    );
-    if (!selectedChoice?.correct) {
-      throw new Error(
-        "Choose the recommended answer before finishing the lesson.",
+    if (capsule.practiceInstrument) {
+      if (capsule.collaboration?.phase !== "ready") {
+        throw new Error(
+          "Complete the shared practice and receive a ready confirmation before finishing.",
+        );
+      }
+    } else {
+      const selectedChoice = capsule.choices.find(
+        (choice) => choice.id === capsule.selectedChoiceId,
       );
+      if (!selectedChoice?.correct) {
+        throw new Error(
+          "Choose the recommended answer before finishing the lesson.",
+        );
+      }
     }
     const practiceContract = completedContract(
       editedContract,
