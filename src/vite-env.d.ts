@@ -8,18 +8,12 @@ declare global {
       registerTool(
         tool: WebMcpToolDefinition,
         options?: { signal?: AbortSignal },
-      ): Promise<void>;
+      ): void | Promise<void>;
     };
   }
 
   interface Window {
     __OGRAM_WEBMCP_TOOLS__?: Record<string, WebMcpToolDefinition>;
-    ogramDesktop?: {
-      learning?: {
-        publishEvent(event: unknown): Promise<{ eventId?: string }>;
-        openJourney?(capsuleId: string): Promise<void>;
-      };
-    };
   }
 }
 

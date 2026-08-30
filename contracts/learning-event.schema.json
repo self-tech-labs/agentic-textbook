@@ -1,51 +1,61 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://learn.ogram.ch/contracts/learning-event.schema.json",
-  "title": "Ogram Learning Event Envelope",
-  "description": "Privacy-minimized, idempotent event shared by the learning web app, Ogram management service, and desktop companion.",
+  "title": "Ogram Learning Canvas Event Envelope",
+  "description": "Privacy-minimized, append-only, idempotent event shared by the learning canvas, Ogram service, and future companions.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schemaVersion",
     "eventId",
+    "sequence",
+    "stateRevision",
     "idempotencyKey",
-    "learningSessionId",
     "occurredAt",
     "type",
     "actor",
-    "capsuleId",
+    "experienceId",
+    "experienceRevision",
     "data"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "eventId": { "type": "string", "minLength": 8, "maxLength": 160 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "stateRevision": { "type": "integer", "minimum": 1 },
     "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 160 },
-    "learningSessionId": { "type": "string", "minLength": 8, "maxLength": 180 },
     "occurredAt": { "type": "string", "format": "date-time" },
     "type": {
       "type": "string",
       "enum": [
-        "learning.context.loaded",
-        "learning.signals.submitted",
-        "learning.capsule.published",
-        "learning.choice.recorded",
-        "learning.training.completed",
-        "learning.desktop_follow_up.queued"
+        "context.snapshot.loaded",
+        "context.claim.proposed",
+        "context.claim.reviewed",
+        "design.draft.created",
+        "design.draft.patched",
+        "design.draft.validated",
+        "design.review.requested",
+        "design.review.approved",
+        "design.experience.published",
+        "design.asset.registered",
+        "runtime.started",
+        "runtime.node.entered",
+        "runtime.response.submitted",
+        "runtime.feedback.presented",
+        "runtime.completed",
+        "learner.feedback.submitted",
+        "adaptation.proposed"
       ]
     },
     "actor": {
       "type": "string",
-      "enum": ["codex", "learner", "ogram"]
+      "enum": ["agent", "learner", "ogram"]
     },
-    "capsuleId": {
-      "oneOf": [
-        { "type": "string", "minLength": 8, "maxLength": 120 },
-        { "type": "null" }
-      ]
-    },
+    "experienceId": { "type": ["string", "null"], "maxLength": 120 },
+    "experienceRevision": { "type": ["integer", "null"], "minimum": 1 },
     "data": {
       "type": "object",
-      "description": "Sanitized event-specific fields. Raw conversations, prompts, file paths, credentials, and client content are prohibited.",
+      "description": "Sanitized event fields. Raw conversations, prompts, file paths, credentials, client content, and free-text learner responses are prohibited.",
       "additionalProperties": true
     }
   }

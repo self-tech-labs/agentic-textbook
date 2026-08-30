@@ -1,14 +1,15 @@
-import { signalIds } from "../domain/types";
+import { asExperienceDocument } from "../domain/compiler";
 import type {
-  CapsuleDraftInput,
-  LearningState,
-  PracticeSignal,
-  SignalId,
-  SignalLevel,
-} from "../domain/types";
-import type { LearningActions } from "../hooks/useLearningStore";
-
-type JsonSchema = Record<string, unknown>;
+  AssetReference,
+  ContextClaim,
+  ExperiencePatchOperation,
+} from "../domain/experience";
+import {
+  learningExperienceInputSchema,
+  type JsonSchema,
+} from "../domain/experienceSchema";
+import { canvasContract } from "../domain/primitiveRegistry";
+import type { CanvasActions } from "../hooks/useLearningCanvas";
 
 export interface WebMcpToolDefinition {
   name: string;
@@ -30,11 +31,52 @@ export interface WebMcpRegistration {
   cleanup: () => void;
 }
 
-const signalLabels: Record<SignalId, string> = {
-  thread_hygiene: "Thread hygiene",
-  workspace_hygiene: "Workspace hygiene",
-  effort_fit: "Reasoning fit",
-  task_shaping: "Task shaping",
+const emptyInputSchema: JsonSchema = {
+  type: "object",
+  properties: {},
+  additionalProperties: false,
+};
+
+const idempotencySchema = {
+  type: "string",
+  minLength: 8,
+  maxLength: 160,
+  description: "Stable key for this exact command and any retry.",
+};
+
+function commandSchema(
+  required: string[],
+  properties: Record<string, unknown>,
+): JsonSchema {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: [...required, "idempotencyKey"],
+    properties: { ...properties, idempotencyKey: idempotencySchema },
+  };
+}
+
+const operationsSchema = {
+  type: "array",
+  minItems: 1,
+  maxItems: 20,
+  items: {
+    type: "object",
+    required: ["op"],
+    properties: {
+      op: {
+        type: "string",
+        enum: [
+          "replace_metadata",
+          "upsert_node",
+          "remove_node",
+          "upsert_edge",
+          "remove_edge",
+          "set_completion",
+        ],
+      },
+    },
+  },
 };
 
 function objectInput(value: unknown): Record<string, unknown> {
@@ -59,81 +101,219 @@ function requiredString(
   return trimmed;
 }
 
-function numberInRange(
+function requiredInteger(
   object: Record<string, unknown>,
   key: string,
-  min: number,
-  max: number,
+  minimum = 0,
 ): number {
   const value = object[key];
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Error(`${key} must be a finite number.`);
+  if (!Number.isInteger(value) || Number(value) < minimum) {
+    throw new Error(`${key} must be an integer of at least ${minimum}.`);
   }
-  if (value < min || value > max) {
-    throw new Error(`${key} must be between ${min} and ${max}.`);
-  }
-  return value;
+  return Number(value);
 }
 
-function focusId(value: unknown): SignalId {
-  if (typeof value !== "string" || !signalIds.includes(value as SignalId)) {
-    throw new Error("focus must be a supported practice signal id.");
-  }
-  return value as SignalId;
+function idempotencyKey(object: Record<string, unknown>): string {
+  return requiredString(object, "idempotencyKey", 8, 160);
 }
 
 function reveal(sectionId: string): void {
   window.setTimeout(() => {
     const section = document.getElementById(sectionId);
     if (section instanceof HTMLDetailsElement) section.open = true;
-    section?.scrollIntoView({ behavior: "smooth", block: "start" });
+    section?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, 0);
 }
 
-function publicJourney(state: LearningState) {
-  return {
-    activeCapsule: {
-      id: state.activeCapsule.id,
-      title: state.activeCapsule.title,
-      focus: state.activeCapsule.focus,
-      status: state.activeCapsule.status,
-    },
-    journey: state.journey,
-    assignedTraining: state.context.requiredTraining,
-    desktopBridge: state.desktopBridge,
-  };
-}
-
-function parseSignals(input: unknown): PracticeSignal[] {
-  const object = objectInput(input);
-  const rawSignals = object.signals;
-  if (!Array.isArray(rawSignals) || rawSignals.length < 1 || rawSignals.length > 4) {
-    throw new Error("signals must contain between 1 and 4 items.");
+function parseClaims(input: Record<string, unknown>): ContextClaim[] {
+  const rawClaims = input.claims;
+  if (!Array.isArray(rawClaims) || rawClaims.length < 1 || rawClaims.length > 6) {
+    throw new Error("claims must contain one to six reviewable hypotheses.");
   }
-  const seen = new Set<SignalId>();
-  return rawSignals.map((raw) => {
-    const item = objectInput(raw);
-    const id = focusId(item.id);
-    if (seen.has(id)) throw new Error(`Duplicate signal: ${id}.`);
-    seen.add(id);
-    const level = item.level;
-    if (level !== "watch" && level !== "practice" && level !== "priority") {
-      throw new Error(`Invalid level for ${id}.`);
+  const kinds: ContextClaim["kind"][] = [
+    "stated_goal",
+    "current_project",
+    "active_research",
+    "prior_knowledge",
+    "misconception",
+    "behaviour_pattern",
+    "business_constraint",
+    "preference",
+    "accessibility",
+    "journey_evidence",
+  ];
+  const sources: ContextClaim["source"][] = [
+    "learner",
+    "codex_observation",
+    "ogram_profile",
+    "ogram_pixel",
+    "ogram_journey",
+  ];
+  return rawClaims.map((raw) => {
+    const claim = objectInput(raw);
+    if (!kinds.includes(claim.kind as ContextClaim["kind"])) {
+      throw new Error("Each claim needs a supported kind.");
+    }
+    if (!sources.includes(claim.source as ContextClaim["source"])) {
+      throw new Error("Each claim needs a supported source.");
+    }
+    if (
+      claim.sensitivity !== "low" &&
+      claim.sensitivity !== "personal" &&
+      claim.sensitivity !== "restricted"
+    ) {
+      throw new Error("Each claim needs a valid sensitivity.");
+    }
+    if (
+      claim.confidence !== undefined &&
+      (typeof claim.confidence !== "number" ||
+        claim.confidence < 0 ||
+        claim.confidence > 1)
+    ) {
+      throw new Error("Claim confidence must be between 0 and 1.");
+    }
+    if (
+      !Array.isArray(claim.evidenceRefs) ||
+      !claim.evidenceRefs.every((item) => typeof item === "string")
+    ) {
+      throw new Error("Claim evidenceRefs must contain opaque string ids.");
+    }
+    if (
+      !Array.isArray(claim.allowedPurposes) ||
+      claim.allowedPurposes.length < 1 ||
+      !claim.allowedPurposes.every((item) => typeof item === "string")
+    ) {
+      throw new Error("Claim allowedPurposes must contain string ids.");
     }
     return {
-      id,
-      label: signalLabels[id],
-      level: level as SignalLevel,
-      confidence: numberInRange(item, "confidence", 0, 1),
-      evidence: requiredString(item, "evidence", 12, 220),
-      recommendation: requiredString(item, "recommendation", 12, 220),
-      sourceTaskCount: Math.round(numberInRange(item, "sourceTaskCount", 1, 20)),
+      id: requiredString(claim, "id", 4, 120),
+      kind: claim.kind as ContextClaim["kind"],
+      summary: requiredString(claim, "summary", 12, 320),
+      source: claim.source as ContextClaim["source"],
+      confidence: claim.confidence as number | undefined,
+      sensitivity: claim.sensitivity,
+      evidenceRefs: claim.evidenceRefs as string[],
+      allowedPurposes: claim.allowedPurposes as string[],
+      observedAt:
+        typeof claim.observedAt === "string"
+          ? claim.observedAt
+          : new Date().toISOString(),
+      expiresAt:
+        typeof claim.expiresAt === "string" ? claim.expiresAt : undefined,
+      review: "pending",
     };
   });
 }
 
+function parseOperations(value: unknown): ExperiencePatchOperation[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 20) {
+    throw new Error("operations must contain one to twenty bounded operations.");
+  }
+  return structuredClone(value) as ExperiencePatchOperation[];
+}
+
+function parseAsset(value: unknown): AssetReference {
+  const asset = objectInput(value);
+  if (asset.kind !== "image" && asset.kind !== "audio" && asset.kind !== "video") {
+    throw new Error("asset.kind must be image, audio, or video.");
+  }
+  const uri = requiredString(asset, "uri", 8, 500);
+  if (!uri.startsWith("https://") && !uri.startsWith("ogram-asset://")) {
+    throw new Error("asset.uri must use HTTPS or an Ogram asset handle.");
+  }
+  return {
+    id: requiredString(asset, "id", 4, 120),
+    kind: asset.kind,
+    uri,
+    alt: requiredString(asset, "alt", 3, 400),
+    caption:
+      typeof asset.caption === "string" ? asset.caption.trim() : undefined,
+    transcript:
+      typeof asset.transcript === "string"
+        ? asset.transcript.trim()
+        : undefined,
+    digest: requiredString(asset, "digest", 8, 180),
+    generatedBy:
+      typeof asset.generatedBy === "string"
+        ? asset.generatedBy.trim()
+        : undefined,
+  };
+}
+
+function publicContext(actions: CanvasActions) {
+  const state = actions.getState();
+  return {
+    revision: state.revision,
+    contextSnapshotId: state.contextSnapshotId,
+    learningBrief: state.learningBrief,
+    claims: state.contextClaims.map((claim) => ({
+      ...claim,
+      evidenceRefs: claim.evidenceRefs.map(() => "opaque-reference"),
+    })),
+    consentBoundary: {
+      observationsAreHypotheses: true,
+      learnerReviewRequired: true,
+      rawConversationRequested: false,
+      selectedSourceMaterialRequiresSeparateConsent: true,
+    },
+  };
+}
+
+function publicSession(actions: CanvasActions) {
+  const state = actions.getState();
+  return {
+    revision: state.revision,
+    published: {
+      experienceId: state.activeExperience.experienceId,
+      revision: state.activeExperience.draftRevision,
+      title: state.activeExperience.metadata.title,
+      digest: state.design.validation?.digest,
+    },
+    design: {
+      status: state.design.status,
+      draftRevision: state.design.draft?.draftRevision ?? null,
+      valid: state.design.validation?.valid ?? null,
+      diagnosticCounts: state.design.validation
+        ? {
+            errors: state.design.validation.diagnostics.filter(
+              (item) => item.severity === "error",
+            ).length,
+            warnings: state.design.validation.diagnostics.filter(
+              (item) => item.severity === "warning",
+            ).length,
+          }
+        : null,
+      learnerApprovalRecorded: state.design.approvedDraftRevision !== null,
+    },
+    runtime: {
+      status: state.runtime.status,
+      currentNodeId: state.runtime.currentNodeId,
+      visitedNodeIds: state.runtime.visitedNodeIds,
+      responseEvidence: Object.values(state.runtime.responses).map((response) => ({
+        nodeId: response.nodeId,
+        correct: response.correct,
+        confidence: response.confidence,
+        assisted: response.assisted,
+      })),
+    },
+    learnerFeedback: state.learnerFeedback,
+    ledger: {
+      eventCount: state.events.length,
+      lastSequence: state.events.at(-1)?.sequence ?? 0,
+      orderedOutboxCount: state.sync.orderedOutbox.length,
+      recentEvents: state.events.slice(-12).map((event) => ({
+        sequence: event.sequence,
+        type: event.type,
+        actor: event.actor,
+        at: event.at,
+        summary: event.summary,
+      })),
+    },
+  };
+}
+
 export function createOgramLearningTools(
-  actions: LearningActions,
+  actions: CanvasActions,
 ): WebMcpToolDefinition[] {
   const readOnly = {
     readOnlyHint: true,
@@ -144,255 +324,302 @@ export function createOgramLearningTools(
   const write = {
     readOnlyHint: false,
     destructiveHint: false,
-    idempotentHint: false,
+    idempotentHint: true,
     openWorldHint: false,
   };
 
   return [
     {
-      name: "ogram_get_learning_mission",
+      name: "ogram_get_canvas_contract",
       description:
-        "Start a user-requested daily Codex-practice review. Returns the privacy boundary, review rubric, and exact next calls. It never reads Codex history itself.",
-      inputSchema: {
-        type: "object",
-        properties: {},
-        additionalProperties: false,
-      },
+        "Start here. Read the generative canvas capabilities, trusted learning primitives, pedagogical limits, human-only actions, workflow, and document schema.",
+      inputSchema: emptyInputSchema,
       annotations: readOnly,
       execute: () => ({
-        mission:
-          "Turn recent Codex working habits into one practical lesson on the visible Ogram canvas.",
-        consentBoundary:
-          "Only review tasks the user has authorized you to inspect. Do not send raw prompts, outputs, file contents, task titles, people, companies, or client data to this page.",
+        ...canvasContract,
+        documentSchema: learningExperienceInputSchema,
         workflow: [
-          "Read Ogram context with ogram_get_injected_context.",
-          "Use your own authorized Codex task tools to inspect at most 8 recent tasks from the last 7 days.",
-          "Derive 1–4 behavioural signals: thread hygiene, workspace hygiene, reasoning fit, or task shaping.",
-          "Send only counts, confidence, a sanitized behavioural summary, and a recommendation with ogram_submit_practice_signals.",
-          "Publish one capsule with ogram_publish_daily_capsule.",
-          "Invite the learner to complete the visible scenario; never mark completion without their explicit response.",
+          "Read reviewed context with ogram_get_learning_context.",
+          "Optionally propose new hypotheses and wait for learner review.",
+          "Compose a complete LearningExperienceDocument from supported primitives.",
+          "Create or patch a revisioned draft and validate it.",
+          "Repair hard errors; warnings preserve agent judgment.",
+          "Request learner review. Only the learner approves the exact digest.",
+          "Publish after approval; use session evidence for reviewed adaptations.",
         ],
-        signalIds,
-        rawTaskContentAllowed: false,
+        essentialWebMcpRole:
+          "WebMCP is the live query/command port between agent reasoning and this visible canvas. Ogram remains the compiler, renderer, consent authority, runtime, memory, and ledger.",
       }),
     },
     {
-      name: "ogram_get_injected_context",
+      name: "ogram_get_learning_context",
       description:
-        "Read the synthetic Ogram-injected role, workshop, preference, and assigned-training context used to tailor this prototype lesson.",
-      inputSchema: {
-        type: "object",
-        properties: {},
-        additionalProperties: false,
-      },
+        "Read the versioned learning brief and reviewable context claims. Only accepted or corrected claim ids may be used as personalization provenance.",
+      inputSchema: emptyInputSchema,
       annotations: readOnly,
-      execute: () => {
-        const context = actions.getState().context;
-        return {
-          ...context,
-          usage:
-            "Use this only to personalize examples and relevance. Do not infer sensitive traits or override the learner’s stated goal.",
-        };
-      },
+      execute: () => publicContext(actions),
     },
     {
-      name: "ogram_get_learning_journey",
+      name: "ogram_propose_learning_needs",
       description:
-        "Read the current capsule, prior practice proofs, assigned training, and desktop-sync status without conversation content.",
-      inputSchema: {
-        type: "object",
-        properties: {},
-        additionalProperties: false,
-      },
-      annotations: readOnly,
-      execute: () => publicJourney(actions.getState()),
-    },
-    {
-      name: "ogram_submit_practice_signals",
-      description:
-        "Add 1–4 privacy-preserving behavioural observations from an authorized review. Visibly updates and reveals the lesson rationale. Never pass raw task text or names.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          signals: {
-            type: "array",
-            minItems: 1,
-            maxItems: 4,
-            items: {
-              type: "object",
-              properties: {
-                id: { type: "string", enum: signalIds },
-                level: {
-                  type: "string",
-                  enum: ["watch", "practice", "priority"],
-                },
-                confidence: { type: "number", minimum: 0, maximum: 1 },
-                evidence: {
-                  type: "string",
-                  description:
-                    "12–220 character behavioural summary with no raw content, titles, file paths, people, organisations, or client details.",
-                },
-                recommendation: { type: "string", minLength: 12, maxLength: 220 },
-                sourceTaskCount: { type: "integer", minimum: 1, maximum: 20 },
+        "Propose privacy-minimized learning-need hypotheses for visible learner review. This never approves a claim and must not contain raw conversations, files, secrets, or reconstructed client content.",
+      inputSchema: commandSchema(["baseRevision", "claims"], {
+        baseRevision: { type: "integer", minimum: 0 },
+        claims: {
+          type: "array",
+          minItems: 1,
+          maxItems: 6,
+          items: {
+            type: "object",
+            required: [
+              "id",
+              "kind",
+              "summary",
+              "source",
+              "sensitivity",
+              "evidenceRefs",
+              "allowedPurposes",
+            ],
+            properties: {
+              id: { type: "string", minLength: 4, maxLength: 120 },
+              kind: { type: "string" },
+              summary: { type: "string", minLength: 12, maxLength: 320 },
+              source: { type: "string" },
+              confidence: { type: "number", minimum: 0, maximum: 1 },
+              sensitivity: {
+                type: "string",
+                enum: ["low", "personal", "restricted"],
               },
-              required: [
-                "id",
-                "level",
-                "confidence",
-                "evidence",
-                "recommendation",
-                "sourceTaskCount",
-              ],
-              additionalProperties: false,
+              evidenceRefs: { type: "array", items: { type: "string" } },
+              allowedPurposes: {
+                type: "array",
+                minItems: 1,
+                items: { type: "string" },
+              },
+              observedAt: { type: "string" },
+              expiresAt: { type: "string" },
             },
+            additionalProperties: false,
           },
         },
-        required: ["signals"],
-        additionalProperties: false,
-      },
+      }),
       annotations: write,
       execute: (input) => {
-        const signals = parseSignals(input);
-        const result = actions.submitSignals(signals);
-        reveal("evidence-signals");
+        const object = objectInput(input);
+        const result = actions.proposeLearningNeeds({
+          baseRevision: requiredInteger(object, "baseRevision"),
+          idempotencyKey: idempotencyKey(object),
+          claims: parseClaims(object),
+        });
+        reveal("context-dock");
         return {
           ok: true,
-          eventId: result.eventId,
-          acceptedSignalIds: signals.map((signal) => signal.id),
-          rawTaskContentStored: false,
-          visibleChange: "The lesson rationale was updated and revealed.",
-          nextTool: "ogram_publish_daily_capsule",
+          ...result,
+          visibleChange: "Pending hypotheses are visible in the context dock.",
+          learnerActionRequired: "Accept or reject each claim.",
         };
       },
     },
     {
-      name: "ogram_publish_daily_capsule",
+      name: "ogram_create_experience_draft",
       description:
-        "Publish one tailored daily practice to the visible canvas. Ogram’s curated recipe controls lesson structure; you select the focus and personalize the work scenario.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          focus: { type: "string", enum: signalIds },
-          personalizedScenario: {
-            type: "string",
-            minLength: 20,
-            maxLength: 900,
-            description:
-              "A sanitized role-relevant scenario. Do not reproduce any real prompt, task title, person, organisation, file path, or client detail.",
-          },
-          coachNote: { type: "string", minLength: 8, maxLength: 320 },
-          sourceTaskCount: { type: "integer", minimum: 1, maximum: 20 },
+        "Create a complete agent-authored experience from any supported primitive composition. Objective, content, topology, branching, interaction, feedback, and transfer are all authored—not selected from a lesson recipe.",
+      inputSchema: commandSchema(
+        ["basePublishedRevision", "document"],
+        {
+          basePublishedRevision: { type: "integer", minimum: 1 },
+          document: learningExperienceInputSchema,
         },
-        required: [
-          "focus",
-          "personalizedScenario",
-          "coachNote",
-          "sourceTaskCount",
-        ],
-        additionalProperties: false,
-      },
+      ),
       annotations: write,
       execute: (input) => {
         const object = objectInput(input);
-        const draft: CapsuleDraftInput = {
-          focus: focusId(object.focus),
-          personalizedScenario: requiredString(
+        const result = actions.createDraft({
+          basePublishedRevision: requiredInteger(
             object,
-            "personalizedScenario",
-            20,
-            900,
+            "basePublishedRevision",
+            1,
           ),
-          coachNote: requiredString(object, "coachNote", 8, 320),
-          sourceTaskCount: Math.round(
-            numberInRange(object, "sourceTaskCount", 1, 20),
-          ),
-        };
-        const result = actions.publishCapsule(draft);
-        reveal("todays-practice");
+          idempotencyKey: idempotencyKey(object),
+          document: asExperienceDocument(object.document),
+        });
+        reveal("compiler-inspector");
         return {
           ok: true,
           ...result,
-          visibleChange: "A new capsule is active on the shared canvas.",
-          learnerActionRequired: "Complete the scenario before marking it done.",
+          nextTool: "ogram_validate_experience",
+          visibleChange: "The draft transaction is visible in the inspector.",
         };
       },
     },
     {
-      name: "ogram_record_scenario_choice",
+      name: "ogram_patch_experience_draft",
       description:
-        "Record the learner’s explicit choice in the active scenario and reveal feedback on the shared canvas. Do not choose on the learner’s behalf.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          capsuleId: { type: "string", minLength: 8, maxLength: 100 },
-          choiceId: { type: "string", minLength: 2, maxLength: 80 },
-        },
-        required: ["capsuleId", "choiceId"],
-        additionalProperties: false,
-      },
+        "Patch the draft using bounded semantic operations. Arbitrary code, executable expressions, HTML, CSS, and JSON-pointer mutation are not accepted.",
+      inputSchema: commandSchema(["baseDraftRevision", "operations"], {
+        baseDraftRevision: { type: "integer", minimum: 1 },
+        operations: operationsSchema,
+      }),
       annotations: write,
       execute: (input) => {
         const object = objectInput(input);
-        const result = actions.recordChoice(
-          requiredString(object, "capsuleId", 8, 100),
-          requiredString(object, "choiceId", 2, 80),
-        );
-        reveal("practice-scenario");
-        return { ok: true, ...result, visibleChange: "Scenario feedback revealed." };
+        const result = actions.patchDraft({
+          baseDraftRevision: requiredInteger(object, "baseDraftRevision", 1),
+          idempotencyKey: idempotencyKey(object),
+          operations: parseOperations(object.operations),
+        });
+        reveal("compiler-inspector");
+        return { ok: true, ...result, nextTool: "ogram_validate_experience" };
       },
     },
     {
-      name: "ogram_complete_capsule",
+      name: "ogram_validate_experience",
       description:
-        "Complete the active capsule after the learner has answered the scenario and explicitly confirmed the practice commitment. Updates the visible journey.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          capsuleId: { type: "string", minLength: 8, maxLength: 100 },
-        },
-        required: ["capsuleId"],
-        additionalProperties: false,
-      },
+        "Compile the exact draft against structure, capabilities, learning science policy, privacy, accessibility, governed media, and bounded flow. Hard errors block review.",
+      inputSchema: commandSchema(["draftRevision"], {
+        draftRevision: { type: "integer", minimum: 1 },
+      }),
       annotations: write,
       execute: (input) => {
         const object = objectInput(input);
-        const result = actions.completeCapsule(
-          requiredString(object, "capsuleId", 8, 100),
-        );
-        reveal("learning-journey");
+        const result = actions.validateDraft({
+          draftRevision: requiredInteger(object, "draftRevision", 1),
+          idempotencyKey: idempotencyKey(object),
+        });
+        reveal("compiler-inspector");
         return {
-          ok: true,
+          ok: result.valid,
           ...result,
-          visibleChange: "Journey marked complete; practice proof is now visible.",
-          suggestedNextTool: "ogram_queue_desktop_follow_up",
+          nextTool: result.valid
+            ? "ogram_request_learner_review"
+            : "ogram_patch_experience_draft",
         };
       },
     },
     {
-      name: "ogram_queue_desktop_follow_up",
+      name: "ogram_request_learner_review",
       description:
-        "Queue the active practice cue for the Ogram desktop journey after completion, so a later matching Codex behaviour can become proof of application.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          capsuleId: { type: "string", minLength: 8, maxLength: 100 },
-          reason: { type: "string", minLength: 8, maxLength: 180 },
-        },
-        required: ["capsuleId", "reason"],
-        additionalProperties: false,
-      },
+        "Place the exact compiler-approved draft in visible learner review. This does not approve or publish it; only the learner creates that consent receipt.",
+      inputSchema: commandSchema(["draftRevision"], {
+        draftRevision: { type: "integer", minimum: 1 },
+      }),
       annotations: write,
-      execute: async (input) => {
+      execute: (input) => {
         const object = objectInput(input);
-        const result = await actions.queueDesktopFollowUp(
-          requiredString(object, "capsuleId", 8, 100),
-          requiredString(object, "reason", 8, 180),
-        );
-        reveal("desktop-loop");
+        const result = actions.requestDraftReview({
+          draftRevision: requiredInteger(object, "draftRevision", 1),
+          idempotencyKey: idempotencyKey(object),
+        });
+        reveal("draft-review");
         return {
           ok: true,
           ...result,
-          visibleChange: "Desktop learning-loop status updated.",
+          visibleChange: "The exact revision is awaiting learner approval.",
+          humanOnlyAction: "approve this revision",
+        };
+      },
+    },
+    {
+      name: "ogram_publish_experience",
+      description:
+        "Publish and start the exact draft only after learner approval. This fails closed when the human receipt is absent, stale, or bound to another digest.",
+      inputSchema: commandSchema(["draftRevision"], {
+        draftRevision: { type: "integer", minimum: 1 },
+      }),
+      annotations: write,
+      execute: (input) => {
+        const object = objectInput(input);
+        const result = actions.publishDraft({
+          draftRevision: requiredInteger(object, "draftRevision", 1),
+          idempotencyKey: idempotencyKey(object),
+        });
+        reveal("learning-stage");
+        return {
+          ok: true,
+          ...result,
+          visibleChange: "The compiled experience is live on the shared canvas.",
+          learnerOwnsResponses: true,
+        };
+      },
+    },
+    {
+      name: "ogram_register_generated_asset",
+      description:
+        "Attach an image, audio, or video reference to the current draft. WebMCP carries governed metadata—not binary media or embed code. Accessibility is enforced by the compiler.",
+      inputSchema: commandSchema(["draftRevision", "asset"], {
+        draftRevision: { type: "integer", minimum: 1 },
+        asset: {
+          type: "object",
+          additionalProperties: false,
+          required: ["id", "kind", "uri", "alt", "digest"],
+          properties: {
+            id: { type: "string", minLength: 4, maxLength: 120 },
+            kind: { type: "string", enum: ["image", "audio", "video"] },
+            uri: { type: "string", minLength: 8, maxLength: 500 },
+            alt: { type: "string", minLength: 3, maxLength: 400 },
+            caption: { type: "string", maxLength: 400 },
+            transcript: { type: "string", maxLength: 8000 },
+            digest: { type: "string", minLength: 8, maxLength: 180 },
+            generatedBy: { type: "string", maxLength: 120 },
+          },
+        },
+      }),
+      annotations: write,
+      execute: (input) => {
+        const object = objectInput(input);
+        const result = actions.registerDraftAsset({
+          draftRevision: requiredInteger(object, "draftRevision", 1),
+          idempotencyKey: idempotencyKey(object),
+          asset: parseAsset(object.asset),
+        });
+        reveal("compiler-inspector");
+        return {
+          ok: true,
+          ...result,
+          nextTool: "ogram_patch_experience_draft",
+          note: "Reference the asset id from media.explainer, then validate the new revision.",
+        };
+      },
+    },
+    {
+      name: "ogram_get_learning_session",
+      description:
+        "Read the design transaction, published revision, privacy-minimized learner evidence, feedback, and append-only ledger cursor. Raw free-text responses are never returned.",
+      inputSchema: emptyInputSchema,
+      annotations: readOnly,
+      execute: () => publicSession(actions),
+    },
+    {
+      name: "ogram_propose_adaptation",
+      description:
+        "Propose a bounded revision from the published experience using feedback or response evidence. It is compiled and still requires learner review; completed history is immutable.",
+      inputSchema: commandSchema(
+        ["basePublishedRevision", "rationale", "operations"],
+        {
+          basePublishedRevision: { type: "integer", minimum: 1 },
+          rationale: { type: "string", minLength: 12, maxLength: 360 },
+          operations: operationsSchema,
+        },
+      ),
+      annotations: write,
+      execute: (input) => {
+        const object = objectInput(input);
+        const result = actions.proposeAdaptation({
+          basePublishedRevision: requiredInteger(
+            object,
+            "basePublishedRevision",
+            1,
+          ),
+          idempotencyKey: idempotencyKey(object),
+          rationale: requiredString(object, "rationale", 12, 360),
+          operations: parseOperations(object.operations),
+        });
+        reveal(result.valid ? "draft-review" : "compiler-inspector");
+        return {
+          ok: result.valid,
+          ...result,
+          learnerReviewRequired: true,
+          historyRewritten: false,
         };
       },
     },
@@ -400,17 +627,17 @@ export function createOgramLearningTools(
 }
 
 export async function registerOgramLearningTools(
-  actions: LearningActions,
+  actions: CanvasActions,
 ): Promise<WebMcpRegistration> {
   const tools = createOgramLearningTools(actions);
-  const fallbackRegistry = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
-  window.__OGRAM_WEBMCP_TOOLS__ = fallbackRegistry;
+  window.__OGRAM_WEBMCP_TOOLS__ = Object.fromEntries(
+    tools.map((tool) => [tool.name, tool]),
+  );
 
   const controller = new AbortController();
   const supported = typeof document.modelContext?.registerTool === "function";
-
   if (supported) {
-    await Promise.all(
+    await Promise.allSettled(
       tools.map((tool) =>
         document.modelContext!.registerTool(tool, { signal: controller.signal }),
       ),
