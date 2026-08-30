@@ -2,47 +2,51 @@ interface HeaderProps {
   webMcpSupported: boolean;
   toolCount: number;
   registering: boolean;
-  simulationRunning: boolean;
-  onReplay: () => void;
+  composing: boolean;
+  onCompose: () => void;
 }
 
 export function Header({
   webMcpSupported,
   toolCount,
   registering,
-  simulationRunning,
-  onReplay,
+  composing,
+  onCompose,
 }: HeaderProps) {
-  const status = registering ? "Connecting" : `${toolCount} tools ready`;
+  const status = registering
+    ? "Connecting canvas"
+    : webMcpSupported
+      ? `WebMCP live · ${toolCount}`
+      : `WebMCP contract · ${toolCount}`;
 
   return (
     <header className="site-header">
-      <a className="wordmark" href="#top" aria-label="Ogram Practice home">
-        ogram
+      <a className="wordmark" href="#top" aria-label="Ogram Learning Canvas home">
+        <span>ogram</span>
+        <i>learning canvas</i>
       </a>
 
+      <div className="header-thesis" aria-hidden="true">
+        <span>agent authors</span>
+        <b>→</b>
+        <span>ogram governs</span>
+        <b>→</b>
+        <span>learner acts</span>
+      </div>
+
       <div className="header-actions">
-        <div
-          className={`tool-status ${registering ? "is-preview" : "is-live"}`}
-          role="status"
-          aria-live="polite"
-          title={
-            webMcpSupported
-              ? "Registered through document.modelContext"
-              : "Tool definitions are ready. Use ChatGPT’s built-in browser or Chrome with WebMCP enabled to invoke them."
-          }
-        >
+        <div className={`tool-status ${webMcpSupported ? "is-native" : ""}`} role="status">
           <span className="status-light" aria-hidden="true" />
           <span>{status}</span>
         </div>
         <button
-          className="rebuild-button"
+          className="compose-button"
           type="button"
-          onClick={onReplay}
-          disabled={simulationRunning}
+          onClick={onCompose}
+          disabled={composing}
         >
-          {simulationRunning ? "Codex is composing…" : "Rebuild with Codex"}
-          <span aria-hidden="true">↗</span>
+          <span className="compose-spark" aria-hidden="true">✦</span>
+          {composing ? "Codex is composing…" : "Compose another experience"}
         </button>
       </div>
     </header>

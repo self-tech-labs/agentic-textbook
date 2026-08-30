@@ -31,7 +31,7 @@ The four equally weighted legal-rule criteria are:
 3. Potential Impact
 4. Creativity & Ambition
 
-WebMCP Leverage is the first tie-break. Practice Desk should therefore demonstrate multiple visible, structured tool calls—not only one tool that returns a prompt.
+WebMCP Leverage is the first tie-break. Learning Canvas should therefore demonstrate the visible draft → compile → learner review → publish transaction—not only one tool that returns content.
 
 ## Important technical constraints
 

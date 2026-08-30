@@ -1,75 +1,81 @@
-# Demo script — 2 minutes 35 seconds
+# Demo script — 2 minutes 45 seconds
 
-## 0:00–0:18 — The problem
+## 0:00–0:20 — The future we are building for
 
-Show the Ogram Practice Desk and the learning trace.
-
-Voiceover:
-
-> New Codex users often keep every job in one giant task, work outside projects, or spend the wrong reasoning gear on the wrong problem. Generic tutorials cannot see those habits. Ogram can.
-
-## 0:18–0:35 — Make WebMCP visible
-
-Open the browser’s available site tools. Briefly show the eight Ogram tools and the green “site tools ready” indicator.
-
-Prompt Codex:
-
-> Review my recent Codex work and use this page’s tools to build the one practice I need today.
+Show the full three-column Learning Canvas.
 
 Voiceover:
 
-> The page does not read private tasks. It gives Codex a consent boundary and a behavioural rubric. Codex reviews only what I authorized using its own capabilities.
+> Soon, the AI that already sees what I am researching and trying to accomplish will be able to build the exact learning experience I need—now. Ogram is the generative canvas and learning memory for that future.
 
-## 0:35–0:58 — Combine the two kinds of context
+Point to the three surfaces: reviewed context, live experience, compiler/ledger.
 
-Show calls to `ogram_get_learning_mission` and `ogram_get_injected_context`.
+## 0:20–0:42 — This is not a lesson catalogue
 
-Point to:
-
-- synthetic role and workshop context;
-- the assigned firm training;
-- the blue privacy boundary.
+Open the browser’s site tools and show the 11-tool surface. Call `ogram_get_canvas_contract`.
 
 Voiceover:
 
-> Codex knows how I worked. Ogram knows why the work matters—my role, workshop goals, preferences, and firm assignments. Raw prompts and client content never cross into the page.
+> Codex does not choose one of four lessons. Ogram gives it a versioned language of trusted learning mechanisms. Codex can author the objective, content, graph, branching, feedback, transfer, and media references of a complete mini web app.
 
-## 0:58–1:25 — Let the agent build in public
+Briefly show the nine primitive contracts and the `LearningExperienceDocument` schema.
 
-Call `ogram_submit_practice_signals` with synthetic summaries. Show the evidence cards update.
+## 0:42–1:02 — Personalization is negotiated
 
-Call `ogram_publish_daily_capsule` with `thread_hygiene`. Show the canvas transform into “Know when the task has changed.”
+Call `ogram_get_learning_context`. Point to the context dock and source colors.
 
-Voiceover:
-
-> Codex chooses today’s focus and personalizes the scenario. Ogram controls the seven-minute recipe, visual system, feedback, and learning contract. This is a shared surface, not a chatbot bolted onto an LMS.
-
-## 1:25–1:55 — Human judgment stays central
-
-Choose **Fork the task**. Show “Good call.” and the checkpoints advance.
+Optionally call `ogram_propose_learning_needs` with one synthetic behavioural hypothesis and show the pending accept/exclude controls.
 
 Voiceover:
 
-> The learner still makes the decision. The site tool explicitly forbids Codex from answering on their behalf or claiming completion early.
+> Codex observations are hypotheses, not truth. Ogram context is purpose-bound. The learner sees, accepts, rejects, or corrects what may shape the experience. The agent has no tool to approve its own hypothesis.
 
-Click **Commit this practice**.
+## 1:02–1:32 — Build the experience in public
 
-## 1:55–2:20 — Close the Ogram loop
+Click **Compose another experience** or execute:
 
-Show the learning trace change to 3/4 and the desktop loop move to queued/synced. If the desktop companion is ready, cut to the same capsule appearing there.
+1. `ogram_create_experience_draft`
+2. `ogram_validate_experience`
+3. `ogram_request_learner_review`
 
-Voiceover:
-
-> Completion emits one privacy-minimized, idempotent learning event. Ogram’s existing desktop and session telemetry can now notice the next matching moment—say, a deliverable change inside a long task—and capture a real fork as proof that the practice stuck.
-
-## 2:20–2:35 — Why WebMCP
-
-Open the browser’s recently used site tools/sources.
+Show the lime review surface for **Signal, decision, debris**.
 
 Voiceover:
 
-> WebMCP is what lets Codex and a person co-author the same visible, authenticated learning canvas. The agent reasons, Ogram remembers, and the learner stays in control.
+> This is a complete new graph: prediction, explanation, classification, a conditional remediation branch, reflection, and transfer. The Ogram compiler checks structure, learning evidence, privacy, accessibility, media, and every branch. It produces a stable digest.
+
+Point to zero errors, warnings, mechanism count, and ledger events.
+
+## 1:32–1:52 — Human authority is architectural
+
+Point to “Codex cannot click this for you,” then click **Approve & publish**.
+
+Voiceover:
+
+> Approval binds to this exact revision and digest. The WebMCP publish tool fails without that learner receipt. The agent also cannot answer a prompt, submit feedback, or certify real-world proof.
+
+Show **Build a portable context filter** replace the old canvas.
+
+## 1:52–2:20 — Ogram guides without narrowing creativity
+
+Enter the experience, answer the prediction, and reveal feedback. If time permits, show the accessible select-based sort.
+
+Voiceover:
+
+> Ogram governs mechanisms, not topics. It enforces active generation before passive completion, explanatory feedback, objective-linked evidence, a bounded exit, keyboard-safe interactions, and a real-work transfer cue. Codex retains almost infinite compositional freedom inside those researched constraints.
+
+## 2:20–2:38 — Memory without rewriting history
+
+Show the ledger update after the learner response. Complete or show the final transfer primitive and feedback controls.
+
+Voiceover:
+
+> The ledger separates what was proposed, approved, published, attempted, assisted, completed, and later applied. Feedback can produce a new reviewed revision; it never rewrites the experience or evidence already encountered.
+
+## 2:38–2:45 — End
 
 End card:
 
-> Ogram Practice Desk — yesterday’s habit, today’s practice, tomorrow’s proof.
+> Agent authors. Ogram governs. Learner acts.
+
+> A universal learning canvas for the age of coding agents.

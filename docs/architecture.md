@@ -1,144 +1,195 @@
-# Architecture
+# Implemented architecture — universal generative learning canvas
 
-## Decision
+## Product boundary
 
-The Ogram web canvas is the canonical product and system of record. Codex Visualize is an optional companion micro-lab, never the main transport or persistence layer.
+The refactor replaces four hard-coded topic recipes with a general learning-application intermediate representation:
 
-### Why the canvas is canonical
+> Codex authors a declarative learning application; Ogram compiles, runs, remembers, and governs it.
 
-WebMCP is designed for a human, an agent, and a live web application to share state. Practice Desk uses that property directly:
+Codex owns the subject, objective, content, sequence, graph, interaction pattern, feedback, transfer design, and media references. Ogram owns the accepted language, schemas, primitive implementations, pedagogy/privacy/accessibility policies, runtime, consent, revision history, and journey ledger.
 
-1. Ogram exposes narrow site tools from the visible page.
-2. Codex reviews only user-authorized task history through its own capabilities.
-3. Codex submits privacy-minimized observations.
-4. Each tool call visibly changes the shared canvas.
-5. The learner answers and explicitly commits.
-6. Ogram persists the journey and lets the desktop companion look for later proof.
-
-A tool that merely returns “please invoke Visualize” would be a prompt trampoline: it is host-dependent, loses longitudinal state, weakens WebMCP leverage, and cannot guarantee Ogram’s visual or privacy system. A future tool may return a sanitized visualization recipe; Codex still decides whether to use it.
-
-## Four planes
+## Implemented local system
 
 ```mermaid
 flowchart TB
-  subgraph R[Reasoning plane]
-    Codex[Codex task review]
-    Derive[Derive redacted signals]
-    Codex --> Derive
+  subgraph Context[Context and consent]
+    Claims[Provenance-bearing claims]
+    Review[Human accept / reject]
+    Brief[Versioned learning brief]
+    Claims --> Review --> Brief
   end
 
-  subgraph X[Experience plane]
-    Page[Practice Desk canvas]
-    Tools[Top-level WebMCP tools]
-    Human[Learner]
-    Tools <--> Page
-    Human <--> Page
+  subgraph Authoring[Agent authoring plane]
+    Contract[Canvas capability contract]
+    WM[11 WebMCP site tools]
+    Draft[Versioned experience draft]
+    Contract --> WM --> Draft
   end
 
-  subgraph C[Context + control plane]
-    API[Ogram management API]
-    Profile[Role / workshop context]
-    Journey[Assignments / progress / proof]
-    Profile --> API
-    Journey <--> API
+  subgraph Ogram[Trusted Ogram application]
+    Compiler[Experience compiler]
+    Registry[Primitive registry]
+    Consent[Exact-digest publication gate]
+    Renderer[Trusted React renderers]
+    Runtime[Deterministic graph runtime]
+    Registry --> Compiler
+    Draft --> Compiler --> Consent --> Runtime --> Renderer
   end
 
-  subgraph S[Sensor plane]
-    Shipper[Existing Codex session shipper]
-    Desktop[Ogram Electron desktop]
-    Feedback[Feedback / eject signals]
+  subgraph Memory[Prototype memory]
+    Events[Append-only events]
+    Revisions[Immutable published revisions]
+    Receipts[Consent + command receipts]
+    Outbox[Ordered outbox]
   end
 
-  Derive -->|sanitized only| Tools
-  Page <--> API
-  Shipper --> API
-  Feedback --> API
-  Desktop <--> API
+  Brief --> WM
+  Renderer -->|learner actions| Events
+  Compiler --> Events
+  Consent --> Receipts
+  Runtime --> Events
+  Events --> Outbox
+  Draft --> Revisions
 ```
 
-## Review boundary
+## Context and consent broker
 
-The page cannot and should not silently read other Codex tasks. The first tool returns a bounded mission:
+Context enters as a `ContextClaim`, not a transcript and not one of four fixed enums. Each claim records:
 
-- inspect at most eight authorized recent tasks from a seven-day window;
-- derive only `thread_hygiene`, `workspace_hygiene`, `effort_fit`, or `task_shaping`;
-- send counts, confidence, and a short sanitized behavioural summary;
-- never send prompts, outputs, task titles, files, paths, people, organisations, client data, or transcripts.
+- kind and short summary;
+- learner, Codex, Ogram profile/pixel, or journey source;
+- optional confidence;
+- sensitivity and allowed purposes;
+- opaque evidence references, observation time, and optional expiry;
+- pending, accepted, corrected, or rejected review state.
 
-In production, the learner previews each signal before persistence and can accept, reject, or correct it.
+Only accepted/corrected claim IDs can appear in the personalization provenance of a compiled experience. The WebMCP tool may propose a hypothesis but cannot accept it. The UI creates that learner event.
 
-## Lesson ownership
+## Experience document
 
-Codex chooses the focus and supplies a role-relevant scenario. Ogram’s recipe engine controls:
-
-- lesson duration and cognitive load;
-- concept explanation;
-- answer choices and feedback;
-- progress checkpoints;
-- the cue → response → proof practice contract;
-- visual hierarchy and accessibility.
-
-This prevents an agent-generated lesson from becoming an unbounded page builder while still making the content genuinely personal.
-
-## Longitudinal desktop loop
-
-The current desktop target is the Electron/Svelte Ogram client; no Swift project was found in the inspected workspace. A future Swift client can consume the same HTTPS/event contract.
-
-The existing `ogram sessions ship --background` pipeline already provides a credible sensor. It should derive signals server-side or locally, for example:
+`LearningExperienceDocument` is the agent-authored application:
 
 ```text
-thread_hygiene.long_running_without_fork
-workspace_hygiene.broad_cwd
-model_fit.effort_excessive
-model_fit.effort_insufficient
+schema + registry + policy versions
+context snapshot + learning brief bindings
+metadata + observable objectives
+typed primitive nodes + bounded conditional edges
+completion + adaptation policies
+governed assets + four-lane provenance
 ```
 
-Raw working directories should become a classification (`project_git`, `project_non_git`, `home_or_broad`, `temp`, `unknown`) and, if correlation is needed, a tenant-salted project hash.
+The document accepts no HTML, JSX, CSS, JavaScript, executable expression, `eval`, browser API, or direct network call. Conditions use a tiny AST: `always`, `answer_equals`, or `response_correct`. V1 graphs are acyclic; remediation uses explicit forward retry nodes.
 
-The web app emits the public [`learning-event.schema.json`](../contracts/learning-event.schema.json). Production delivery order:
+## Trusted primitive registry
 
-1. use the authenticated Ogram management API as canonical storage;
-2. expose a main-process-only `LearningClient` in the desktop app;
-3. add narrow preload methods for journey read, event write, capsule open, and handoff redemption;
-4. subscribe or poll for journey changes;
-5. surface a just-in-time cue when the sensor observes the next matching behaviour;
-6. record the observed new habit as proof.
+The initial `ogram.learning.v1` catalogue contains nine mechanisms:
 
-Suggested endpoints:
+1. `orient.objective`
+2. `diagnose.prediction`
+3. `explain.concept`
+4. `model.worked_example`
+5. `practice.choice`
+6. `practice.sort`
+7. `consolidate.reflection`
+8. `transfer.commitment`
+9. `media.explainer`
+
+Each registry entry declares its mechanism, evidence tier, supported learning roles, emitted events, accessibility contract, complexity cost, requirements, forbidden uses, and research provenance. React components receive only the current node, registered assets, learner response, and allowed runtime callbacks.
+
+## Compiler
+
+The compiler runs before review and again immediately before publication. Its hard errors currently cover:
+
+- unsupported schema, policy, primitive, or primitive version;
+- missing or non-observable objectives;
+- duplicate/missing references and unsupported learning roles;
+- unreachable nodes, missing exits, broken conditions, or cycles;
+- passive-only experiences and objectives without learner-generated evidence;
+- passive completion, no unassisted attempt, or missing required transfer;
+- choices without correct answers or explanatory feedback;
+- invalid sort categories and missing corrective feedback;
+- personalization based on unapproved claims;
+- executable/unsafe content;
+- unsafe asset URLs, missing alt text/transcripts, or unknown media handles.
+
+Warnings preserve agent judgment for missing prediction/self-explanation, excessive duration, or disproportionate interaction complexity. Every result contains rule IDs, paths, explanations, suggested repairs, research references, and a stable digest.
+
+## Design transaction over WebMCP
+
+```mermaid
+sequenceDiagram
+  participant C as Codex agent
+  participant W as WebMCP page tools
+  participant O as Ogram compiler
+  participant L as Learner
+
+  C->>W: get canvas contract + reviewed context
+  C->>W: create full document draft (base revision + idempotency key)
+  W->>O: validate exact revision
+  O-->>C: errors / warnings / digest
+  C->>W: semantic patches and revalidation
+  C->>W: request learner review
+  W-->>L: visible exact revision + digest
+  L->>W: approve exact revision
+  C->>W: publish revision
+  W->>O: compile again and start runtime
+```
+
+Every modifying tool carries an idempotency key and the relevant base revision. Stale writes fail. The agent-facing publish tool fails without an exact learner consent receipt. The local “Compose another experience” demo executes the same tool definitions as the native WebMCP route.
+
+## Runtime and learning evidence
+
+The runtime is derived from the immutable published document plus learner events. Primitive components cannot mutate the document, storage, WebMCP, or network directly.
+
+Current state is:
 
 ```text
-POST /api/learning/reviews
-GET  /api/learning/context?review_id=<opaque-id>
-POST /api/learning/capsules
-POST /api/learning/capsules/:id/events
-GET  /api/learning/journey
-POST /api/learning/handoffs
+active node + visited nodes + response map + status
 ```
 
-Suggested deep link:
+Branch conditions inspect only the response produced by their source node. The runtime distinguishes response correctness, confidence, and assistance. Completion requires configured learner-generated nodes, a minimum number of unassisted attempts, and transfer when requested. It explicitly does not claim mastery or delayed transfer.
 
-```text
-app.ogram://learn/capsule/<capsule-id>?handoff=<one-time-code>
-```
+Raw reflection/commitment text remains in local runtime state for immediate experience feedback. Ledger events record only node ID, response kind, correctness, confidence, and counts. `ogram_get_learning_session` never returns raw free-text responses.
 
-The handoff code should be opaque, single-use, and expire within 60 seconds. No bearer token, PII, lesson content, or task identifier belongs in the URL. The prototype link omits the handoff code and demonstrates routing only.
+## Ledger and revisions
 
-## Security requirements before production
+The prototype state contains:
 
-- HttpOnly, Secure, SameSite web sessions with CSRF protection on mutations.
-- Exact-origin CORS and tenant authorization on every read/write.
-- Main-process authentication; never return management tokens to the renderer.
-- Electron `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, a restrictive CSP, navigation/window denial, and sender-origin validation.
-- Exact allowlists for external URLs and deep-link hosts, paths, and actions.
-- Fail closed if encrypted credential storage is unavailable.
-- Replace long-lived WebSocket bearer query parameters with 30–60 second one-use tickets.
-- Append-only learning events plus idempotency uniqueness.
-- User-controlled data review, retention, and deletion.
+- append-only sequenced events with actor, revision, idempotency key, and summary;
+- immutable published document revisions;
+- context and publication consent receipts;
+- idempotent command receipts;
+- an ordered outbox of event IDs;
+- the current local cache and runtime projection.
 
-## Prototype-to-production phases
+Local storage is a cache/vertical-slice persistence adapter. Production should move canonical records to an authenticated Ogram service, use IndexedDB for richer offline queues, and deliver the ordered outbox with retry/backoff and server acknowledgements.
 
-1. **Challenge prototype:** public WebMCP app, synthetic context, browser persistence, public event schema, and mock desktop status.
-2. **Redacted Ogram signals:** authenticated context endpoint, Lake-derived behaviour summaries, consent preview, and canonical learning journey.
-3. **Desktop companion:** typed preload bridge, one-time-code deep links, push/poll updates, and proof-of-application cues.
+## Media and future modalities
 
-This keeps proprietary desktop code and customer data out of the public judging path while demonstrating a real, credible integration.
+WebMCP does not carry generated binary media. The agent registers image/audio/video metadata plus an HTTPS or `ogram-asset://` handle, digest, attribution, alt text, and transcript. The compiler resolves a `media.explainer` node only when accessibility and handle checks pass.
+
+Production asset work still required:
+
+- signed upload/import intents;
+- malware and content scanning;
+- hashing, deduplication, and tenant ownership;
+- image variants, audio/video transcode, captions, and transcript review;
+- retention and deletion receipts.
+
+Voice interaction, video generation, artifact builders, simulations, guided dialogue, and spaced retrieval should enter as new versioned capabilities/primitives—not arbitrary agent code in the trusted page.
+
+## Security boundary before production
+
+- HttpOnly, Secure, SameSite sessions plus CSRF protection.
+- Tenant authorization on every context, asset, revision, event, and receipt.
+- Purpose-bound access, expiry, correction, export, retention, and deletion.
+- CSP with exact origins; no arbitrary embeds or renderer network access.
+- Server-side schema/policy compilation and digest verification.
+- Asset scanning and opaque signed handles.
+- Unique idempotency constraints and strict optimistic concurrency.
+- Immutable audit storage and privacy-minimized journey projections.
+- Electron main-process authentication with a narrow preload bridge if desktop integration is added.
+
+## Production adapters intentionally not simulated
+
+The browser vertical slice does not pretend to include authenticated Ogram context services, the canonical backend event store, binary media processing, background delivery, proactive desktop sensors, delayed retrieval scheduling, or cross-device sync. The corresponding domain seams and contracts are present; those services remain the next implementation phases described in [`universal-generative-learning-canvas-plan.md`](universal-generative-learning-canvas-plan.md).
