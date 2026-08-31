@@ -19,6 +19,10 @@ describe("generative experience compiler", () => {
         new Date("2026-08-29T10:00:00.000Z"),
       );
       expect(result.valid, JSON.stringify(result.diagnostics, null, 2)).toBe(true);
+      expect(
+        result.diagnostics.filter((item) => item.ruleId.startsWith("copy.")),
+        JSON.stringify(result.diagnostics, null, 2),
+      ).toEqual([]);
       expect(result.program?.document.experienceId).toBe(experience.experienceId);
       return experience.nodes.map((node) => node.primitiveId).join("→");
     });
@@ -93,6 +97,31 @@ describe("generative experience compiler", () => {
       },
     ]);
     expect(patched.metadata.title).toBe("A learner-specific boundary lab");
-    expect(decisionLabExperience.metadata.title).toBe("The three doors");
+    expect(decisionLabExperience.metadata.title).toBe(
+      "When to continue, fork, or start fresh",
+    );
+  });
+
+  it("warns when an activity prompt reads like an oversized copywriting exercise", () => {
+    const experience = structuredClone(decisionLabExperience);
+    const reflection = experience.nodes.find(
+      (node) => node.primitiveId === "consolidate.reflection",
+    );
+    if (!reflection || reflection.primitiveId !== "consolidate.reflection") {
+      throw new Error("Expected a reflection node.");
+    }
+    reflection.props.prompt =
+      "Explain the difference between these two approaches without using the words ‘more context’ or ‘less context’, then also describe every implication for your next task.";
+
+    const result = compileExperience(
+      experience,
+      fixtureLearningBrief.approvedClaimIds,
+    );
+    expect(result.diagnostics.map((item) => item.ruleId)).toEqual(
+      expect.arrayContaining([
+        "copy.activity-heading-length",
+        "copy.artificial-word-constraint",
+      ]),
+    );
   });
 });

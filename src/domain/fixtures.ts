@@ -65,7 +65,7 @@ export const fixtureLearningBrief: LearningBrief = {
   desiredCapability:
     "Recognize a change in deliverable and choose whether to continue, fork, or start fresh.",
   whyNow:
-    "A repeated phase-change pattern is adding irrelevant history precisely when execution should become clearer.",
+    "Recent tasks have often kept exploration and production in one conversation, even after the required deliverable changed.",
   transferContext:
     "The next time research, strategy, or exploration becomes a separate production deliverable in Codex.",
   estimatedMinutes: 8,
@@ -121,11 +121,11 @@ export const decisionLabExperience: LearningExperienceDocument = {
   contextSnapshotId: fixtureContextSnapshotId,
   learningBriefId: fixtureLearningBrief.id,
   metadata: {
-    title: "The three doors",
+    title: "When to continue, fork, or start fresh",
     locale: "en-CH",
     estimatedMinutes: 8,
     rationale:
-      "A branching decision lab turns a repeated working pattern into one choice the learner can recognize and transfer today.",
+      "This session uses short work examples to help the learner choose where a new piece of work should begin.",
     theme: "decision-lab",
   },
   objectives: [
@@ -147,15 +147,15 @@ export const decisionLabExperience: LearningExperienceDocument = {
       learningRole: "activate",
       objectiveIds: ["objective-boundary-choice"],
       props: {
-        heading: "Know when the work has changed rooms",
+        heading: "Choose where your next piece of work should begin",
         body:
-          "The goal is not to keep threads short. It is to carry the right memory across a real change in work.",
+          "In Codex, you can continue in the current task, fork it, or start a new task. This lesson helps you choose based on whether the goal, the deliverable, and the useful decisions have changed.",
         successCriteria: [
-          "Spot the deliverable boundary",
-          "Choose the smallest context transition that preserves useful decisions",
+          "Decide whether the goal or deliverable has changed",
+          "Keep approved decisions without carrying rejected exploration into the next task",
         ],
         relevance:
-          "Your approved context points to phase changes—not lack of context—as today’s friction.",
+          "Your recent tasks have often moved from exploration to production inside one long conversation. Practising this choice can make the next production task easier to brief.",
       },
     },
     {
@@ -166,34 +166,34 @@ export const decisionLabExperience: LearningExperienceDocument = {
       objectiveIds: ["objective-boundary-choice"],
       props: {
         context:
-          "A long task contains the approved workshop strategy, abandoned alternatives, and several exploratory detours. The strategy is now final.",
+          "You used one Codex task to explore workshop formats and approve a final strategy. The conversation also contains rejected ideas and several research detours. You now need to write a client follow-up.",
         prompt:
-          "Before seeing the rule: where should the standalone client follow-up begin?",
+          "Where should you create the client follow-up?",
         askConfidence: true,
         options: [
           {
             id: "continue",
-            label: "Continue here",
-            description: "Keep every turn and switch directly into production.",
+            label: "Continue in the current task",
+            description: "Use the full exploration conversation for the production work.",
             correct: false,
             feedback:
-              "Continuing keeps useful decisions, but it also keeps the exploration that no longer serves the new deliverable.",
+              "The approved strategy is useful, but the rejected ideas and research detours are not. Because the deliverable has changed, a separate task will be easier to work with.",
           },
           {
             id: "fork",
-            label: "Fork the task",
-            description: "Inherit the useful decisions in a clean execution branch.",
+            label: "Fork the current task",
+            description: "Create a related task that begins with the approved decisions.",
             correct: true,
             feedback:
-              "A fork preserves the approved decisions while giving the new deliverable a clean working surface.",
+              "A fork keeps the approved strategy available while separating the client follow-up from the earlier exploration.",
           },
           {
             id: "fresh",
-            label: "Start fresh",
-            description: "Open an unrelated task with no inherited context.",
+            label: "Start an unrelated new task",
+            description: "Begin without carrying any information from the exploration.",
             correct: false,
             feedback:
-              "Fresh removes the debris, but also discards approved decisions that the follow-up genuinely needs.",
+              "A completely new task would remove the rejected ideas, but it would also lose the approved strategy that the follow-up needs.",
           },
         ],
       },
@@ -205,11 +205,11 @@ export const decisionLabExperience: LearningExperienceDocument = {
       learningRole: "explain",
       objectiveIds: ["objective-boundary-choice"],
       props: {
-        title: "Let the goal choose the door",
+        title: "How to choose between the three options",
         body:
-          "Continue when the goal and deliverable are still the same. Fork when useful decisions should survive but the deliverable changes. Start fresh when the new goal is unrelated or inherited context would mislead.",
+          "Continue in the current task when the goal and deliverable are still the same. Fork when the new work is related and should keep approved decisions, but it needs a different deliverable. Start a new task when the goal is unrelated or the earlier information would be misleading.",
         keyPoint:
-          "Context is valuable by relevance, not by volume: preserve decisions, release debris.",
+          "Use the current task for the same deliverable, fork for a related new deliverable, and start fresh for an unrelated goal.",
         sourceLabel: "Ogram policy · context portability",
       },
     },
@@ -221,33 +221,33 @@ export const decisionLabExperience: LearningExperienceDocument = {
       objectiveIds: ["objective-boundary-choice"],
       props: {
         context:
-          "You explored three workshop formats, rejected two, and approved one. The next job is a polished follow-up page for the selected format.",
-        prompt: "Which move preserves signal without preserving debris?",
+          "You explored three workshop formats, rejected two, and approved one. You now need to create a polished follow-up page for the selected format.",
+        prompt: "What should you do before creating the follow-up page?",
         askConfidence: true,
         options: [
           {
             id: "continue",
             label: "Continue in the exploration task",
-            description: "The approved answer is already there.",
+            description: "Create the page in the same conversation as the research.",
             correct: false,
             feedback:
-              "The answer is there, but so are competing formats and obsolete constraints. The deliverable has changed.",
+              "The approved format is there, but the task also contains rejected formats and outdated constraints. A fork would keep the useful decision while separating the new deliverable.",
           },
           {
             id: "fork",
-            label: "Fork from the approved strategy",
-            description: "Carry a short handoff and build in a clean branch.",
+            label: "Fork from the exploration task",
+            description: "Begin the page with a short handoff of approved decisions.",
             correct: true,
             feedback:
-              "Exactly. The goal is related, the deliverable is new, and the approved decisions are worth inheriting.",
+              "This is the right choice because the new page uses the approved strategy, but it is a different deliverable from the exploration work.",
           },
           {
             id: "fresh",
-            label: "Start with an empty task",
-            description: "Recreate the facts from memory.",
+            label: "Start a completely new task",
+            description: "Re-enter the relevant information from memory.",
             correct: false,
             feedback:
-              "That creates avoidable recall work and risks losing the decisions the new artifact must respect.",
+              "This would make you re-enter information and could omit an approved decision that the page needs.",
           },
         ],
       },
@@ -259,15 +259,15 @@ export const decisionLabExperience: LearningExperienceDocument = {
       learningRole: "model",
       objectiveIds: ["objective-boundary-choice"],
       props: {
-        title: "A boundary test in three questions",
+        title: "Use three questions to decide",
         scenario:
           "A researcher finishes comparing vendors and now needs to write the procurement recommendation.",
         steps: [
-          { label: "1 · Goal", detail: "Related: the recommendation uses the research." },
-          { label: "2 · Deliverable", detail: "Changed: comparison work becomes a decision document." },
-          { label: "3 · Memory", detail: "Selective: approved evidence matters; abandoned searches do not." },
+          { label: "1 · Is the goal related?", detail: "Yes. The recommendation uses the vendor research." },
+          { label: "2 · Has the deliverable changed?", detail: "Yes. The comparison work is becoming a decision document." },
+          { label: "3 · What should remain?", detail: "Keep the approved evidence and requirements. Leave abandoned searches behind." },
         ],
-        takeaway: "Related goal + new deliverable + useful decisions = fork.",
+        takeaway: "Fork the task when the goal is related, the deliverable has changed, and approved decisions should remain available.",
       },
     },
     {
@@ -279,25 +279,25 @@ export const decisionLabExperience: LearningExperienceDocument = {
       props: {
         context:
           "A pricing analysis is finished. You now need a short board memo using only the approved assumptions.",
-        prompt: "Choose again on a parallel case.",
+        prompt: "Where should you write the board memo?",
         options: [
           {
             id: "continue",
             label: "Continue",
             correct: false,
-            feedback: "The new artifact would still inherit discarded assumptions and analysis chatter.",
+            feedback: "The memo would be written alongside discarded assumptions and analysis notes that no longer apply.",
           },
           {
             id: "fork",
             label: "Fork",
             correct: true,
-            feedback: "Yes. The related decision context should survive; the working debris should not.",
+            feedback: "The memo needs the approved assumptions, but it does not need the full analysis conversation. A fork gives it the right starting point.",
           },
           {
             id: "fresh",
             label: "Fresh",
             correct: false,
-            feedback: "A clean slate would unnecessarily discard approved pricing assumptions.",
+            feedback: "A completely new task would discard the approved pricing assumptions that the memo needs.",
           },
         ],
       },
@@ -310,11 +310,11 @@ export const decisionLabExperience: LearningExperienceDocument = {
       objectiveIds: ["objective-boundary-choice"],
       props: {
         prompt:
-          "Explain the difference between a fork and a fresh task without using the words ‘more context’ or ‘less context’.",
-        sentenceStarter: "A fork is appropriate when…",
+          "In your own words, when would you fork a task, and when would you start a new one?",
+        sentenceStarter: "I would fork a task when…",
         minimumCharacters: 36,
         feedback:
-          "Good: the durable distinction is whether approved decisions still belong to the next goal.",
+          "A fork is useful when the new work is related and still depends on approved decisions. A new task is better when the goal is unrelated or earlier information would be misleading.",
       },
     },
     {
@@ -325,9 +325,9 @@ export const decisionLabExperience: LearningExperienceDocument = {
       objectiveIds: ["objective-boundary-choice"],
       props: {
         prompt:
-          "Name the real deliverable boundary you will watch for next, and what you will carry into the new task.",
-        cue: "The noun describing the deliverable changes.",
-        proof: "A new production task begins with a short handoff of approved decisions.",
+          "Think of a task moving into production. When will you fork it, and which approved decisions will you include?",
+        cue: "You are about to create a different deliverable from completed research or exploration.",
+        proof: "The fork starts with a short handoff that names the outcome, approved decisions, constraints, and final check.",
         minimumCharacters: 32,
       },
     },
@@ -363,18 +363,18 @@ export const systemsMapExperience: LearningExperienceDocument = {
   contextSnapshotId: fixtureContextSnapshotId,
   learningBriefId: fixtureLearningBrief.id,
   metadata: {
-    title: "Signal, decision, debris",
+    title: "What to include in a task handoff",
     locale: "en-CH",
     estimatedMinutes: 9,
     rationale:
-      "A classification map helps the learner distinguish what deserves to cross a task boundary from what should remain behind.",
+      "This session helps the learner decide which information a related new task needs and which working notes can stay behind.",
     theme: "systems-map",
   },
   objectives: [
     {
       id: "objective-context-filter",
-      statement: "Classify task context by whether it should travel into a new deliverable.",
-      successCriteria: ["Keeps approved decisions and constraints", "Leaves abandoned options and conversational debris behind"],
+      statement: "Choose which information to include when handing work to a related new task.",
+      successCriteria: ["Includes approved decisions, requirements, and source references", "Leaves abandoned options and irrelevant conversation history behind"],
     },
   ],
   nodes: [
@@ -385,10 +385,10 @@ export const systemsMapExperience: LearningExperienceDocument = {
       learningRole: "activate",
       objectiveIds: ["objective-context-filter"],
       props: {
-        heading: "Build a portable context filter",
-        body: "A clean fork is not empty. It is deliberately packed.",
-        successCriteria: ["Identify durable signal", "Reject working debris"],
-        relevance: "Your next production task should inherit decisions, not the whole story of reaching them.",
+        heading: "Prepare a useful handoff for a related new task",
+        body: "A fork should begin with the information needed to produce the next deliverable. It does not need the full history of how every decision was reached.",
+        successCriteria: ["Identify information that can affect the next output", "Leave out notes that no longer influence the work"],
+        relevance: "A focused handoff makes it easier for Codex to use approved decisions without being distracted by rejected directions.",
       },
     },
     {
@@ -398,12 +398,12 @@ export const systemsMapExperience: LearningExperienceDocument = {
       learningRole: "activate",
       objectiveIds: ["objective-context-filter"],
       props: {
-        prompt: "Which item is most likely to deserve a place in a fork handoff?",
+        prompt: "Which item should usually be included in a task handoff?",
         askConfidence: true,
         options: [
-          { id: "decision", label: "The approved audience and decision", correct: true, feedback: "Yes. These constrain the new deliverable and remain relevant." },
-          { id: "debate", label: "Every argument from the earlier debate", correct: false, feedback: "The debate explains history, but most of it no longer constrains the work." },
-          { id: "drafts", label: "All rejected draft directions", correct: false, feedback: "Rejected directions usually add interference unless one is a named boundary." },
+          { id: "decision", label: "The approved audience and desired decision", correct: true, feedback: "The audience and desired decision directly affect what the next deliverable should say and do." },
+          { id: "debate", label: "Every argument from the earlier discussion", correct: false, feedback: "The discussion explains how the team reached a decision, but most of it does not affect the next deliverable." },
+          { id: "drafts", label: "All rejected draft directions", correct: false, feedback: "Rejected drafts are usually unnecessary. Include one only when it defines an important limit for the new work." },
         ],
       },
     },
@@ -414,9 +414,9 @@ export const systemsMapExperience: LearningExperienceDocument = {
       learningRole: "explain",
       objectiveIds: ["objective-context-filter"],
       props: {
-        title: "Pack by causal relevance",
-        body: "Carry facts, decisions, constraints, and source references that can change the next output. Summarize rejected options only when they define a boundary. Leave conversational chronology behind.",
-        keyPoint: "Ask: could this item change a correct next deliverable?",
+        title: "Include information that can affect the next output",
+        body: "Include facts, approved decisions, requirements, and source references that can change the next deliverable. Mention a rejected option only when it defines an important limit. Leave out the chronological conversation unless it is needed to understand a decision.",
+        keyPoint: "For each item, ask whether the next deliverable could be wrong or incomplete without it.",
       },
     },
     {
@@ -426,10 +426,10 @@ export const systemsMapExperience: LearningExperienceDocument = {
       learningRole: "practice",
       objectiveIds: ["objective-context-filter"],
       props: {
-        prompt: "Pack this fork. Sort each item by what the new production task needs.",
+        prompt: "Decide which items the new production task needs.",
         buckets: [
-          { id: "carry", label: "Carry forward", description: "Can change the correct output" },
-          { id: "leave", label: "Leave behind", description: "Working history without current force" },
+          { id: "carry", label: "Include in the handoff", description: "This can affect the correct output" },
+          { id: "leave", label: "Leave out", description: "This is working history that no longer affects the output" },
         ],
         items: [
           { id: "audience", label: "Approved audience and desired decision", correctBucketId: "carry" },
@@ -437,7 +437,7 @@ export const systemsMapExperience: LearningExperienceDocument = {
           { id: "discarded", label: "Three discarded opening paragraphs", correctBucketId: "leave" },
           { id: "debate", label: "A long debate about a rejected format", correctBucketId: "leave" },
         ],
-        feedback: "Carry what can alter the output; leave the chronology of how the team arrived there.",
+        feedback: "Include decisions and requirements that can change the output. Leave out discarded drafts and discussion that no longer affects the work.",
       },
     },
     {
@@ -447,7 +447,7 @@ export const systemsMapExperience: LearningExperienceDocument = {
       learningRole: "model",
       objectiveIds: ["objective-context-filter"],
       props: {
-        title: "A four-line handoff",
+        title: "Example: a short handoff for a client follow-up",
         scenario: "The exploration task approved a bilingual follow-up for workshop attendees.",
         steps: [
           { label: "Outcome", detail: "Draft a bilingual follow-up that secures the next decision." },
@@ -455,7 +455,7 @@ export const systemsMapExperience: LearningExperienceDocument = {
           { label: "Boundary", detail: "Do not revive the discarded event format." },
           { label: "Check", detail: "Both language versions ask for the same decision." },
         ],
-        takeaway: "A handoff is a causal model of the next deliverable, not minutes of the previous task.",
+        takeaway: "A useful handoff explains what to produce, which approved information to use, what to avoid, and how to check the result.",
       },
     },
     {
@@ -465,16 +465,16 @@ export const systemsMapExperience: LearningExperienceDocument = {
       learningRole: "retrieve",
       objectiveIds: ["objective-context-filter"],
       props: {
-        prompt: "Try a smaller parallel pack.",
+        prompt: "Which of these two items should the handoff include?",
         buckets: [
-          { id: "carry", label: "Carry forward" },
-          { id: "leave", label: "Leave behind" },
+          { id: "carry", label: "Include in the handoff" },
+          { id: "leave", label: "Leave out" },
         ],
         items: [
           { id: "approved-metric", label: "The approved success metric", correctBucketId: "carry" },
           { id: "old-search", label: "An obsolete search query", correctBucketId: "leave" },
         ],
-        feedback: "The metric can change evaluation of the output; the obsolete query cannot.",
+        feedback: "The success metric is still needed to evaluate the output. The obsolete search query no longer affects the work.",
       },
     },
     {
@@ -484,10 +484,10 @@ export const systemsMapExperience: LearningExperienceDocument = {
       learningRole: "reflect",
       objectiveIds: ["objective-context-filter"],
       props: {
-        prompt: "Write your one-question filter for deciding whether context should cross a task boundary.",
-        sentenceStarter: "I will carry an item when…",
+        prompt: "Write one question you can use to decide whether an item belongs in a task handoff.",
+        sentenceStarter: "I will include an item when…",
         minimumCharacters: 34,
-        feedback: "A useful filter connects context to whether it can change a correct output.",
+        feedback: "A useful question checks whether leaving the item out could make the next deliverable wrong or incomplete.",
       },
     },
     {
@@ -497,9 +497,9 @@ export const systemsMapExperience: LearningExperienceDocument = {
       learningRole: "transfer",
       objectiveIds: ["objective-context-filter"],
       props: {
-        prompt: "Name one item you will deliberately carry and one you will leave behind in your next fork.",
-        cue: "A related goal becomes a new deliverable.",
-        proof: "The handoff names outcome, durable decisions, boundaries, and a check.",
+        prompt: "For a fork you may create soon, name one item to include in the handoff and one item to leave out.",
+        cue: "You are creating a related task for a new deliverable.",
+        proof: "The handoff states the outcome, approved decisions, important requirements, and a way to check the result.",
         minimumCharacters: 34,
       },
     },
@@ -535,11 +535,11 @@ export const fieldNotesExperience: LearningExperienceDocument = {
   contextSnapshotId: fixtureContextSnapshotId,
   learningBriefId: fixtureLearningBrief.id,
   metadata: {
-    title: "Make done visible",
+    title: "Write a clear definition of done",
     locale: "en-CH",
     estimatedMinutes: 7,
     rationale:
-      "A short sequence of prediction, model, self-explanation, and transfer turns a vague prompting instinct into an observable briefing habit.",
+      "This session shows the learner how to replace a vague request with a clear outcome, necessary limits, and a practical final check.",
     theme: "field-notes",
   },
   objectives: [
@@ -557,10 +557,10 @@ export const fieldNotesExperience: LearningExperienceDocument = {
       learningRole: "activate",
       objectiveIds: ["objective-visible-done"],
       props: {
-        heading: "Replace adjectives with evidence",
-        body: "Words such as better, polished, or professional hide the finish line. A shaped task lets Codex exercise judgment inside visible boundaries.",
-        successCriteria: ["Outcome is observable", "Constraints preserve what matters", "A check closes the loop"],
-        relevance: "This is the portable skill beneath every clean handoff into a new production task.",
+        heading: "Give Codex a result it can verify",
+        body: "Requests such as ‘make this better’ or ‘make this more professional’ do not explain what success looks like. A stronger request names the intended result, the limits that matter, and how to check the finished work.",
+        successCriteria: ["Describe an observable result", "State the limits that matter", "Include a relevant final check"],
+        relevance: "This structure is useful whenever you brief Codex for a new production task.",
       },
     },
     {
@@ -571,12 +571,12 @@ export const fieldNotesExperience: LearningExperienceDocument = {
       objectiveIds: ["objective-visible-done"],
       props: {
         context: "A client proposal exists and must be reviewed before it is sent.",
-        prompt: "Which request gives useful judgment room and still makes success visible?",
+        prompt: "Which request gives Codex a clear result without prescribing every edit?",
         askConfidence: true,
         options: [
-          { id: "vague", label: "Make this more professional", correct: false, feedback: "Professional is an impression, not an observable finish line." },
-          { id: "shaped", label: "Make the decision clear, preserve pricing, flag unsupported claims, and end with a send/no-send check", correct: true, feedback: "This names an outcome, boundaries, and a check while leaving room for editorial judgment." },
-          { id: "recipe", label: "Follow these 27 exact sentence edits", correct: false, feedback: "A manual recipe can remove the agent judgment the task is meant to use." },
+          { id: "vague", label: "Make this more professional", correct: false, feedback: "The word ‘professional’ describes an impression, but it does not tell Codex what the proposal needs to achieve." },
+          { id: "shaped", label: "Make the decision clear, preserve pricing, flag unsupported claims, and finish with a send-or-revise recommendation", correct: true, feedback: "This request explains the result, protects important information, and defines a final check while leaving room for editorial judgment." },
+          { id: "recipe", label: "Follow these 27 exact sentence edits", correct: false, feedback: "This may produce the requested edits, but it gives Codex no room to identify a better way to reach the result." },
         ],
       },
     },
@@ -587,7 +587,7 @@ export const fieldNotesExperience: LearningExperienceDocument = {
       learningRole: "model",
       objectiveIds: ["objective-visible-done"],
       props: {
-        title: "From fog to finish line",
+        title: "Example: improve a workshop follow-up",
         scenario: "‘Make the workshop follow-up better.’",
         steps: [
           { label: "Outcome", detail: "Recipients understand the agreed next decision." },
@@ -595,7 +595,7 @@ export const fieldNotesExperience: LearningExperienceDocument = {
           { label: "Boundaries", detail: "Keep names private and do not invent commitments." },
           { label: "Check", detail: "Every paragraph supports the next decision; unsupported claims are flagged." },
         ],
-        takeaway: "Define the result and its test; do not dictate every keystroke.",
+        takeaway: "Describe the result and how to check it, then let Codex choose the best way to produce it.",
       },
     },
     {
@@ -605,10 +605,10 @@ export const fieldNotesExperience: LearningExperienceDocument = {
       learningRole: "reflect",
       objectiveIds: ["objective-visible-done"],
       props: {
-        prompt: "Why is a visible check different from micromanaging the method?",
-        sentenceStarter: "A check defines… while the method…",
+        prompt: "Why does a final check help Codex without telling it exactly how to work?",
+        sentenceStarter: "A final check describes…",
         minimumCharacters: 38,
-        feedback: "Exactly: the check defines evidence of success while the agent still chooses how to produce it.",
+        feedback: "A final check describes the evidence of success. Codex can still choose the most effective method for producing that result.",
       },
     },
     {
@@ -618,11 +618,11 @@ export const fieldNotesExperience: LearningExperienceDocument = {
       learningRole: "assess",
       objectiveIds: ["objective-visible-done"],
       props: {
-        prompt: "A bilingual follow-up should secure one scheduling decision. Which final check is strongest?",
+        prompt: "A bilingual follow-up should secure one scheduling decision. Which final check is most useful?",
         options: [
-          { id: "tone", label: "It sounds polished", correct: false, feedback: "Tone matters, but it does not test whether the desired decision is clear in both versions." },
-          { id: "decision", label: "Both language versions ask for the same scheduling decision and contain no invented commitment", correct: true, feedback: "That check is observable and tied to the real outcome and boundary." },
-          { id: "length", label: "It has exactly six paragraphs", correct: false, feedback: "Paragraph count is only useful if it causally supports the decision; here it is arbitrary." },
+          { id: "tone", label: "It sounds polished", correct: false, feedback: "Tone matters, but this check does not confirm that both versions ask for the intended decision." },
+          { id: "decision", label: "Both versions ask for the same scheduling decision and contain no invented commitment", correct: true, feedback: "This can be checked directly and covers both the intended result and an important limit." },
+          { id: "length", label: "It has exactly six paragraphs", correct: false, feedback: "A paragraph count is only useful when the structure matters to the result. Here, six paragraphs is arbitrary." },
         ],
       },
     },
@@ -633,9 +633,9 @@ export const fieldNotesExperience: LearningExperienceDocument = {
       learningRole: "transfer",
       objectiveIds: ["objective-visible-done"],
       props: {
-        prompt: "Rewrite one vague request you expect to make this week as outcome + boundaries + check.",
-        cue: "My prompt relies on an adjective such as better, clear, or professional.",
-        proof: "The revised prompt ends with an observable definition of done.",
+        prompt: "Rewrite one vague request for this week. Include the intended result, the important limits, and a final check.",
+        cue: "Your request depends on a broad word such as ‘better’, ‘clear’, or ‘professional’.",
+        proof: "The revised request explains what success looks like and how the finished work will be checked.",
         minimumCharacters: 48,
       },
     },
