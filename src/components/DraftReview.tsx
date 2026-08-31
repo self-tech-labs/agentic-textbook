@@ -1,53 +1,69 @@
 import type {
-  CompileResult,
   LearningExperienceDocument,
 } from "../domain/experience";
 
 interface DraftReviewProps {
   draft: LearningExperienceDocument;
-  validation: CompileResult;
   publishing: boolean;
+  retrying: boolean;
   onApprove: () => void;
 }
 
 export function DraftReview({
   draft,
-  validation,
   publishing,
+  retrying,
   onApprove,
 }: DraftReviewProps) {
-  const warnings = validation.diagnostics.filter(
-    (item) => item.severity === "warning",
-  ).length;
-  const mechanisms = new Set(draft.nodes.map((node) => node.primitiveId));
+  const outcomes = draft.objectives.flatMap((objective) =>
+    objective.successCriteria.slice(0, 2),
+  );
 
   return (
-    <section className="draft-review" id="draft-review" aria-labelledby="draft-review-title">
-      <div className="review-signal" aria-hidden="true">
-        <span />
-        <span />
+    <section
+      className="draft-review"
+      id="draft-review"
+      aria-labelledby="draft-review-title"
+      tabIndex={-1}
+    >
+      <div className="proposal-mark" aria-hidden="true">
         <span />
       </div>
       <div className="review-copy">
-        <p className="overline">Codex composed a new experience</p>
-        <h2 id="draft-review-title">{draft.metadata.title}</h2>
-        <p>{draft.metadata.rationale}</p>
-        <div className="review-facts">
-          <span>revision {draft.draftRevision}</span>
-          <span>{draft.nodes.length} nodes</span>
-          <span>{mechanisms.size} mechanisms</span>
-          <span>{warnings} warnings</span>
-        </div>
-      </div>
-      <div className="review-consent">
-        <p>
-          Approval binds to <code>{validation.digest}</code>. Codex cannot click
-          this for you.
+        <p className="eyebrow">Your next session is ready</p>
+        <h1 id="draft-review-title">{draft.metadata.title}</h1>
+        <p className="proposal-rationale">{draft.metadata.rationale}</p>
+        <p className="proposal-meta">
+          <span>{draft.metadata.estimatedMinutes} minutes</span>
+          <span>Tailored to your reviewed context</span>
         </p>
-        <button type="button" onClick={onApprove} disabled={publishing}>
-          {publishing ? "Publishing exact revision…" : "Approve & publish"}
+
+        {outcomes.length ? (
+          <details className="proposal-outline">
+            <summary>What you will practise</summary>
+            <ul>
+              {outcomes.map((outcome) => (
+                <li key={outcome}>{outcome}</li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+
+        <div className="review-consent">
+          <button type="button" onClick={onApprove} disabled={publishing}>
+            {publishing
+              ? "Starting your session…"
+              : retrying
+                ? "Try starting again"
+                : "Start this session"}
           <span aria-hidden="true">→</span>
-        </button>
+          </button>
+          <p>
+            When you start, you approve this version of the session. If you
+            want to change the topic, examples, or level, ask Codex before you
+            begin.
+          </p>
+        </div>
       </div>
     </section>
   );

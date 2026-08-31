@@ -151,6 +151,41 @@ export const canvasContract = {
   pedagogyPolicyVersion: "2026.1",
   authoringModel:
     "The agent authors a declarative learning application. Ogram compiles, renders, remembers, and governs it.",
+  writingGuidelines: {
+    audience:
+      "Write for a learner who wants to understand and practise a useful skill, not for an audience being sold an idea.",
+    voice: [
+      "Use calm, direct, explanatory language and complete sentences.",
+      "Prefer familiar words. Define a necessary technical term the first time it appears.",
+      "Explain why an answer works and what the learner should do next.",
+      "Use a concrete example when an abstract rule could be misunderstood.",
+    ],
+    structure: [
+      "Give the minimum context needed before asking the learner to act.",
+      "Ask one clear question or request one clear action at a time.",
+      "Keep activity headings short enough to scan; put supporting detail in body copy.",
+      "Make transfer prompts name a recognisable real-world situation and a practical next step.",
+    ],
+    avoid: [
+      "Slogan-like contrasts, parallel fragments, and sentences written to sound like punchlines.",
+      "Metaphors as the main explanation of a rule or task.",
+      "Artificial constraints such as banning ordinary words from an answer.",
+      "Cryptic labels such as signal, debris, boundary, or proof unless the lesson first explains exactly what they mean.",
+      "A heading that contains the context, the instruction, and the success criterion all at once.",
+    ],
+    examples: [
+      {
+        avoid: "Which move preserves signal without preserving debris?",
+        prefer: "Which option should you use before creating the follow-up page?",
+      },
+      {
+        avoid:
+          "Explain the difference without using the words ‘more context’ or ‘less context’.",
+        prefer:
+          "In your own words, when would you fork a task, and when would you start a new one?",
+      },
+    ],
+  },
   limits: {
     objectives: { min: 1, max: 3 },
     nodes: { min: 3, max: 30 },

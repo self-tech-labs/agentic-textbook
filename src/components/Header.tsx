@@ -1,54 +1,26 @@
 interface HeaderProps {
-  webMcpSupported: boolean;
-  toolCount: number;
-  registering: boolean;
-  composing: boolean;
-  onCompose: () => void;
+  title: string;
+  detailsOpen: boolean;
+  onOpenDetails: () => void;
 }
 
-export function Header({
-  webMcpSupported,
-  toolCount,
-  registering,
-  composing,
-  onCompose,
-}: HeaderProps) {
-  const status = registering
-    ? "Connecting canvas"
-    : webMcpSupported
-      ? `WebMCP live · ${toolCount}`
-      : `WebMCP contract · ${toolCount}`;
-
+export function Header({ title, detailsOpen, onOpenDetails }: HeaderProps) {
   return (
     <header className="site-header">
       <a className="wordmark" href="#top" aria-label="Ogram Learning Canvas home">
-        <span>ogram</span>
-        <i>learning canvas</i>
+        ogram
       </a>
-
-      <div className="header-thesis" aria-hidden="true">
-        <span>agent authors</span>
-        <b>→</b>
-        <span>ogram governs</span>
-        <b>→</b>
-        <span>learner acts</span>
-      </div>
-
-      <div className="header-actions">
-        <div className={`tool-status ${webMcpSupported ? "is-native" : ""}`} role="status">
-          <span className="status-light" aria-hidden="true" />
-          <span>{status}</span>
-        </div>
-        <button
-          className="compose-button"
-          type="button"
-          onClick={onCompose}
-          disabled={composing}
-        >
-          <span className="compose-spark" aria-hidden="true">✦</span>
-          {composing ? "Codex is composing…" : "Compose another experience"}
-        </button>
-      </div>
+      <p className="header-session-title">{title}</p>
+      <button
+        className="header-details-link"
+        id="session-details-trigger"
+        type="button"
+        aria-expanded={detailsOpen}
+        aria-controls="session-details"
+        onClick={onOpenDetails}
+      >
+        About this session
+      </button>
     </header>
   );
 }

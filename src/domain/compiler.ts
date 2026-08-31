@@ -193,6 +193,55 @@ function choiceDiagnostics(node: LearningNode): CompilerDiagnostic[] {
   return diagnostics;
 }
 
+function copyDiagnostics(node: LearningNode): CompilerDiagnostic[] {
+  const diagnostics: CompilerDiagnostic[] = [];
+  let activityCopy: string | undefined;
+
+  switch (node.primitiveId) {
+    case "orient.objective":
+      activityCopy = node.props.heading;
+      break;
+    case "diagnose.prediction":
+    case "practice.choice":
+    case "practice.sort":
+    case "consolidate.reflection":
+    case "transfer.commitment":
+      activityCopy = node.props.prompt;
+      break;
+    case "explain.concept":
+    case "model.worked_example":
+    case "media.explainer":
+      activityCopy = node.props.title;
+      break;
+  }
+
+  if (activityCopy.length > 110) {
+    diagnostics.push(
+      diagnostic(
+        "copy.activity-heading-length",
+        "warning",
+        `nodes.${node.id}.props`,
+        "This activity heading is long enough to push the learning interaction out of view.",
+        "Use a short, direct heading and move context or explanation into the supporting copy.",
+      ),
+    );
+  }
+
+  if (/without (?:using|saying|mentioning) (?:the )?words?/i.test(activityCopy)) {
+    diagnostics.push(
+      diagnostic(
+        "copy.artificial-word-constraint",
+        "warning",
+        `nodes.${node.id}.props`,
+        "The prompt tests compliance with a wording restriction instead of the learner's understanding.",
+        "Ask the learner to explain the idea plainly or apply it to a concrete example.",
+      ),
+    );
+  }
+
+  return diagnostics;
+}
+
 function assetDiagnostics(
   document: LearningExperienceDocument,
 ): CompilerDiagnostic[] {
@@ -359,6 +408,7 @@ export function compileExperience(
       }
     }
     diagnostics.push(...choiceDiagnostics(node));
+    diagnostics.push(...copyDiagnostics(node));
     if (node.primitiveId === "practice.sort") {
       const bucketIds = new Set(node.props.buckets.map((bucket) => bucket.id));
       if (bucketIds.size < 2 || node.props.items.length < 2) {

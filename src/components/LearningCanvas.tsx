@@ -1,6 +1,8 @@
 import {
   Component,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ErrorInfo,
   type ReactNode,
@@ -50,12 +52,15 @@ class PrimitiveErrorBoundary extends Component<
     if (this.state.failed) {
       return (
         <div className="primitive-error" role="alert">
-          <p className="overline">Safe renderer fallback</p>
-          <h2>This learning block could not be displayed.</h2>
+          <p className="eyebrow">Your progress is safe</p>
+          <h2>Something interrupted this step.</h2>
           <p>
-            Node <code>{this.props.nodeId}</code> was isolated; the rest of the
-            canvas and journey remain intact.
+            Ask Codex to repair this session, then return here to continue.
           </p>
+          <details>
+            <summary>Technical detail</summary>
+            <code>{this.props.nodeId}</code>
+          </details>
         </div>
       );
     }
@@ -89,13 +94,45 @@ function ChoicePrimitive({
   const [confidence, setConfidence] = useState(
     Math.round((response?.confidence ?? 0.6) * 100),
   );
+  const feedbackRef = useRef<HTMLDivElement>(null);
   const selectedOption = node.props.options.find(
     (option) => option.id === (storedValue || selected),
   );
   const askConfidence = Boolean(node.props.askConfidence);
 
+  useEffect(() => {
+    if (!response) return;
+
+    const keepFeedbackVisible = () => {
+      const step = feedbackRef.current?.closest<HTMLElement>(".lesson-step");
+      if (!step) return;
+      if (typeof step.scrollTo === "function") {
+        step.scrollTo({ top: step.scrollHeight, behavior: "auto" });
+      } else {
+        step.scrollTop = step.scrollHeight;
+      }
+    };
+    const animationFrame = window.requestAnimationFrame(keepFeedbackVisible);
+    const step = feedbackRef.current?.closest<HTMLElement>(".lesson-step");
+    const resizeObserver =
+      step && typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(keepFeedbackVisible)
+        : null;
+    if (step && resizeObserver) resizeObserver.observe(step);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      resizeObserver?.disconnect();
+    };
+  }, [response]);
+
   return (
-    <div className="primitive-body choice-primitive">
+    <div
+      className={`primitive-body choice-primitive ${response ? "has-response" : ""}`}
+    >
+      <p className="activity-label">
+        {node.primitiveId === "diagnose.prediction" ? "Quick check" : "Practice"}
+      </p>
       {node.props.context ? <p className="scenario-context">{node.props.context}</p> : null}
       <h2>{node.props.prompt}</h2>
       <div className="canvas-choices" role="group" aria-label="Response options">
@@ -138,9 +175,13 @@ function ChoicePrimitive({
       ) : null}
 
       {response && selectedOption ? (
-        <div className={`inline-feedback ${response.correct ? "is-correct" : "is-rethink"}`} role="status">
+        <div
+          className={`inline-feedback ${response.correct ? "is-correct" : "is-rethink"}`}
+          ref={feedbackRef}
+          role="status"
+        >
           <p className="feedback-label">
-            {response.correct ? "Your reasoning holds" : "A useful mismatch"}
+            {response.correct ? "That’s right" : "Take another look"}
           </p>
           <p>{selectedOption.feedback}</p>
         </div>
@@ -148,7 +189,7 @@ function ChoicePrimitive({
 
       <div className="stage-action-row">
         {response ? (
-          <ContinueButton onAdvance={onAdvance} label="Use this feedback" />
+          <ContinueButton onAdvance={onAdvance} />
         ) : (
           <button
             className="stage-action"
@@ -156,7 +197,7 @@ function ChoicePrimitive({
             disabled={!selected}
             onClick={() => onRespond(selected, askConfidence ? confidence / 100 : undefined)}
           >
-            Commit answer
+            Check my answer
             <span aria-hidden="true">→</span>
           </button>
         )}
@@ -180,6 +221,7 @@ function SortPrimitive({
 
   return (
     <div className="primitive-body sort-primitive">
+      <p className="activity-label">Practice</p>
       <h2>{node.props.prompt}</h2>
       <div className="bucket-legend">
         {node.props.buckets.map((bucket) => (
@@ -217,7 +259,7 @@ function SortPrimitive({
       </div>
       {response ? (
         <div className={`inline-feedback ${response.correct ? "is-correct" : "is-rethink"}`} role="status">
-          <p className="feedback-label">{response.correct ? "Clean classification" : "Inspect the rule"}</p>
+          <p className="feedback-label">{response.correct ? "That’s right" : "Review the rule"}</p>
           <p>{node.props.feedback}</p>
         </div>
       ) : null}
@@ -231,7 +273,7 @@ function SortPrimitive({
             disabled={!ready}
             onClick={() => onRespond(assignments)}
           >
-            Check the map
+            Check my answer
             <span aria-hidden="true">→</span>
           </button>
         )}
@@ -255,39 +297,57 @@ function TextPrimitive({
   const [value, setValue] = useState(storedValue);
   const minimum = node.props.minimumCharacters;
   const isTransfer = node.primitiveId === "transfer.commitment";
+  const currentLength = value.trim().length;
+  const remaining = Math.max(0, minimum - currentLength);
+  const guidanceId = `${node.id}-response-guidance`;
+  const progressId = `${node.id}-response-progress`;
 
   return (
     <div className={`primitive-body text-primitive ${isTransfer ? "is-transfer" : ""}`}>
-      <p className="text-primitive-mark" aria-hidden="true">
-        {isTransfer ? "↗" : "“"}
+      <p className="activity-label">
+        {isTransfer ? "Apply this to your work" : "Explain the idea"}
       </p>
       <h2>{node.props.prompt}</h2>
       {isTransfer ? (
         <div className="transfer-contract">
-          <div><span>When</span><p>{node.props.cue}</p></div>
-          <div><span>Proof</span><p>{node.props.proof}</p></div>
+          <div><span>Use this when</span><p>{node.props.cue}</p></div>
+          <div><span>You’ll know it worked when</span><p>{node.props.proof}</p></div>
         </div>
       ) : null}
       <label>
-        <span>{isTransfer ? "Your real-work commitment" : "Explain it in your own words"}</span>
+        <span>{isTransfer ? "Your plan" : "Your explanation"}</span>
+        <small className="text-guidance" id={guidanceId}>
+          {isTransfer
+            ? "Describe a real situation and the action you will take."
+            : "Use a complete sentence. A concrete example can help."}
+        </small>
         <textarea
           value={value}
           disabled={Boolean(response)}
+          aria-describedby={`${guidanceId} ${progressId}`}
           placeholder={
             node.primitiveId === "consolidate.reflection"
               ? node.props.sentenceStarter
               : "In my next task, I will…"
           }
           onChange={(event) => setValue(event.target.value)}
-          rows={5}
+          rows={4}
         />
-        <small className={value.trim().length >= minimum ? "is-ready" : ""}>
-          {value.trim().length}/{minimum} minimum characters
+        <small
+          className={`response-progress ${remaining === 0 ? "is-ready" : ""}`}
+          id={progressId}
+          aria-live="polite"
+        >
+          {currentLength === 0
+            ? "A short answer is enough."
+            : remaining > 0
+              ? `Add ${remaining} more ${remaining === 1 ? "character" : "characters"} so your answer includes enough detail.`
+              : "Ready to save."}
         </small>
       </label>
       {response && node.primitiveId === "consolidate.reflection" ? (
         <div className="inline-feedback is-correct" role="status">
-          <p className="feedback-label">Your explanation is now evidence</p>
+          <p className="feedback-label">Answer saved</p>
           <p>{node.props.feedback}</p>
         </div>
       ) : null}
@@ -295,7 +355,7 @@ function TextPrimitive({
         {response ? (
           <ContinueButton
             onAdvance={onAdvance}
-            label={isTransfer ? "Complete experience" : "Continue"}
+            label={isTransfer ? "Finish" : "Continue"}
           />
         ) : (
           <button
@@ -304,7 +364,7 @@ function TextPrimitive({
             disabled={value.trim().length < minimum}
             onClick={() => onRespond(value.trim())}
           >
-            {isTransfer ? "Set this cue" : "Save explanation"}
+            {isTransfer ? "Save my plan" : "Save my answer"}
             <span aria-hidden="true">→</span>
           </button>
         )}
@@ -317,8 +377,8 @@ function PassivePrimitive({ node, experience, onAdvance }: PrimitiveProps) {
   if (node.primitiveId === "orient.objective") {
     return (
       <div className="primitive-body objective-primitive">
-        <p className="objective-number">Objective {experience.objectives.findIndex((item) => item.id === node.objectiveIds[0]) + 1}</p>
-        <h1>{node.props.heading}</h1>
+        <p className="objective-number">Today&apos;s lesson</p>
+        <h2>{node.props.heading}</h2>
         <p className="objective-body">{node.props.body}</p>
         <div className="criteria-list">
           <p>By the end, you can</p>
@@ -330,7 +390,7 @@ function PassivePrimitive({ node, experience, onAdvance }: PrimitiveProps) {
           ))}
         </div>
         <p className="relevance-note"><span>Why now</span>{node.props.relevance}</p>
-        <div className="stage-action-row"><ContinueButton onAdvance={onAdvance} label="Enter the experience" /></div>
+        <div className="stage-action-row"><ContinueButton onAdvance={onAdvance} label="Start lesson" /></div>
       </div>
     );
   }
@@ -338,12 +398,12 @@ function PassivePrimitive({ node, experience, onAdvance }: PrimitiveProps) {
   if (node.primitiveId === "explain.concept") {
     return (
       <div className="primitive-body concept-primitive">
-        <p className="chapter-mark">A principle, not a recipe</p>
+        <p className="chapter-mark">Explanation</p>
         <h2>{node.props.title}</h2>
         <p className="concept-copy">{node.props.body}</p>
         <blockquote>{node.props.keyPoint}</blockquote>
         {node.props.sourceLabel ? <p className="source-label">{node.props.sourceLabel}</p> : null}
-        <div className="stage-action-row"><ContinueButton onAdvance={onAdvance} label="Try the principle" /></div>
+        <div className="stage-action-row"><ContinueButton onAdvance={onAdvance} label="Continue to practice" /></div>
       </div>
     );
   }
@@ -362,8 +422,8 @@ function PassivePrimitive({ node, experience, onAdvance }: PrimitiveProps) {
             </li>
           ))}
         </ol>
-        <p className="worked-takeaway"><span>Pattern</span>{node.props.takeaway}</p>
-        <div className="stage-action-row"><ContinueButton onAdvance={onAdvance} label="Use this model" /></div>
+        <p className="worked-takeaway"><span>What this shows</span>{node.props.takeaway}</p>
+        <div className="stage-action-row"><ContinueButton onAdvance={onAdvance} /></div>
       </div>
     );
   }
@@ -372,7 +432,7 @@ function PassivePrimitive({ node, experience, onAdvance }: PrimitiveProps) {
     const asset = experience.assets.find((candidate) => candidate.id === node.props.assetId);
     return (
       <div className="primitive-body media-primitive">
-        <p className="chapter-mark">Governed media</p>
+        <p className="chapter-mark">Supporting material</p>
         <h2>{node.props.title}</h2>
         {node.props.body ? <p className="concept-copy">{node.props.body}</p> : null}
         {asset?.kind === "image" ? <img src={asset.uri} alt={asset.alt} /> : null}
@@ -415,25 +475,24 @@ function CompletionView({
     (node) => node.primitiveId === "transfer.commitment",
   );
   return (
-    <article className="completion-stage" id="learning-stage">
+    <article className="completion-stage" id="learning-stage" tabIndex={-1}>
       <div className="completion-orbit" aria-hidden="true"><span>✓</span></div>
-      <p className="overline">Experience complete · evidence captured</p>
-      <h1>You finished the run.<br />The learning is not finished.</h1>
+      <p className="eyebrow">Session complete</p>
+      <h1>You’ve finished today’s session.</h1>
       <p className="completion-copy">
-        Ogram recorded completion, unassisted attempts, and your transfer cue as
-        separate evidence. It has not claimed mastery; that needs later,
-        unassisted performance in changed conditions.
+        You now have a situation to look out for and a practical action to try.
+        You will be able to judge whether it helped when you use it in real work.
       </p>
       {transfer?.primitiveId === "transfer.commitment" ? (
         <div className="next-work-cue">
-          <span>Watch for</span>
+          <span>Use this when</span>
           <p>{transfer.props.cue}</p>
-          <span>Later proof</span>
+          <span>You’ll know it worked when</span>
           <p>{transfer.props.proof}</p>
         </div>
       ) : null}
       <section className="feedback-strip" aria-label="Experience difficulty">
-        <p>How did this fit you?</p>
+        <p>How well did this session fit your current level?</p>
         <div>
           {([
             ["too_easy", "Too easy"],
@@ -444,13 +503,14 @@ function CompletionView({
               type="button"
               key={value}
               className={learnerFeedback === value ? "is-selected" : ""}
+              aria-pressed={learnerFeedback === value}
               onClick={() => onFeedback(value)}
             >
               {label}
             </button>
           ))}
         </div>
-        {learnerFeedback ? <small>Feedback is now available for a reviewed adaptation.</small> : null}
+        {learnerFeedback ? <small>Thank you. This will help tune the next session.</small> : null}
       </section>
     </article>
   );
@@ -469,6 +529,19 @@ export function LearningCanvas({
     [experience.nodes, runtime.currentNodeId],
   );
   const progress = runtimeProgress(experience, runtime);
+  const stepRef = useRef<HTMLDivElement>(null);
+  const previousNodeId = useRef(runtime.currentNodeId);
+
+  useEffect(() => {
+    if (
+      previousNodeId.current &&
+      node?.id &&
+      previousNodeId.current !== node.id
+    ) {
+      stepRef.current?.focus({ preventScroll: true });
+    }
+    previousNodeId.current = node?.id ?? null;
+  }, [node?.id]);
 
   if (runtime.status === "completed") {
     return (
@@ -489,51 +562,52 @@ export function LearningCanvas({
       className={`learning-stage theme-${experience.metadata.theme}`}
       id="learning-stage"
       aria-labelledby="experience-title"
+      tabIndex={-1}
     >
       <header className="stage-header">
-        <div>
-          <p className="overline">02 · Live generative canvas</p>
-          <h2 id="experience-title">{experience.metadata.title}</h2>
-        </div>
-        <div className="stage-revision">
-          <span>rev {experience.draftRevision}</span>
+        <h1 id="experience-title">{experience.metadata.title}</h1>
+        <p className="stage-position">
+          <span>Step {runtime.visitedNodeIds.length}</span>
           <span>{experience.metadata.estimatedMinutes} min</span>
-        </div>
+        </p>
       </header>
-      <div className="progress-track" aria-label={`${progress.percent}% of authored nodes visited`}>
+      <div
+        className="progress-track"
+        role="progressbar"
+        aria-label="Session progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={progress.percent}
+      >
         <span style={{ width: `${progress.percent}%` }} />
       </div>
-      <div className="node-meta">
-        <span>{node.learningRole}</span>
-        <code>{node.primitiveId}</code>
-        <span>{runtime.visitedNodeIds.length}/{experience.nodes.length}</span>
+      <div className="lesson-step" ref={stepRef} tabIndex={-1}>
+        <PrimitiveErrorBoundary key={node.id} nodeId={node.id}>
+          {isPrimitiveId(node.primitiveId) ? (
+            <PrimitiveRenderer
+              key={node.id}
+              node={node}
+              experience={experience}
+              response={runtime.responses[node.id]}
+              onRespond={(value, confidence) => onRespond(node.id, value, confidence)}
+              onAdvance={onAdvance}
+            />
+          ) : (
+            <div className="primitive-error" role="alert">
+              <p className="eyebrow">Your progress is safe</p>
+              <h2>This step needs a newer version of Ogram.</h2>
+              <p>
+                Ask Codex to update or repair the session. Everything you have
+                already completed is still here.
+              </p>
+              <details>
+                <summary>Technical detail</summary>
+                <code>{node.primitiveId}</code>
+              </details>
+            </div>
+          )}
+        </PrimitiveErrorBoundary>
       </div>
-      <PrimitiveErrorBoundary key={node.id} nodeId={node.id}>
-        {isPrimitiveId(node.primitiveId) ? (
-          <PrimitiveRenderer
-            key={node.id}
-            node={node}
-            experience={experience}
-            response={runtime.responses[node.id]}
-            onRespond={(value, confidence) => onRespond(node.id, value, confidence)}
-            onAdvance={onAdvance}
-          />
-        ) : (
-          <div className="primitive-error" role="alert">
-            <p className="overline">Saved journey preserved</p>
-            <h2>This step belongs to the newer Codex experiment.</h2>
-            <p>
-              The restored canvas cannot render <code>{node.primitiveId}</code>,
-              but your saved journey remains intact.
-            </p>
-          </div>
-        )}
-      </PrimitiveErrorBoundary>
-      <footer className="stage-footer">
-        <span>Authored by agent</span>
-        <span>Rendered by Ogram</span>
-        <span>Actions owned by learner</span>
-      </footer>
     </article>
   );
 }

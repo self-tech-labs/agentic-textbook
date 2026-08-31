@@ -28,14 +28,23 @@ export function CanvasInspector({
   );
 
   return (
-    <aside className="canvas-inspector" aria-label="Compiler and learning ledger">
-      <section className="inspector-section" id="compiler-inspector">
-        <header className="dock-heading">
-          <p className="overline">03 · Ogram compiler</p>
-          <span className={`compiler-light ${validation?.valid ? "is-valid" : ""}`}>
-            {validation?.valid ? "passes" : state.design.status.replace("_", " ")}
-          </span>
-        </header>
+    <details className="session-disclosure technical-disclosure" id="compiler-inspector">
+      <summary>
+        <span>Technical record</span>
+        <small>For debugging and audit</small>
+        <span className="disclosure-icon" aria-hidden="true">
+          <span>+</span>
+          <span>−</span>
+        </span>
+      </summary>
+      <aside className="canvas-inspector" aria-label="Compiler and learning ledger">
+        <section className="inspector-section">
+          <header className="dock-heading">
+            <p className="overline">Ogram compiler</p>
+            <span className={`compiler-light ${validation?.valid ? "is-valid" : ""}`}>
+              {validation?.valid ? "passes" : state.design.status.replace("_", " ")}
+            </span>
+          </header>
 
         <div className="compile-score">
           <div>
@@ -84,41 +93,42 @@ export function CanvasInspector({
             ))}
           </ul>
         </details>
-      </section>
+        </section>
 
-      <section className="inspector-section ledger-section" id="journey-ledger">
-        <header className="dock-heading">
-          <p className="overline">04 · Journey ledger</p>
-          <span className="dock-counter">{state.events.length} events</span>
-        </header>
-        <div className="ledger-list">
-          {state.events
-            .slice(-8)
-            .reverse()
-            .map((event) => (
-              <article className="ledger-event" key={event.id}>
-                <span className={`ledger-actor actor-${event.actor}`}>
-                  {actorLabels[event.actor]}
-                </span>
-                <div>
-                  <p>{event.summary}</p>
-                  <small>
-                    #{event.sequence} · {event.type}
-                  </small>
-                </div>
-              </article>
-            ))}
-        </div>
-        <div className="webmcp-route">
-          <span className={webMcpSupported ? "is-native" : ""} aria-hidden="true" />
-          <p>
-            <strong>{toolCount} WebMCP tools</strong>
-            {webMcpSupported
-              ? "Native page bridge active"
-              : "Contract ready in local preview"}
-          </p>
-        </div>
-      </section>
-    </aside>
+        <section className="inspector-section ledger-section" id="journey-ledger">
+          <header className="dock-heading">
+            <p className="overline">Journey ledger</p>
+            <span className="dock-counter">{state.events.length} events</span>
+          </header>
+          <div className="ledger-list">
+            {state.events
+              .slice(-8)
+              .reverse()
+              .map((event) => (
+                <article className="ledger-event" key={event.id}>
+                  <span className={`ledger-actor actor-${event.actor}`}>
+                    {actorLabels[event.actor]}
+                  </span>
+                  <div>
+                    <p>{event.summary}</p>
+                    <small>
+                      #{event.sequence} · {event.type}
+                    </small>
+                  </div>
+                </article>
+              ))}
+          </div>
+          <div className="webmcp-route">
+            <span className={webMcpSupported ? "is-native" : ""} aria-hidden="true" />
+            <p>
+              <strong>{toolCount} WebMCP tools</strong>
+              {webMcpSupported
+                ? "Native page bridge active"
+                : "Contract ready in local preview"}
+            </p>
+          </div>
+        </section>
+      </aside>
+    </details>
   );
 }

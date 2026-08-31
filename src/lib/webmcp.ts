@@ -120,7 +120,14 @@ function idempotencyKey(object: Record<string, unknown>): string {
 function reveal(sectionId: string): void {
   window.setTimeout(() => {
     const section = document.getElementById(sectionId);
-    if (section instanceof HTMLDetailsElement) section.open = true;
+    let disclosure =
+      section instanceof HTMLDetailsElement
+        ? section
+        : section?.closest("details") ?? null;
+    while (disclosure instanceof HTMLDetailsElement) {
+      disclosure.open = true;
+      disclosure = disclosure.parentElement?.closest("details") ?? null;
+    }
     section?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, 0);
 }
@@ -443,12 +450,11 @@ export function createOgramLearningTools(
           idempotencyKey: idempotencyKey(object),
           document: asExperienceDocument(object.document),
         });
-        reveal("compiler-inspector");
         return {
           ok: true,
           ...result,
           nextTool: "ogram_validate_experience",
-          visibleChange: "The draft transaction is visible in the inspector.",
+          visibleChange: "The current session remains in place while Codex shapes the draft.",
         };
       },
     },
@@ -468,7 +474,6 @@ export function createOgramLearningTools(
           idempotencyKey: idempotencyKey(object),
           operations: parseOperations(object.operations),
         });
-        reveal("compiler-inspector");
         return { ok: true, ...result, nextTool: "ogram_validate_experience" };
       },
     },
@@ -486,7 +491,6 @@ export function createOgramLearningTools(
           draftRevision: requiredInteger(object, "draftRevision", 1),
           idempotencyKey: idempotencyKey(object),
         });
-        reveal("compiler-inspector");
         return {
           ok: result.valid,
           ...result,
@@ -572,7 +576,6 @@ export function createOgramLearningTools(
           idempotencyKey: idempotencyKey(object),
           asset: parseAsset(object.asset),
         });
-        reveal("compiler-inspector");
         return {
           ok: true,
           ...result,
@@ -614,7 +617,7 @@ export function createOgramLearningTools(
           rationale: requiredString(object, "rationale", 12, 360),
           operations: parseOperations(object.operations),
         });
-        reveal(result.valid ? "draft-review" : "compiler-inspector");
+        if (result.valid) reveal("draft-review");
         return {
           ok: result.valid,
           ...result,

@@ -97,6 +97,12 @@ describe("Ogram generative WebMCP surface", () => {
     )!.execute({}) as Record<string, unknown>;
     expect(contract.authoringModel).toMatch(/agent authors a declarative/i);
     expect(contract.humanOnlyActions).toContain("answer learning interactions");
+    expect(contract.writingGuidelines).toMatchObject({
+      audience: expect.stringMatching(/learner/i),
+      avoid: expect.arrayContaining([
+        expect.stringMatching(/punchlines/i),
+      ]),
+    });
     expect((contract.primitives as unknown[]).length).toBe(9);
     expect(tools.some((tool) => tool.name.includes("record_choice"))).toBe(false);
   });
