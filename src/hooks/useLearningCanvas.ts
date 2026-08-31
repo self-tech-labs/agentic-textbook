@@ -1,37 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  applyExperiencePatches,
-  asExperienceDocument,
-  compileExperience,
-  experienceDigest,
-} from "../domain/compiler";
 import type {
-  AssetReference,
-  CanvasEvent,
-  CanvasEventActor,
-  CanvasEventType,
-  CompileResult,
-  ContextClaim,
-  ExperiencePatchOperation,
-  LearningCanvasState,
-  LearningExperienceDocument,
-} from "../domain/experience";
-import {
-  decisionLabExperience,
-  fixtureContextClaims,
-  fixtureContextSnapshotId,
-  fixtureLearningBrief,
-} from "../domain/fixtures";
-import {
-  advanceRuntime,
-  createRuntimeState,
-  submitRuntimeResponse,
-} from "../domain/runtime";
+  AgentCanvasEvent,
+  AgentLearningCanvasState,
+  CanvasRegion,
+  CanvasRegionStatus,
+  ContextConsentAttestation,
+  LearnerContextClaim,
+  LessonDocumentV3,
+  LearningSessionStage,
+  RegionContent,
+  RegionHistoryEntry,
+  RegionResponse,
+  ResearchReference,
+  TrustedPatchContent,
+} from "../domain/agentCanvas";
+import { validateLessonDocument } from "../domain/agentCanvas";
+import { createTransformerSkeleton } from "../domain/transformerFixture";
 import {
   clearCanvasState,
   loadCanvasState,
   saveCanvasState,
 } from "../lib/canvasPersistence";
+
+function clone<Value>(value: Value): Value {
+  return structuredClone(value);
+}
 
 function makeId(prefix: string): string {
   const suffix =
@@ -41,906 +34,1097 @@ function makeId(prefix: string): string {
   return `${prefix}-${suffix}`;
 }
 
-function addEvent(
-  state: LearningCanvasState,
-  actor: CanvasEventActor,
-  type: CanvasEventType,
+function createGenericSkeleton(topic: string): CanvasRegion[] {
+  const regions = [
+    ["learning-goal", "01 · orientation", `A useful model of ${topic}`, "Set the learning goal.", "orient"],
+    ["foundations", "02 · foundations", "Build the foundations", "Establish the minimum prerequisites.", "explain"],
+    ["core-mechanism", "03 · mechanism", "See the core mechanism", "Trace how the central idea works.", "model"],
+    ["worked-example", "04 · example", "Work through an example", "Apply the mechanism to one case.", "explain"],
+    ["practice", "05 · practice", "Try it yourself", "Check understanding with a bounded task.", "practice"],
+    ["teach-back", "06 · retrieval", "Explain it back", "Consolidate the idea in your own words.", "reflect"],
+  ] as const;
+
+  return regions.map(([id, label, title, objective, kind], index) => ({
+    id,
+    order: index + 1,
+    label,
+    title,
+    objective,
+    kind,
+    revision: 0,
+    status: "skeleton",
+    content: [],
+    provenance: [],
+    history: [],
+  }));
+}
+
+function skeletonForTopic(topic: string): CanvasRegion[] {
+  return /transformer/i.test(topic)
+    ? createTransformerSkeleton()
+    : createGenericSkeleton(topic);
+}
+
+function appendEvent(
+  state: AgentLearningCanvasState,
+  actor: AgentCanvasEvent["actor"],
+  type: AgentCanvasEvent["type"],
   summary: string,
-  payload: Record<string, unknown> | undefined,
-  idempotencyKey: string,
-  now = new Date(),
-  experience: LearningExperienceDocument = state.activeExperience,
-): LearningCanvasState {
-  const revision = state.revision + 1;
-  const event: CanvasEvent = {
+  payload?: Record<string, unknown>,
+): { state: AgentLearningCanvasState; event: AgentCanvasEvent } {
+  const event: AgentCanvasEvent = {
     id: makeId("event"),
     sequence: state.events.length + 1,
-    revision,
-    idempotencyKey,
     type,
     actor,
-    at: now.toISOString(),
+    at: new Date().toISOString(),
     summary,
-    experienceId: experience.experienceId,
-    experienceRevision: experience.draftRevision,
     payload,
   };
   return {
-    ...state,
-    revision,
-    events: [...state.events, event],
-    sync: {
-      ...state.sync,
-      status: "queued",
-      orderedOutbox: [...state.sync.orderedOutbox, event.id],
+    state: {
+      ...state,
+      revision: state.revision + 1,
+      events: [...state.events, event],
     },
+    event,
   };
 }
 
-function lastEvent(state: LearningCanvasState): CanvasEvent {
-  const event = state.events.at(-1);
-  if (!event) throw new Error("The event ledger is unexpectedly empty.");
-  return event;
+function receipt<Result extends Record<string, unknown>>(
+  state: AgentLearningCanvasState,
+  key: string,
+): Result | null {
+  const match = state.commandReceipts.find((item) => item.key === key);
+  return match ? (clone(match.result) as Result) : null;
 }
 
-function acceptedClaimIds(state: LearningCanvasState): string[] {
+function withReceipt<Result extends Record<string, unknown>>(
+  state: AgentLearningCanvasState,
+  key: string,
+  result: Result,
+): AgentLearningCanvasState {
+  return {
+    ...state,
+    commandReceipts: [
+      ...state.commandReceipts.slice(-199),
+      { key, result: clone(result) },
+    ],
+  };
+}
+
+function requireCanvasRevision(
+  state: AgentLearningCanvasState,
+  expected: number,
+): void {
+  if (expected !== state.revision) {
+    throw new Error(
+      `Stale canvas revision. Expected ${expected}; the latest revision is ${state.revision}. Read learn_get_session and retry deliberately.`,
+    );
+  }
+}
+
+function requireRegion(
+  state: AgentLearningCanvasState,
+  regionId: string,
+): CanvasRegion {
+  const region = state.regions.find((item) => item.id === regionId);
+  if (!region) throw new Error(`Canvas region ${regionId} does not exist.`);
+  return region;
+}
+
+function requireRegionRevision(region: CanvasRegion, expected: number): void {
+  if (expected !== region.revision) {
+    throw new Error(
+      `Stale region revision. Expected ${expected}; ${region.id} is now revision ${region.revision}. Read learn_get_canvas_snapshot and retry deliberately.`,
+    );
+  }
+}
+
+function snapshotRegion(region: CanvasRegion, undoToken: string): RegionHistoryEntry {
+  return {
+    undoToken,
+    revision: region.revision,
+    status: region.status,
+    content: clone(region.content),
+    provenance: clone(region.provenance),
+    updatedAt: region.updatedAt,
+    updateRationale: region.updateRationale,
+  };
+}
+
+function nextUndoHistory(
+  region: CanvasRegion,
+  undoToken: string,
+): RegionHistoryEntry[] {
+  if (region.status === "agent_working" && region.history.length) {
+    const beforeWorking = region.history.at(-1)!;
+    return [
+      ...region.history.slice(0, -1),
+      { ...clone(beforeWorking), undoToken },
+    ];
+  }
+  return [...region.history, snapshotRegion(region, undoToken)].slice(-12);
+}
+
+function replaceRegion(
+  state: AgentLearningCanvasState,
+  nextRegion: CanvasRegion,
+): AgentLearningCanvasState {
+  return {
+    ...state,
+    regions: state.regions.map((region) =>
+      region.id === nextRegion.id ? nextRegion : region,
+    ),
+  };
+}
+
+function acceptedClaimIds(state: AgentLearningCanvasState): string[] {
   return state.contextClaims
-    .filter(
-      (claim) => claim.review === "accepted" || claim.review === "corrected",
-    )
+    .filter((claim) => claim.review === "accepted" || claim.review === "corrected")
     .map((claim) => claim.id);
 }
 
-function commandResult<Result extends Record<string, unknown>>(
-  state: LearningCanvasState,
-  idempotencyKey: string,
-): Result | null {
-  const receipt = state.commandReceipts.find(
-    (candidate) => candidate.key === idempotencyKey,
-  );
-  return receipt ? (receipt.result as Result) : null;
-}
-
-function addCommandReceipt<Result extends Record<string, unknown>>(
-  state: LearningCanvasState,
-  key: string,
-  result: Result,
-): LearningCanvasState {
+export function createInitialCanvasState(): AgentLearningCanvasState {
   return {
-    ...state,
-    commandReceipts: [...state.commandReceipts, { key, result }],
-  };
-}
-
-export function createInitialCanvasState(now = new Date()): LearningCanvasState {
-  const activeExperience = structuredClone(decisionLabExperience);
-  const validation = compileExperience(
-    activeExperience,
-    fixtureLearningBrief.approvedClaimIds,
-    now,
-  );
-  if (!validation.valid) {
-    throw new Error("The bundled experience fixture did not compile.");
-  }
-
-  let state: LearningCanvasState = {
-    version: 2,
+    version: 3,
     revision: 0,
-    contextSnapshotId: fixtureContextSnapshotId,
-    contextClaims: structuredClone(fixtureContextClaims),
-    learningBrief: structuredClone(fixtureLearningBrief),
-    activeExperience,
-    publishedRevisions: [structuredClone(activeExperience)],
-    design: {
-      status: "published",
-      draft: null,
-      validation,
-      approvedDraftRevision: null,
+    session: {
+      id: null,
+      topic: null,
+      goal: null,
+      stage: "ready",
+      startedAt: null,
+      contextConsent: null,
+      personalization: "undecided",
     },
-    runtime: createRuntimeState(activeExperience, now),
+    contextClaims: [],
+    lesson: {
+      status: "skeleton",
+      draft: null,
+      validation: null,
+      approvedDraftRevision: null,
+      publishedRevision: null,
+    },
+    regions: [],
+    focus: { regionId: null, selectedText: null },
     events: [],
-    consentReceipts: [
-      {
-        id: "consent-context-demo-01",
-        type: "context_use",
-        actor: "learner",
-        at: now.toISOString(),
-        subjectIds: fixtureLearningBrief.approvedClaimIds,
-        purpose: "Compose and run this local learning experience.",
-        digest: "demo-context-consent",
-      },
-    ],
     commandReceipts: [],
-    learnerFeedback: null,
-    sync: { status: "local", orderedOutbox: [] },
   };
-
-  state = addEvent(
-    state,
-    "ogram",
-    "context.snapshot.loaded",
-    "Loaded four learner-reviewed context claims.",
-    { approvedClaimCount: fixtureLearningBrief.approvedClaimIds.length },
-    "initial-context",
-    now,
-  );
-  state = addEvent(
-    state,
-    "ogram",
-    "design.experience.published",
-    `Published “${activeExperience.metadata.title}” after compiler approval.`,
-    { digest: validation.digest, source: "bundled-fixture" },
-    "initial-publish",
-    now,
-  );
-  state = addEvent(
-    state,
-    "learner",
-    "runtime.started",
-    "Started the published learning experience.",
-    { entryNodeId: activeExperience.entryNodeId },
-    "initial-runtime",
-    now,
-  );
-  return { ...state, sync: { status: "local", orderedOutbox: [] } };
 }
+
+export const firstToolGuide = [
+  "Tell me what you want to understand and why it matters to you.",
+  "Choose whether I may use context from this conversation or connected sources.",
+  "Review, correct, or reject every proposed context card on the canvas.",
+  "Approve the lesson outline, then work through the living notebook at your pace.",
+  "When you get stuck, ask me here in Codex. I can read the focused region, reshape it, add an interaction, or research the question.",
+] as const;
 
 export interface CanvasActions {
-  getState: () => LearningCanvasState;
-  reset: () => void;
-  proposeLearningNeeds: (input: {
+  getState: () => AgentLearningCanvasState;
+  getNonce: () => string | null;
+  beginSession: (input: { topic: string; goal?: string }) => {
+    sessionId: string;
+    nonce: string;
+    stage: LearningSessionStage;
+    resumed: boolean;
+    guide: readonly string[];
+    suggestedPrompts: string[];
+    revision: number;
+  };
+  proposeContext: (input: {
     baseRevision: number;
     idempotencyKey: string;
-    claims: ContextClaim[];
-  }) => { revision: number; eventId: string; proposedClaimIds: string[] };
-  reviewContextClaim: (
-    claimId: string,
-    decision: "accepted" | "rejected",
-  ) => { eventId: string; claimId: string; decision: string };
-  createDraft: (input: {
-    basePublishedRevision: number;
-    idempotencyKey: string;
-    document: LearningExperienceDocument;
-  }) => { eventId: string; experienceId: string; draftRevision: number };
-  patchDraft: (input: {
-    baseDraftRevision: number;
-    idempotencyKey: string;
-    operations: ExperiencePatchOperation[];
-  }) => { eventId: string; draftRevision: number; operationCount: number };
-  validateDraft: (input: {
-    draftRevision: number;
-    idempotencyKey: string;
+    consent: ContextConsentAttestation;
+    claims: LearnerContextClaim[];
   }) => {
+    revision: number;
+    eventId: string;
+    proposedClaimIds: string[];
+    status: "awaiting_learner_review";
+  };
+  reviewContextClaim: (input: {
+    claimId: string;
+    decision: "accepted" | "corrected" | "rejected";
+    correctedSummary?: string;
+  }) => { eventId: string; claimId: string; decision: string; revision: number };
+  skipContext: () => { eventId: string; revision: number };
+  prepareLesson: (input: {
+    baseRevision: number;
+    idempotencyKey: string;
+    document: LessonDocumentV3;
+  }) => {
+    revision: number;
     eventId: string;
     draftRevision: number;
     valid: boolean;
     digest: string;
-    diagnostics: CompileResult["diagnostics"];
+    diagnostics: ReturnType<typeof validateLessonDocument>["diagnostics"];
+    status: "awaiting_learner_review" | "validation_failed";
   };
-  requestDraftReview: (input: {
-    draftRevision: number;
-    idempotencyKey: string;
-  }) => { eventId: string; draftRevision: number; status: "awaiting_review" };
-  approveDraft: (draftRevision: number) => {
+  approveLesson: (draftRevision: number) => {
     eventId: string;
-    receiptId: string;
     draftRevision: number;
+    digest: string;
+    revision: number;
   };
-  publishDraft: (input: {
+  publishLesson: (input: {
+    baseRevision: number;
     draftRevision: number;
     idempotencyKey: string;
   }) => {
     eventId: string;
-    experienceId: string;
     publishedRevision: number;
-    digest: string;
+    canvasRevision: number;
+    regionIds: string[];
   };
-  registerDraftAsset: (input: {
-    draftRevision: number;
+  focusRegion: (regionId: string | null, selectedText?: string | null) => void;
+  patchRegion: (input: {
+    regionId: string;
+    baseRegionRevision: number;
     idempotencyKey: string;
-    asset: AssetReference;
-  }) => { eventId: string; assetId: string; draftRevision: number };
-  proposeAdaptation: (input: {
-    basePublishedRevision: number;
-    idempotencyKey: string;
+    operation: "replace" | "append" | "annotate" | "set_status";
+    content?: TrustedPatchContent[];
+    status?: CanvasRegionStatus;
     rationale: string;
-    operations: ExperiencePatchOperation[];
+    sourceRefs?: string[];
   }) => {
     eventId: string;
-    draftRevision: number;
-    valid: boolean;
-    status: "awaiting_review" | "validation_failed";
+    regionId: string;
+    regionRevision: number;
+    canvasRevision: number;
+    undoToken: string;
   };
-  submitLearnerResponse: (
-    nodeId: string,
-    value: unknown,
-    confidence?: number,
-  ) => { eventId: string; correct?: boolean };
-  advance: () => { eventId: string; status: string; currentNodeId: string | null };
-  submitLearnerFeedback: (
-    level: "too_easy" | "right_level" | "too_hard",
-    note?: string,
-  ) => { eventId: string };
+  injectWidget: (input: {
+    regionId: string;
+    baseRegionRevision: number;
+    idempotencyKey: string;
+    widget: Extract<RegionContent, { type: "sandbox_widget" }>;
+    rationale: string;
+  }) => {
+    eventId: string;
+    regionId: string;
+    regionRevision: number;
+    canvasRevision: number;
+    undoToken: string;
+  };
+  attachResearch: (input: {
+    regionId: string;
+    baseRegionRevision: number;
+    idempotencyKey: string;
+    summary: string;
+    sources: ResearchReference[];
+  }) => {
+    eventId: string;
+    regionId: string;
+    regionRevision: number;
+    canvasRevision: number;
+    undoToken: string;
+  };
+  revertRegion: (input: {
+    regionId: string;
+    baseRegionRevision: number;
+    idempotencyKey: string;
+    undoToken: string;
+    actor?: "agent" | "learner";
+  }) => {
+    eventId: string;
+    regionId: string;
+    regionRevision: number;
+    canvasRevision: number;
+  };
+  submitLearnerResponse: (regionId: string, value: string) => {
+    eventId: string;
+    correct?: boolean;
+    revision: number;
+  };
+  reset: () => void;
+}
+
+function ensureAgentWritable(state: AgentLearningCanvasState): void {
+  if (state.session.stage !== "learning" || state.lesson.status !== "published") {
+    throw new Error("The lesson must be published before its regions can be changed.");
+  }
 }
 
 export function useLearningCanvas(): {
-  state: LearningCanvasState;
+  state: AgentLearningCanvasState;
   actions: CanvasActions;
 } {
-  const [state, setState] = useState<LearningCanvasState>(
-    () => loadCanvasState() ?? createInitialCanvasState(),
+  const [state, setState] = useState<AgentLearningCanvasState>(() =>
+    loadCanvasState() ?? createInitialCanvasState(),
   );
   const stateRef = useRef(state);
+  const nonceRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    stateRef.current = state;
-    saveCanvasState(state);
-  }, [state]);
-
-  const commit = useCallback(
-    <Result,>(operation: (current: LearningCanvasState) => [LearningCanvasState, Result]): Result => {
-      const [next, result] = operation(stateRef.current);
-      stateRef.current = next;
-      setState(next);
-      return result;
-    },
-    [],
-  );
-
-  const getState = useCallback(() => stateRef.current, []);
-
-  const reset = useCallback(() => {
-    clearCanvasState();
-    const next = createInitialCanvasState();
+  const commit = useCallback((next: AgentLearningCanvasState) => {
     stateRef.current = next;
+    saveCanvasState(next);
     setState(next);
   }, []);
 
-  const proposeLearningNeeds = useCallback<CanvasActions["proposeLearningNeeds"]>(
-    (input) =>
-      commit((current) => {
-        const existing = commandResult<ReturnType<CanvasActions["proposeLearningNeeds"]>>(
-          current,
-          input.idempotencyKey,
-        );
-        if (existing) return [current, existing];
-        if (input.baseRevision !== current.revision) {
-          throw new Error(
-            `Revision conflict: context is at ${current.revision}, not ${input.baseRevision}.`,
-          );
-        }
-        if (input.claims.length < 1 || input.claims.length > 6) {
-          throw new Error("Propose between one and six context claims.");
-        }
-        const incoming = input.claims.map((claim) => {
-          if (claim.summary.trim().length < 12 || claim.summary.length > 320) {
-            throw new Error("Each claim summary must contain 12–320 characters.");
-          }
-          if (current.contextClaims.some((candidate) => candidate.id === claim.id)) {
-            throw new Error(`Context claim id already exists: ${claim.id}.`);
-          }
-          return { ...structuredClone(claim), review: "pending" as const };
-        });
-        let next: LearningCanvasState = {
-          ...current,
-          contextClaims: [...current.contextClaims, ...incoming],
-        };
-        next = addEvent(
-          next,
-          "agent",
-          "context.claim.proposed",
-          `Proposed ${incoming.length} context hypothesis${incoming.length === 1 ? "" : "es"} for learner review.`,
-          { claimIds: incoming.map((claim) => claim.id) },
-          input.idempotencyKey,
-        );
-        const result = {
-          revision: next.revision,
-          eventId: lastEvent(next).id,
-          proposedClaimIds: incoming.map((claim) => claim.id),
-        };
-        return [addCommandReceipt(next, input.idempotencyKey, result), result];
-      }),
-    [commit],
-  );
+  const actions = useMemo<CanvasActions>(() => {
+    const getState = () => stateRef.current;
+    const getNonce = () => nonceRef.current;
 
-  const reviewContextClaim = useCallback<CanvasActions["reviewContextClaim"]>(
-    (claimId, decision) =>
-      commit((current) => {
-        const claim = current.contextClaims.find((candidate) => candidate.id === claimId);
-        if (!claim) throw new Error("Unknown context claim.");
+    const beginSession: CanvasActions["beginSession"] = ({ topic, goal }) => {
+      const cleanTopic = topic.trim();
+      if (!cleanTopic) throw new Error("A learning topic is required.");
+
+      const current = stateRef.current;
+      const resumed =
+        current.session.id !== null &&
+        current.session.topic?.toLocaleLowerCase() === cleanTopic.toLocaleLowerCase();
+      if (current.session.id !== null && !resumed) {
+        throw new Error(
+          `A session about “${current.session.topic}” already owns this canvas. The learner must use Session → Start a new topic before it can be replaced.`,
+        );
+      }
+      const nonce = makeId("session-nonce");
+      nonceRef.current = nonce;
+
+      if (resumed) {
+        commit({ ...current });
+        return {
+          sessionId: current.session.id!,
+          nonce,
+          stage: current.session.stage,
+          resumed: true,
+          guide: firstToolGuide,
+          suggestedPrompts: [
+            "Use no personal context; prepare the technical-beginner lesson.",
+            "I consent to you proposing relevant context from this conversation for my review.",
+            "Read the canvas and help me with the region I am focused on.",
+          ],
+          revision: current.revision,
+        };
+      }
+
+      const base: AgentLearningCanvasState = {
+        ...createInitialCanvasState(),
+        session: {
+          id: makeId("learning-session"),
+          topic: cleanTopic,
+          goal: goal?.trim() || null,
+          stage: "context_review",
+          startedAt: new Date().toISOString(),
+          contextConsent: null,
+          personalization: "undecided",
+        },
+        regions: skeletonForTopic(cleanTopic),
+      };
+      const evolved = appendEvent(
+        base,
+        "agent",
+        "agent.session.started",
+        `Started a learning session about ${cleanTopic}.`,
+        { topic: cleanTopic, goal: goal?.trim() || null },
+      );
+      commit(evolved.state);
+
+      return {
+        sessionId: evolved.state.session.id!,
+        nonce,
+        stage: evolved.state.session.stage,
+        resumed: false,
+        guide: firstToolGuide,
+        suggestedPrompts: [
+          "Use no personal context; prepare the technical-beginner lesson.",
+          "I consent to you proposing relevant context from this conversation for my review.",
+          "Once the notebook is published, read my focused region before changing it.",
+        ],
+        revision: evolved.state.revision,
+      };
+    };
+
+    const proposeContext: CanvasActions["proposeContext"] = (input) => {
+      const current = stateRef.current;
+      const previous = receipt<ReturnType<CanvasActions["proposeContext"]>>(
+        current,
+        input.idempotencyKey,
+      );
+      if (previous) return previous;
+      requireCanvasRevision(current, input.baseRevision);
+      if (current.session.stage !== "context_review") {
+        throw new Error("Context can only be proposed before the lesson is prepared.");
+      }
+      if (!input.claims.length) throw new Error("At least one context claim is required.");
+      if (!input.consent.scope.trim() || !input.consent.obtainedAt) {
+        throw new Error("A conversation-consent attestation is required before context can be proposed.");
+      }
+      const knownIds = new Set(current.contextClaims.map((claim) => claim.id));
+      const proposedIds = new Set<string>();
+      for (const claim of input.claims) {
+        if (knownIds.has(claim.id) || proposedIds.has(claim.id)) {
+          throw new Error(`Context claim id ${claim.id} is already in use.`);
+        }
+        proposedIds.add(claim.id);
         if (claim.review !== "pending") {
-          throw new Error("Only a pending context claim can be reviewed.");
+          throw new Error("New context claims must await learner review.");
         }
-        const contextClaims = current.contextClaims.map((candidate) =>
-          candidate.id === claimId ? { ...candidate, review: decision } : candidate,
-        );
-        const approvedClaimIds = contextClaims
-          .filter((candidate) => candidate.review === "accepted" || candidate.review === "corrected")
-          .map((candidate) => candidate.id);
-        let next: LearningCanvasState = {
-          ...current,
-          contextClaims,
-          learningBrief: {
-            ...current.learningBrief,
-            version: current.learningBrief.version + 1,
-            approvedClaimIds,
-          },
-        };
-        const key = `human-context-${claimId}-${Date.now()}`;
-        next = addEvent(
-          next,
-          "learner",
-          "context.claim.reviewed",
-          `${decision === "accepted" ? "Accepted" : "Rejected"} an agent-proposed context claim.`,
-          { claimId, decision },
-          key,
-        );
-        return [next, { eventId: lastEvent(next).id, claimId, decision }];
-      }),
-    [commit],
-  );
-
-  const createDraft = useCallback<CanvasActions["createDraft"]>(
-    (input) =>
-      commit((current) => {
-        const existing = commandResult<ReturnType<CanvasActions["createDraft"]>>(
-          current,
-          input.idempotencyKey,
-        );
-        if (existing) return [current, existing];
-        if (input.basePublishedRevision !== current.activeExperience.draftRevision) {
-          throw new Error(
-            `Published revision conflict: expected ${current.activeExperience.draftRevision}.`,
-          );
-        }
-        const document = asExperienceDocument(input.document);
-        if (document.draftRevision !== input.basePublishedRevision + 1) {
-          throw new Error("A new draft revision must be exactly one after the published revision.");
+        if (claim.summary.trim().length > 240) {
+          throw new Error(`Context claim ${claim.id} is not privacy-minimized (240 character maximum).`);
         }
         if (
-          document.contextSnapshotId !== current.contextSnapshotId ||
-          document.learningBriefId !== current.learningBrief.id
+          claim.source.route !== "learner" &&
+          !input.consent.providerIds.includes(claim.source.providerId)
         ) {
-          throw new Error("The draft must bind to the active context snapshot and learning brief.");
+          throw new Error(
+            `Consent does not cover context provider ${claim.source.providerId}.`,
+          );
         }
-        let next: LearningCanvasState = {
-          ...current,
-          design: {
-            status: "drafting",
-            draft: document,
-            validation: null,
-            approvedDraftRevision: null,
-          },
-        };
-        next = addEvent(
-          next,
-          "agent",
-          "design.draft.created",
-          `Composed draft revision ${document.draftRevision} with ${document.nodes.length} learning nodes.`,
-          { nodeCount: document.nodes.length, objectiveCount: document.objectives.length },
-          input.idempotencyKey,
-          new Date(),
-          document,
-        );
-        const result = {
-          eventId: lastEvent(next).id,
-          experienceId: document.experienceId,
-          draftRevision: document.draftRevision,
-        };
-        return [addCommandReceipt(next, input.idempotencyKey, result), result];
-      }),
-    [commit],
-  );
+      }
 
-  const patchDraft = useCallback<CanvasActions["patchDraft"]>(
-    (input) =>
-      commit((current) => {
-        const existing = commandResult<ReturnType<CanvasActions["patchDraft"]>>(
-          current,
-          input.idempotencyKey,
-        );
-        if (existing) return [current, existing];
-        const draft = current.design.draft;
-        if (!draft || draft.draftRevision !== input.baseDraftRevision) {
-          throw new Error("Draft revision conflict. Read the current session before patching.");
-        }
-        const patched = applyExperiencePatches(draft, input.operations);
-        patched.draftRevision = input.baseDraftRevision + 1;
-        let next: LearningCanvasState = {
-          ...current,
-          design: {
-            status: "drafting",
-            draft: patched,
-            validation: null,
-            approvedDraftRevision: null,
-          },
-        };
-        next = addEvent(
-          next,
-          "agent",
-          "design.draft.patched",
-          `Applied ${input.operations.length} bounded design operation${input.operations.length === 1 ? "" : "s"}.`,
-          { operationCount: input.operations.length },
-          input.idempotencyKey,
-          new Date(),
-          patched,
-        );
-        const result = {
-          eventId: lastEvent(next).id,
-          draftRevision: patched.draftRevision,
-          operationCount: input.operations.length,
-        };
-        return [addCommandReceipt(next, input.idempotencyKey, result), result];
-      }),
-    [commit],
-  );
+      const next: AgentLearningCanvasState = {
+        ...current,
+        session: {
+          ...current.session,
+          contextConsent: clone(input.consent),
+          personalization: "reviewing",
+        },
+        contextClaims: [...current.contextClaims, ...clone(input.claims)],
+      };
+      const evolved = appendEvent(
+        next,
+        "agent",
+        "context.claim.proposed",
+        `Proposed ${input.claims.length} minimized context claim${input.claims.length === 1 ? "" : "s"} for learner review.`,
+        { claimIds: [...proposedIds] },
+      );
+      const result = {
+        revision: evolved.state.revision,
+        eventId: evolved.event.id,
+        proposedClaimIds: [...proposedIds],
+        status: "awaiting_learner_review" as const,
+      };
+      commit(withReceipt(evolved.state, input.idempotencyKey, result));
+      return result;
+    };
 
-  const validateDraft = useCallback<CanvasActions["validateDraft"]>(
-    (input) =>
-      commit((current) => {
-        const existing = commandResult<ReturnType<CanvasActions["validateDraft"]>>(
-          current,
-          input.idempotencyKey,
-        );
-        if (existing) return [current, existing];
-        const draft = current.design.draft;
-        if (!draft || draft.draftRevision !== input.draftRevision) {
-          throw new Error("Draft revision conflict. Validate the current draft revision.");
-        }
-        const validation = compileExperience(draft, acceptedClaimIds(current));
-        let next: LearningCanvasState = {
+    const reviewContextClaim: CanvasActions["reviewContextClaim"] = (input) => {
+      const current = stateRef.current;
+      const claim = current.contextClaims.find((item) => item.id === input.claimId);
+      if (!claim) throw new Error(`Context claim ${input.claimId} does not exist.`);
+      if (claim.review !== "pending") {
+        throw new Error(`Context claim ${input.claimId} has already been reviewed.`);
+      }
+      if (
+        input.decision === "corrected" &&
+        (!input.correctedSummary || input.correctedSummary.trim().length < 3)
+      ) {
+        throw new Error("A corrected claim needs the learner's corrected wording.");
+      }
+      if (
+        input.decision === "corrected" &&
+        input.correctedSummary!.trim().length > 240
+      ) {
+        throw new Error("A corrected context claim must stay under 240 characters.");
+      }
+
+      const contextClaims: LearnerContextClaim[] = current.contextClaims.map((item) =>
+        item.id === input.claimId
+          ? {
+              ...item,
+              review: input.decision,
+              correctedSummary:
+                input.decision === "corrected"
+                  ? input.correctedSummary!.trim()
+                  : undefined,
+            }
+          : item,
+      );
+      const pending = contextClaims.some((item) => item.review === "pending");
+      const usable = contextClaims.some(
+        (item) => item.review === "accepted" || item.review === "corrected",
+      );
+      const evolved = appendEvent(
+        {
           ...current,
-          design: {
-            ...current.design,
-            status: validation.valid ? "drafting" : "validation_failed",
+          contextClaims,
+          session: {
+            ...current.session,
+            personalization: pending ? "reviewing" : usable ? "approved" : "skipped",
+          },
+        },
+        "learner",
+        "context.claim.reviewed",
+        `${input.decision === "accepted" ? "Accepted" : input.decision === "corrected" ? "Corrected" : "Rejected"} a proposed context claim.`,
+        { claimId: input.claimId, decision: input.decision },
+      );
+      commit(evolved.state);
+      return {
+        eventId: evolved.event.id,
+        claimId: input.claimId,
+        decision: input.decision,
+        revision: evolved.state.revision,
+      };
+    };
+
+    const skipContext: CanvasActions["skipContext"] = () => {
+      const current = stateRef.current;
+      if (current.session.stage !== "context_review") {
+        throw new Error("Context selection has already finished.");
+      }
+      const evolved = appendEvent(
+        {
+          ...current,
+          contextClaims: current.contextClaims.map((claim) =>
+            claim.review === "pending"
+              ? ({ ...claim, review: "rejected" } as LearnerContextClaim)
+              : claim,
+          ),
+          session: { ...current.session, personalization: "skipped" },
+        },
+        "learner",
+        "context.personalization.skipped",
+        "Chose a generic lesson without personal context.",
+      );
+      commit(evolved.state);
+      return { eventId: evolved.event.id, revision: evolved.state.revision };
+    };
+
+    const prepareLesson: CanvasActions["prepareLesson"] = (input) => {
+      const current = stateRef.current;
+      const previous = receipt<ReturnType<CanvasActions["prepareLesson"]>>(
+        current,
+        input.idempotencyKey,
+      );
+      if (previous) return previous;
+      requireCanvasRevision(current, input.baseRevision);
+      if (current.contextClaims.some((claim) => claim.review === "pending")) {
+        throw new Error("Every proposed context claim must be reviewed or skipped first.");
+      }
+      if (current.session.personalization === "undecided") {
+        throw new Error("The learner must approve context use or choose the generic lesson first.");
+      }
+      if (current.session.stage === "ready") {
+        throw new Error("Call learn_begin_session before preparing a lesson.");
+      }
+
+      const validation = validateLessonDocument(input.document, acceptedClaimIds(current));
+      const protectedResponses = current.regions.filter((region) => region.response);
+      for (const protectedRegion of protectedResponses) {
+        const replacement = input.document.regions.find(
+          (region) => region.id === protectedRegion.id,
+        );
+        if (
+          !replacement ||
+          JSON.stringify(replacement.interaction) !==
+            JSON.stringify(protectedRegion.interaction)
+        ) {
+          validation.valid = false;
+          validation.diagnostics.push({
+            path: `regions.${protectedRegion.id}`,
+            severity: "error",
+            explanation:
+              "Published learner evidence is immutable; keep this region and its interaction unchanged.",
+          });
+        }
+      }
+
+      const status = validation.valid
+        ? ("awaiting_learner_review" as const)
+        : ("validation_failed" as const);
+      const errorCount = validation.diagnostics.filter(
+        (item) => item.severity === "error",
+      ).length;
+      const evolved = appendEvent(
+        {
+          ...current,
+          lesson: {
+            ...current.lesson,
+            status: validation.valid ? "awaiting_review" : current.lesson.status,
+            draft: validation.valid ? clone(input.document) : current.lesson.draft,
             validation,
             approvedDraftRevision: null,
           },
-        };
-        next = addEvent(
-          next,
-          "ogram",
-          "design.draft.validated",
-          validation.valid
-            ? `Compiler accepted revision ${draft.draftRevision}.`
-            : `Compiler rejected revision ${draft.draftRevision} with ${validation.diagnostics.filter((item) => item.severity === "error").length} hard error(s).`,
-          {
-            valid: validation.valid,
-            digest: validation.digest,
-            errorCount: validation.diagnostics.filter((item) => item.severity === "error").length,
-            warningCount: validation.diagnostics.filter((item) => item.severity === "warning").length,
-          },
-          input.idempotencyKey,
-          new Date(),
-          draft,
-        );
-        const result = {
-          eventId: lastEvent(next).id,
-          draftRevision: draft.draftRevision,
-          valid: validation.valid,
+          session: validation.valid
+            ? { ...current.session, stage: "lesson_review" }
+            : current.session,
+        },
+        "agent",
+        "lesson.draft.prepared",
+        validation.valid
+          ? `Prepared “${input.document.title}” for learner review.`
+          : `The proposed lesson failed ${errorCount} compiler check${errorCount === 1 ? "" : "s"}.`,
+        {
+          draftRevision: input.document.revision,
           digest: validation.digest,
-          diagnostics: validation.diagnostics,
-        };
-        return [addCommandReceipt(next, input.idempotencyKey, result), result];
-      }),
-    [commit],
-  );
+          valid: validation.valid,
+        },
+      );
+      const result = {
+        revision: evolved.state.revision,
+        eventId: evolved.event.id,
+        draftRevision: input.document.revision,
+        valid: validation.valid,
+        digest: validation.digest,
+        diagnostics: clone(validation.diagnostics),
+        status,
+      };
+      commit(withReceipt(evolved.state, input.idempotencyKey, result));
+      return result;
+    };
 
-  const requestDraftReview = useCallback<CanvasActions["requestDraftReview"]>(
-    (input) =>
-      commit((current) => {
-        const existing = commandResult<ReturnType<CanvasActions["requestDraftReview"]>>(
-          current,
-          input.idempotencyKey,
-        );
-        if (existing) return [current, existing];
-        const draft = current.design.draft;
-        if (!draft || draft.draftRevision !== input.draftRevision) {
-          throw new Error("Draft revision conflict. Request review for the current draft.");
-        }
-        const validation = current.design.validation;
-        if (
-          !validation?.valid ||
-          validation.digest !== experienceDigest(draft)
-        ) {
-          throw new Error("The exact draft revision must pass the compiler before review.");
-        }
-        const requestedAt = new Date();
-        let next: LearningCanvasState = {
+    const approveLesson: CanvasActions["approveLesson"] = (draftRevision) => {
+      const current = stateRef.current;
+      if (
+        !current.lesson.draft ||
+        !current.lesson.validation?.valid ||
+        current.lesson.draft.revision !== draftRevision
+      ) {
+        throw new Error("Only the exact compiled lesson revision can be approved.");
+      }
+      const evolved = appendEvent(
+        {
           ...current,
-          design: {
-            ...current.design,
-            status: "awaiting_review",
-            reviewRequestedAt: requestedAt.toISOString(),
-          },
-        };
-        next = addEvent(
-          next,
-          "agent",
-          "design.review.requested",
-          `Requested learner review for “${draft.metadata.title}”.`,
-          { digest: validation.digest },
-          input.idempotencyKey,
-          requestedAt,
-          draft,
-        );
-        const result = {
-          eventId: lastEvent(next).id,
-          draftRevision: draft.draftRevision,
-          status: "awaiting_review" as const,
-        };
-        return [addCommandReceipt(next, input.idempotencyKey, result), result];
-      }),
-    [commit],
-  );
-
-  const approveDraft = useCallback<CanvasActions["approveDraft"]>(
-    (draftRevision) =>
-      commit((current) => {
-        const draft = current.design.draft;
-        const validation = current.design.validation;
-        if (
-          current.design.status !== "awaiting_review" ||
-          !draft ||
-          draft.draftRevision !== draftRevision ||
-          !validation?.valid ||
-          validation.digest !== experienceDigest(draft)
-        ) {
-          throw new Error("Only the exact, compiled revision awaiting review can be approved.");
-        }
-        const receiptId = makeId("consent");
-        const now = new Date();
-        let next: LearningCanvasState = {
-          ...current,
-          design: {
-            ...current.design,
+          lesson: {
+            ...current.lesson,
             status: "approved",
             approvedDraftRevision: draftRevision,
           },
-          consentReceipts: [
-            ...current.consentReceipts,
-            {
-              id: receiptId,
-              type: "experience_publication",
-              actor: "learner",
-              at: now.toISOString(),
-              subjectIds: [draft.experienceId, String(draftRevision)],
-              purpose: "Publish and run this exact compiled experience revision.",
-              digest: validation.digest,
-            },
-          ],
-        };
-        next = addEvent(
-          next,
-          "learner",
-          "design.review.approved",
-          `Approved exact revision ${draftRevision} for publication.`,
-          { receiptId, digest: validation.digest },
-          `human-approve-${receiptId}`,
-          now,
-          draft,
-        );
-        return [
-          next,
-          { eventId: lastEvent(next).id, receiptId, draftRevision },
-        ];
-      }),
-    [commit],
-  );
+        },
+        "learner",
+        "lesson.draft.approved",
+        `Approved lesson revision ${draftRevision}.`,
+        { draftRevision, digest: current.lesson.validation.digest },
+      );
+      commit(evolved.state);
+      return {
+        eventId: evolved.event.id,
+        draftRevision,
+        digest: current.lesson.validation.digest,
+        revision: evolved.state.revision,
+      };
+    };
 
-  const publishDraft = useCallback<CanvasActions["publishDraft"]>(
-    (input) =>
-      commit((current) => {
-        const existing = commandResult<ReturnType<CanvasActions["publishDraft"]>>(
-          current,
-          input.idempotencyKey,
-        );
-        if (existing) return [current, existing];
-        const draft = current.design.draft;
-        if (
-          !draft ||
-          draft.draftRevision !== input.draftRevision ||
-          current.design.status !== "approved" ||
-          current.design.approvedDraftRevision !== input.draftRevision
-        ) {
-          throw new Error("Learner approval for this exact revision is required before publication.");
-        }
-        const validation = compileExperience(draft, acceptedClaimIds(current));
-        if (!validation.valid) {
-          throw new Error("The approved draft no longer passes the compiler.");
-        }
-        const runtime = createRuntimeState(draft);
-        let next: LearningCanvasState = {
+    const publishLesson: CanvasActions["publishLesson"] = (input) => {
+      const current = stateRef.current;
+      const previous = receipt<ReturnType<CanvasActions["publishLesson"]>>(
+        current,
+        input.idempotencyKey,
+      );
+      if (previous) return previous;
+      requireCanvasRevision(current, input.baseRevision);
+      const draft = current.lesson.draft;
+      if (
+        !draft ||
+        !current.lesson.validation?.valid ||
+        current.lesson.status !== "approved" ||
+        current.lesson.approvedDraftRevision !== input.draftRevision ||
+        draft.revision !== input.draftRevision
+      ) {
+        throw new Error("Publication requires learner approval of this exact compiled revision.");
+      }
+
+      const previousById = new Map(current.regions.map((region) => [region.id, region]));
+      const regions: CanvasRegion[] = draft.regions.map((region) => ({
+        ...clone(region),
+        revision: 1,
+        status: "ready",
+        response: previousById.get(region.id)?.response
+          ? clone(previousById.get(region.id)!.response)
+          : undefined,
+        history: [],
+      }));
+      const evolved = appendEvent(
+        {
           ...current,
-          activeExperience: structuredClone(draft),
-          publishedRevisions: [
-            ...current.publishedRevisions,
-            structuredClone(draft),
-          ],
-          runtime,
-          design: {
+          regions,
+          focus: { regionId: regions[0]?.id ?? null, selectedText: null },
+          lesson: {
+            ...current.lesson,
             status: "published",
-            draft: null,
-            validation,
-            approvedDraftRevision: null,
+            publishedRevision: input.draftRevision,
           },
-          learnerFeedback: null,
-        };
-        next = addEvent(
-          next,
-          "ogram",
-          "design.experience.published",
-          `Published “${draft.metadata.title}” revision ${draft.draftRevision}.`,
-          { digest: validation.digest },
-          input.idempotencyKey,
-          new Date(),
-          draft,
-        );
-        const publishedEventId = lastEvent(next).id;
-        next = addEvent(
-          next,
-          "learner",
-          "runtime.started",
-          "Started the newly published experience.",
-          { entryNodeId: draft.entryNodeId },
-          `${input.idempotencyKey}:runtime`,
-          new Date(),
-          draft,
-        );
-        const result = {
-          eventId: publishedEventId,
-          experienceId: draft.experienceId,
-          publishedRevision: draft.draftRevision,
-          digest: validation.digest,
-        };
-        return [addCommandReceipt(next, input.idempotencyKey, result), result];
-      }),
-    [commit],
-  );
+          session: { ...current.session, stage: "learning" },
+        },
+        "agent",
+        "lesson.published",
+        `Published “${draft.title}” to the learning canvas.`,
+        {
+          draftRevision: input.draftRevision,
+          digest: current.lesson.validation.digest,
+        },
+      );
+      const result = {
+        eventId: evolved.event.id,
+        publishedRevision: input.draftRevision,
+        canvasRevision: evolved.state.revision,
+        regionIds: regions.map((region) => region.id),
+      };
+      commit(withReceipt(evolved.state, input.idempotencyKey, result));
+      return result;
+    };
 
-  const registerDraftAsset = useCallback<CanvasActions["registerDraftAsset"]>(
-    (input) =>
-      commit((current) => {
-        const existing = commandResult<ReturnType<CanvasActions["registerDraftAsset"]>>(
-          current,
-          input.idempotencyKey,
-        );
-        if (existing) return [current, existing];
-        const draft = current.design.draft;
-        if (!draft || draft.draftRevision !== input.draftRevision) {
-          throw new Error("Register the asset against the current draft revision.");
-        }
-        if (draft.assets.some((asset) => asset.id === input.asset.id)) {
-          throw new Error(`Asset id already exists: ${input.asset.id}.`);
-        }
-        const nextDraft = {
-          ...draft,
-          draftRevision: draft.draftRevision + 1,
-          assets: [...draft.assets, structuredClone(input.asset)],
-        };
-        let next: LearningCanvasState = {
-          ...current,
-          design: {
-            status: "drafting",
-            draft: nextDraft,
-            validation: null,
-            approvedDraftRevision: null,
-          },
-        };
-        next = addEvent(
-          next,
-          "agent",
-          "design.asset.registered",
-          `Registered governed ${input.asset.kind} asset “${input.asset.id}”.`,
-          { assetId: input.asset.id, kind: input.asset.kind, digest: input.asset.digest },
-          input.idempotencyKey,
-          new Date(),
-          nextDraft,
-        );
-        const result = {
-          eventId: lastEvent(next).id,
-          assetId: input.asset.id,
-          draftRevision: nextDraft.draftRevision,
-        };
-        return [addCommandReceipt(next, input.idempotencyKey, result), result];
-      }),
-    [commit],
-  );
+    const focusRegion: CanvasActions["focusRegion"] = (
+      regionId,
+      selectedText = null,
+    ) => {
+      const current = stateRef.current;
+      if (regionId && !current.regions.some((region) => region.id === regionId)) return;
+      const cleanSelection = selectedText?.trim().slice(0, 500) || null;
+      if (
+        current.focus.regionId === regionId &&
+        current.focus.selectedText === cleanSelection
+      ) {
+        return;
+      }
+      const next = {
+        ...current,
+        focus: { regionId, selectedText: cleanSelection },
+      };
+      stateRef.current = next;
+      saveCanvasState(next);
+      setState(next);
+    };
 
-  const proposeAdaptation = useCallback<CanvasActions["proposeAdaptation"]>(
-    (input) =>
-      commit((current) => {
-        const existing = commandResult<ReturnType<CanvasActions["proposeAdaptation"]>>(
-          current,
-          input.idempotencyKey,
-        );
-        if (existing) return [current, existing];
-        if (input.basePublishedRevision !== current.activeExperience.draftRevision) {
-          throw new Error("Adaptation must start from the currently published revision.");
-        }
-        if (input.rationale.trim().length < 12 || input.rationale.length > 360) {
-          throw new Error("Adaptation rationale must contain 12–360 characters.");
-        }
-        let draft = applyExperiencePatches(current.activeExperience, input.operations);
-        draft = { ...draft, draftRevision: input.basePublishedRevision + 1 };
-        const validation = compileExperience(draft, acceptedClaimIds(current));
-        const status: "awaiting_review" | "validation_failed" = validation.valid
-          ? "awaiting_review"
-          : "validation_failed";
-        let next: LearningCanvasState = {
-          ...current,
-          design: {
-            status,
-            draft,
-            validation,
-            approvedDraftRevision: null,
-            reviewRequestedAt: validation.valid ? new Date().toISOString() : undefined,
-          },
-        };
-        next = addEvent(
-          next,
-          "agent",
-          "adaptation.proposed",
-          `Proposed learner-reviewed adaptation revision ${draft.draftRevision}.`,
-          { rationale: input.rationale, operationCount: input.operations.length, valid: validation.valid },
-          input.idempotencyKey,
-          new Date(),
-          draft,
-        );
-        const result = {
-          eventId: lastEvent(next).id,
-          draftRevision: draft.draftRevision,
-          valid: validation.valid,
-          status,
-        };
-        return [addCommandReceipt(next, input.idempotencyKey, result), result];
-      }),
-    [commit],
-  );
+    const patchRegion: CanvasActions["patchRegion"] = (input) => {
+      const current = stateRef.current;
+      const previous = receipt<ReturnType<CanvasActions["patchRegion"]>>(
+        current,
+        input.idempotencyKey,
+      );
+      if (previous) return previous;
+      ensureAgentWritable(current);
+      const region = requireRegion(current, input.regionId);
+      requireRegionRevision(region, input.baseRegionRevision);
+      if (input.operation !== "set_status" && !input.content?.length) {
+        throw new Error(`${input.operation} requires at least one trusted content block.`);
+      }
+      if (input.operation === "set_status" && !input.status) {
+        throw new Error("set_status requires a region status.");
+      }
+      const undoToken = makeId("undo");
+      const at = new Date().toISOString();
+      let content = clone(region.content);
+      if (input.operation === "replace") content = clone(input.content!);
+      if (input.operation === "append" || input.operation === "annotate") {
+        content = [...content, ...clone(input.content!)];
+      }
+      const status =
+        input.operation === "set_status" ? input.status! : ("updated" as const);
+      const nextRegion: CanvasRegion = {
+        ...region,
+        revision: region.revision + 1,
+        status,
+        content,
+        provenance:
+          input.operation === "set_status"
+            ? region.provenance
+            : [
+                ...region.provenance,
+                {
+                  actor: "agent",
+                  label: "Updated by Codex",
+                  sourceRefs: input.sourceRefs ?? [],
+                  at,
+                },
+              ],
+        history: nextUndoHistory(region, undoToken),
+        updatedAt: at,
+        updateRationale: input.rationale.trim(),
+      };
+      const evolved = appendEvent(
+        replaceRegion(current, nextRegion),
+        "agent",
+        "canvas.region.patched",
+        input.operation === "set_status"
+          ? `Marked “${region.title}” as ${status.replace("_", " ")}.`
+          : `Updated “${region.title}” on the learning canvas.`,
+        {
+          regionId: region.id,
+          operation: input.operation,
+          regionRevision: nextRegion.revision,
+        },
+      );
+      const result = {
+        eventId: evolved.event.id,
+        regionId: region.id,
+        regionRevision: nextRegion.revision,
+        canvasRevision: evolved.state.revision,
+        undoToken,
+      };
+      commit(withReceipt(evolved.state, input.idempotencyKey, result));
+      return result;
+    };
 
-  const submitLearnerResponse = useCallback<CanvasActions["submitLearnerResponse"]>(
-    (nodeId, value, confidence) =>
-      commit((current) => {
-        const submitted = submitRuntimeResponse(
-          current.activeExperience,
-          current.runtime,
-          nodeId,
-          value,
-          confidence,
-        );
-        let next: LearningCanvasState = { ...current, runtime: submitted.runtime };
-        const key = `human-response-${makeId(nodeId)}`;
-        next = addEvent(
-          next,
-          "learner",
-          "runtime.response.submitted",
-          `Submitted an unassisted response to ${nodeId}.`,
+    const injectWidget: CanvasActions["injectWidget"] = (input) => {
+      const current = stateRef.current;
+      const previous = receipt<ReturnType<CanvasActions["injectWidget"]>>(
+        current,
+        input.idempotencyKey,
+      );
+      if (previous) return previous;
+      ensureAgentWritable(current);
+      const region = requireRegion(current, input.regionId);
+      requireRegionRevision(region, input.baseRegionRevision);
+      if (input.widget.html.length > 12_288) throw new Error("Widget HTML exceeds 12 KB.");
+      if (input.widget.css.length > 12_288) throw new Error("Widget CSS exceeds 12 KB.");
+      if (input.widget.javascript.length > 24_576) {
+        throw new Error("Widget JavaScript exceeds 24 KB.");
+      }
+      if (input.widget.height < 180 || input.widget.height > 720) {
+        throw new Error("Widget height must be between 180 and 720 pixels.");
+      }
+
+      const undoToken = makeId("undo");
+      const at = new Date().toISOString();
+      const nextRegion: CanvasRegion = {
+        ...region,
+        revision: region.revision + 1,
+        status: "updated",
+        content: [...region.content, clone(input.widget)],
+        provenance: [
+          ...region.provenance,
           {
-            nodeId,
-            correct: submitted.response.correct,
-            confidence,
-            responseKind: typeof value,
+            actor: "agent",
+            label: "Interactive model added by Codex",
+            sourceRefs: [],
+            at,
           },
-          key,
-        );
-        const responseEventId = lastEvent(next).id;
-        if (submitted.response.correct !== undefined) {
-          next = addEvent(
-            next,
-            "ogram",
-            "runtime.feedback.presented",
-            "Presented explanatory feedback after the learner attempt.",
-            { nodeId, correct: submitted.response.correct },
-            `${key}:feedback`,
-          );
-        }
-        return [next, { eventId: responseEventId, correct: submitted.response.correct }];
-      }),
-    [commit],
-  );
+        ],
+        history: nextUndoHistory(region, undoToken),
+        updatedAt: at,
+        updateRationale: input.rationale.trim(),
+      };
+      const evolved = appendEvent(
+        replaceRegion(current, nextRegion),
+        "agent",
+        "canvas.widget.injected",
+        `Added “${input.widget.title}” inside “${region.title}”.`,
+        {
+          regionId: region.id,
+          widgetId: input.widget.widgetId,
+          regionRevision: nextRegion.revision,
+        },
+      );
+      const result = {
+        eventId: evolved.event.id,
+        regionId: region.id,
+        regionRevision: nextRegion.revision,
+        canvasRevision: evolved.state.revision,
+        undoToken,
+      };
+      commit(withReceipt(evolved.state, input.idempotencyKey, result));
+      return result;
+    };
 
-  const advance = useCallback<CanvasActions["advance"]>(
-    () =>
-      commit((current) => {
-        const runtime = advanceRuntime(current.activeExperience, current.runtime);
-        let next: LearningCanvasState = { ...current, runtime };
-        const key = `human-advance-${makeId("node")}`;
-        if (runtime.status === "completed") {
-          next = addEvent(
-            next,
-            "learner",
-            "runtime.completed",
-            "Completed the experience with the required learner-generated evidence.",
-            {
-              responseCount: Object.keys(runtime.responses).length,
-              masteryClaimed: false,
-              delayedTransferStillRequired: true,
-            },
-            key,
-          );
-        } else {
-          next = addEvent(
-            next,
-            "learner",
-            "runtime.node.entered",
-            `Entered learning node ${runtime.currentNodeId}.`,
-            { nodeId: runtime.currentNodeId },
-            key,
+    const attachResearch: CanvasActions["attachResearch"] = (input) => {
+      const current = stateRef.current;
+      const previous = receipt<ReturnType<CanvasActions["attachResearch"]>>(
+        current,
+        input.idempotencyKey,
+      );
+      if (previous) return previous;
+      ensureAgentWritable(current);
+      const region = requireRegion(current, input.regionId);
+      requireRegionRevision(region, input.baseRegionRevision);
+      if (!input.sources.length || input.sources.length > 8) {
+        throw new Error("Research needs one to eight bounded references.");
+      }
+      for (const source of input.sources) {
+        const url = new URL(source.url);
+        if (url.protocol !== "https:" && url.protocol !== "http:") {
+          throw new Error(
+            `Research source ${source.id} must use an HTTP(S) canonical URL.`,
           );
         }
-        return [
-          next,
+      }
+
+      const undoToken = makeId("undo");
+      const at = new Date().toISOString();
+      const nextRegion: CanvasRegion = {
+        ...region,
+        revision: region.revision + 1,
+        status: "updated",
+        content: [
+          ...region.content,
           {
-            eventId: lastEvent(next).id,
-            status: runtime.status,
-            currentNodeId: runtime.currentNodeId,
+            type: "source_cards",
+            summary: input.summary.trim(),
+            sources: clone(input.sources),
           },
-        ];
-      }),
-    [commit],
-  );
+        ],
+        provenance: [
+          ...region.provenance,
+          {
+            actor: "agent",
+            label: "Research attached by Codex",
+            sourceRefs: input.sources.map((source) => source.url),
+            at,
+          },
+        ],
+        history: nextUndoHistory(region, undoToken),
+        updatedAt: at,
+        updateRationale: "Attached bounded, sourced context.",
+      };
+      const evolved = appendEvent(
+        replaceRegion(current, nextRegion),
+        "agent",
+        "canvas.research.attached",
+        `Attached ${input.sources.length} research source${input.sources.length === 1 ? "" : "s"} to “${region.title}”.`,
+        { regionId: region.id, sourceIds: input.sources.map((source) => source.id) },
+      );
+      const result = {
+        eventId: evolved.event.id,
+        regionId: region.id,
+        regionRevision: nextRegion.revision,
+        canvasRevision: evolved.state.revision,
+        undoToken,
+      };
+      commit(withReceipt(evolved.state, input.idempotencyKey, result));
+      return result;
+    };
 
-  const submitLearnerFeedback = useCallback<CanvasActions["submitLearnerFeedback"]>(
-    (level, note) =>
-      commit((current) => {
-        const submittedAt = new Date().toISOString();
-        let next: LearningCanvasState = {
-          ...current,
-          learnerFeedback: {
-            level,
-            note: note?.trim() || undefined,
-            submittedAt,
-          },
+    const revertRegion: CanvasActions["revertRegion"] = (input) => {
+      const current = stateRef.current;
+      const previous = receipt<ReturnType<CanvasActions["revertRegion"]>>(
+        current,
+        input.idempotencyKey,
+      );
+      if (previous) return previous;
+      ensureAgentWritable(current);
+      const region = requireRegion(current, input.regionId);
+      requireRegionRevision(region, input.baseRegionRevision);
+      const historyIndex = region.history.findIndex(
+        (entry) => entry.undoToken === input.undoToken,
+      );
+      if (historyIndex < 0) throw new Error("That undo token is no longer available.");
+      const snapshot = region.history[historyIndex]!;
+      const nextRegion: CanvasRegion = {
+        ...region,
+        revision: region.revision + 1,
+        status: snapshot.status,
+        content: clone(snapshot.content),
+        provenance: clone(snapshot.provenance),
+        history: region.history.slice(0, historyIndex),
+        updatedAt: snapshot.updatedAt,
+        updateRationale: snapshot.updateRationale,
+      };
+      const evolved = appendEvent(
+        replaceRegion(current, nextRegion),
+        input.actor ?? "learner",
+        "canvas.region.reverted",
+        `Restored the previous version of “${region.title}”.`,
+        { regionId: region.id, restoredFromRevision: snapshot.revision },
+      );
+      const result = {
+        eventId: evolved.event.id,
+        regionId: region.id,
+        regionRevision: nextRegion.revision,
+        canvasRevision: evolved.state.revision,
+      };
+      commit(withReceipt(evolved.state, input.idempotencyKey, result));
+      return result;
+    };
+
+    const submitLearnerResponse: CanvasActions["submitLearnerResponse"] = (
+      regionId,
+      value,
+    ) => {
+      const current = stateRef.current;
+      const region = requireRegion(current, regionId);
+      if (!region.interaction) {
+        throw new Error("This region does not accept a learner response.");
+      }
+      if (region.response) throw new Error("Submitted learner evidence is immutable.");
+      const cleanValue = value.trim();
+      let response: RegionResponse;
+      if (region.interaction.type === "choice") {
+        const option = region.interaction.options.find((item) => item.id === cleanValue);
+        if (!option) throw new Error("Choose one of the provided answers.");
+        response = {
+          value: option.id,
+          correct: option.correct,
+          submittedAt: new Date().toISOString(),
         };
-        next = addEvent(
-          next,
-          "learner",
-          "learner.feedback.submitted",
-          `Marked the experience ${level.replace("_", " ")}.`,
-          { level, noteLength: note?.trim().length ?? 0 },
-          `human-feedback-${makeId("feedback")}`,
-        );
-        return [next, { eventId: lastEvent(next).id }];
-      }),
-    [commit],
-  );
+      } else {
+        if (cleanValue.length < region.interaction.minimumCharacters) {
+          throw new Error(
+            `Write at least ${region.interaction.minimumCharacters} characters before saving your teach-back.`,
+          );
+        }
+        response = { value: cleanValue, submittedAt: new Date().toISOString() };
+      }
+      const nextRegion = { ...region, revision: region.revision + 1, response };
+      const evolved = appendEvent(
+        replaceRegion(current, nextRegion),
+        "learner",
+        "learner.response.submitted",
+        `Saved learner evidence for “${region.title}”.`,
+        { regionId, correct: response.correct },
+      );
+      commit(evolved.state);
+      return {
+        eventId: evolved.event.id,
+        correct: response.correct,
+        revision: evolved.state.revision,
+      };
+    };
 
-  const actions = useMemo<CanvasActions>(
-    () => ({
+    const reset = () => {
+      nonceRef.current = null;
+      clearCanvasState();
+      const initial = createInitialCanvasState();
+      stateRef.current = initial;
+      setState(initial);
+    };
+
+    return {
       getState,
-      reset,
-      proposeLearningNeeds,
+      getNonce,
+      beginSession,
+      proposeContext,
       reviewContextClaim,
-      createDraft,
-      patchDraft,
-      validateDraft,
-      requestDraftReview,
-      approveDraft,
-      publishDraft,
-      registerDraftAsset,
-      proposeAdaptation,
+      skipContext,
+      prepareLesson,
+      approveLesson,
+      publishLesson,
+      focusRegion,
+      patchRegion,
+      injectWidget,
+      attachResearch,
+      revertRegion,
       submitLearnerResponse,
-      advance,
-      submitLearnerFeedback,
-    }),
-    [
-      advance,
-      approveDraft,
-      createDraft,
-      getState,
-      patchDraft,
-      proposeAdaptation,
-      proposeLearningNeeds,
-      publishDraft,
-      registerDraftAsset,
-      requestDraftReview,
       reset,
-      reviewContextClaim,
-      submitLearnerFeedback,
-      submitLearnerResponse,
-      validateDraft,
-    ],
-  );
+    };
+  }, [commit]);
+
+  useEffect(() => {
+    const workingRegions = state.regions.filter(
+      (region) => region.status === "agent_working" && region.updatedAt,
+    );
+    if (!workingRegions.length) return;
+    const timeoutAt = Math.min(
+      ...workingRegions.map(
+        (region) => new Date(region.updatedAt!).getTime() + 90_000,
+      ),
+    );
+    const timer = window.setTimeout(() => {
+      const current = actions.getState();
+      const now = Date.now();
+      current.regions
+        .filter(
+          (region) =>
+            region.status === "agent_working" &&
+            region.updatedAt &&
+            now - new Date(region.updatedAt).getTime() >= 90_000,
+        )
+        .forEach((region) => {
+          actions.patchRegion({
+            regionId: region.id,
+            baseRegionRevision: region.revision,
+            idempotencyKey: `agent-timeout-${region.id}-${region.revision}`,
+            operation: "set_status",
+            status: "ready",
+            rationale: "Agent activity timed out cleanly; existing lesson content was preserved.",
+          });
+        });
+    }, Math.max(0, timeoutAt - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [actions, state.regions]);
 
   return { state, actions };
 }

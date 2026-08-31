@@ -151,6 +151,55 @@ export const canvasContract = {
   pedagogyPolicyVersion: "2026.1",
   authoringModel:
     "The agent authors a declarative learning application. Ogram compiles, renders, remembers, and governs it.",
+  contextSources: {
+    model:
+      "Every personalization claim is a reviewable hypothesis with provenance, purpose, sensitivity, and an opaque evidence reference.",
+    supportedRoutes: [
+      "learner input",
+      "Codex observation",
+      "Ogram profile, pixel, or journey",
+      "any connected MCP provider through connected_mcp plus sourceDetail",
+    ],
+    connectedSourceRequirements: [
+      "name the provider and resource type",
+      "minimize the claim instead of copying source material",
+      "keep raw files, messages, and credentials outside the claim",
+      "wait for learner acceptance before personalization",
+    ],
+  },
+  agentNativeCanvas: {
+    model:
+      "The Codex conversation reads and writes stable semantic notebook regions. The page contains no secondary chat or pinned-question workflow.",
+    trustedContentTypes: [
+      "prose",
+      "key_points",
+      "token_sequence",
+      "attention_map",
+      "transformer_stack",
+      "comparison",
+      "source_cards",
+    ],
+    sandboxWidget: {
+      sandbox: "allow-scripts",
+      network: false,
+      sameOrigin: false,
+      htmlBytes: 12_288,
+      cssBytes: 12_288,
+      javascriptBytes: 24_576,
+    },
+    visualGuidelines: [
+      "Choose the smallest representation that makes the concept materially easier to understand.",
+      "Keep one dominant visual or explanatory structure per region change.",
+      "Label important values and relationships directly and preserve a text alternative.",
+      "Keep controls keyboard accessible, layouts responsive, and meaning independent of color.",
+      "Prefer a trusted declarative renderer; use the bounded sandbox only when interaction materially helps.",
+    ],
+    learnerAuthority: [
+      "Only the learner submits answers and reflection.",
+      "Agent edits are visibly attributed, concurrency-safe, and undoable.",
+      "A region write never rewrites completed evidence, consent receipts, or publication history.",
+    ],
+  },
   writingGuidelines: {
     audience:
       "Write for a learner who wants to understand and practise a useful skill, not for an audience being sold an idea.",
@@ -191,7 +240,7 @@ export const canvasContract = {
     nodes: { min: 3, max: 30 },
     maxEstimatedMinutes: 45,
     maxAssets: 8,
-    arbitraryHtmlCssJavascript: false,
+    arbitraryHtmlCssJavascript: "sandbox_only",
     boundedCyclesOnly: true,
   },
   humanOnlyActions: [

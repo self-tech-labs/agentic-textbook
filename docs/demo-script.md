@@ -1,81 +1,116 @@
-# Demo script — 2 minutes 45 seconds
+# Acceptance demo — learn transformers with Codex
 
-## 0:00–0:20 — The future we are building for
+This walkthrough exercises the real WebMCP flow in one uninterrupted Codex Desktop session. Keep the Codex conversation on the left and the built-in browser on the right.
 
-Show the full three-column Learning Canvas.
+## Before the demo
 
-Voiceover:
+Run the app:
 
-> Soon, the AI that already sees what I am researching and trying to accomplish will be able to build the exact learning experience I need—now. Ogram is the generative canvas and learning memory for that future.
+```bash
+npm run dev
+```
 
-Point to the three surfaces: reviewed context, live experience, compiler/ledger.
+For a completely fresh run, clear the `learn-ogram-canvas:v3` local-storage entry or use a fresh browser profile. Do not delete the v2 key; the v3 loader deliberately ignores it.
 
-## 0:20–0:42 — This is not a lesson catalogue
+## 1. Start through the conversation
 
-Open the browser’s site tools and show the 11-tool surface. Call `ogram_get_canvas_contract`.
+Open the page in Codex Desktop’s built-in browser. The ready view should show the scientific cream/green notebook cover, one available tool, and no embedded chat control.
 
-Voiceover:
+Say to Codex:
 
-> Codex does not choose one of four lessons. Ogram gives it a versioned language of trusted learning mechanisms. Codex can author the objective, content, graph, branching, feedback, transfer, and media references of a complete mini web app.
+> Teach me how transformers work. Use the learn.ogram site tools on the page. Start with the required bootstrap call and guide me through the choices.
 
-Briefly show the nine primitive contracts and the `LearningExperienceDocument` schema.
+Codex calls `learn_begin_session` with the topic and relays the returned guide:
 
-## 0:42–1:02 — Personalization is negotiated
+1. Tell me what you want to understand and why.
+2. Choose whether I may use conversation or connected-source context.
+3. Review the proposed context cards on the right.
+4. Approve the notebook, then work through it at your pace.
+5. Ask me naturally whenever a focused region needs another explanation, interaction, or research.
 
-Call `ogram_get_learning_context`. Point to the context dock and source colors.
+The page immediately becomes the six-region transformer skeleton.
 
-Optionally call `ogram_propose_learning_needs` with one synthetic behavioural hypothesis and show the pending accept/exclude controls.
+## 2. Demonstrate two-stage context consent
 
-Voiceover:
+Tell Codex:
 
-> Codex observations are hypotheses, not truth. Ogram context is purpose-bound. The learner sees, accepts, rejects, or corrects what may shape the experience. The agent has no tool to approve its own hypothesis.
+> You may use relevant information from this conversation and my calendar availability, but only for this lesson. Show me the minimized claims before using them.
 
-## 1:02–1:32 — Build the experience in public
+For the demo, Codex should propose two claims resembling:
 
-Click **Compose another experience** or execute:
+- the learner writes JavaScript but is new to machine-learning mathematics;
+- the learner has a twenty-minute study window.
 
-1. `ogram_create_experience_draft`
-2. `ogram_validate_experience`
-3. `ogram_request_learner_review`
+Codex consults any installed connector agent-side. It passes only the two summaries, provenance, sensitivity, purposes, and opaque evidence references to `learn_propose_context`.
 
-Show the lime review surface for **Signal, decision, debris**.
+On the canvas, accept both cards. Point out that proposal did not equal approval: the lesson could not use either claim until this visible review.
 
-Voiceover:
+If no connector is available, use a learner-provided second claim instead. The context mechanic remains real.
 
-> This is a complete new graph: prediction, explanation, classification, a conditional remediation branch, reflection, and transfer. The Ogram compiler checks structure, learning evidence, privacy, accessibility, media, and every branch. It produces a stable digest.
+## 3. Compile and approve the lesson
 
-Point to zero errors, warnings, mechanism count, and ledger events.
+Ask Codex to prepare the transformer lesson. It calls `learn_prepare_lesson` using the bundled `transformer_technical_beginner` blueprint.
 
-## 1:32–1:52 — Human authority is architectural
+The canvas shows:
 
-Point to “Codex cannot click this for you,” then click **Approve & publish**.
+- the objective and technical-beginner baseline;
+- the working time;
+- the number of learner-approved context signals;
+- six stable notebook regions.
 
-Voiceover:
+Click **Approve this lesson**. Codex then calls `learn_publish_lesson` with the exact approved revision. A different or unapproved revision fails.
 
-> Approval binds to this exact revision and digest. The WebMCP publish tool fails without that learner receipt. The agent also cannot answer a prompt, submit feedback, or certify real-world proof.
+## 4. Learn in the living notebook
 
-Show **Build a portable context filter** replace the old canvas.
+Scroll through the published page and briefly identify:
 
-## 1:52–2:20 — Ogram guides without narrowing creativity
+1. learning goal;
+2. tokens and embeddings;
+3. query, key, value, softmax, and self-attention;
+4. multi-head attention, residual paths, normalization, and feed-forward layers;
+5. next-token prediction practice;
+6. teach-back.
 
-Enter the experience, answer the prediction, and reveal feedback. If time permits, show the accessible select-based sort.
+The sticky concept map tracks the focused region. Select a short phrase inside self-attention to show that selected text also enters the semantic snapshot.
 
-Voiceover:
+Answer the next-token choice and save it. This creates learner-owned evidence that later agent writes cannot change.
 
-> Ogram governs mechanisms, not topics. It enforces active generation before passive completion, explanatory feedback, objective-linked evidence, a bounded exit, keyboard-safe interactions, and a real-work transfer cue. Codex retains almost infinite compositional freedom inside those researched constraints.
+## 5. Inject the softmax playground
 
-## 2:20–2:38 — Memory without rewriting history
+Focus the self-attention region, then say in the Codex conversation:
 
-Show the ledger update after the learner response. Complete or show the final transfer primitive and feedback controls.
+> I don’t understand softmax. Show it with three tokens and let me change one score.
 
-Voiceover:
+Codex should:
 
-> The ledger separates what was proposed, approved, published, attempted, assisted, completed, and later applied. Feedback can produce a new reviewed revision; it never rewrites the experience or evidence already encountered.
+1. call `learn_get_canvas_snapshot`;
+2. resolve `self-attention` from focus rather than guessing from the whole lesson;
+3. call `learn_inject_widget` with a small three-token interaction.
 
-## 2:38–2:45 — End
+The interaction appears inside the existing self-attention section. It does not replace the notebook or open a second assistant. Show:
 
-End card:
+- the **Interactive model · sandboxed** label;
+- reset, stop, and text-alternative controls;
+- **Updated by Codex · Undo** attribution;
+- the unchanged learner answer in the practice region.
 
-> Agent authors. Ogram governs. Learner acts.
+Click **Undo** if time permits, then ask Codex to add the interaction again with a fresh snapshot/revision. This makes reversibility and concurrency visible.
 
-> A universal learning canvas for the age of coding agents.
+## 6. Attach research without blocking progress
+
+Say:
+
+> Research the original scaled dot-product attention formulation and attach one authoritative source here. Keep the rest of the notebook usable.
+
+Codex can first mark the self-attention region `agent_working`. The learner can continue elsewhere. After agent-side research, Codex calls `learn_attach_research` with a short synthesis and canonical reference, for example the original *Attention Is All You Need* paper.
+
+The source card appears in the requested region with publisher, date, URL, claim, and agent attribution. No raw search response or connector credential enters the page.
+
+## What the demo proves
+
+- WebMCP makes the website and Codex conversation one shared working surface.
+- Context can arrive from arbitrary agent-accessible sources without surrendering learner consent.
+- Codex authors the lesson and later changes only the region that needs help.
+- Trusted visual specifications and a strict widget sandbox support different explanatory forms.
+- The learner retains structural approval, answer ownership, evidence history, and undo.
+- The architecture is generic even though transformers is the polished demonstration.
