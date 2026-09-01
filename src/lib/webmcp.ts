@@ -1,15 +1,64 @@
-import { asExperienceDocument } from "../domain/compiler";
 import type {
-  AssetReference,
-  ContextClaim,
-  ExperiencePatchOperation,
-} from "../domain/experience";
-import {
-  learningExperienceInputSchema,
-  type JsonSchema,
-} from "../domain/experienceSchema";
-import { canvasContract } from "../domain/primitiveRegistry";
+  CanvasRegionStatus,
+  ContextClaimKind,
+  ContextDiscoveryScope,
+  ContextSource,
+  LearnerContextClaim,
+  LearnerInteraction,
+  LessonDocumentV3,
+  LessonRegion,
+  LearningSessionStage,
+  RegionContent,
+  ResearchReference,
+  TrustedPatchContent,
+} from "../domain/agentCanvas";
+import { transformerLessonFixture } from "../domain/transformerFixture";
+import type { JsonSchema } from "../domain/experienceSchema";
 import type { CanvasActions } from "../hooks/useLearningCanvas";
+
+export const contextDiscoveryPolicy = {
+  retrievalOwner: "codex_host" as const,
+  guidance:
+    "A short current chat is not evidence that no useful context exists. After explicit learner consent, inspect relevant accessible past Codex tasks, conversations, and saved-project history before proposing minimized claims.",
+  scopes: [
+    {
+      id: "current_conversation",
+      label: "This conversation",
+      route: "conversation",
+    },
+    {
+      id: "codex_history",
+      label: "Past Codex tasks and conversations",
+      route: "codex_history",
+    },
+    {
+      id: "project_history",
+      label: "Saved-project task history",
+      route: "project_history",
+    },
+    {
+      id: "ogram_profile",
+      label: "Ogram learner context",
+      route: "ogram",
+    },
+    {
+      id: "connected_sources",
+      label: "Connected sources",
+      route: "connected_mcp",
+    },
+  ],
+  minimization:
+    "Only a short claim, provider label, resource type, purpose, sensitivity, and opaque evidence reference may enter the canvas.",
+} as const;
+
+export const canvasVisualOutputPolicy = {
+  destination: "webmcp_canvas_only" as const,
+  conversationOutput: "text_coordination_only" as const,
+  guidance:
+    "Do not create or render a separate inline visualization, widget, or host visualization artifact in the Codex conversation. Read the canvas snapshot and author the visual directly in its target region with trusted content or learn_inject_widget.",
+  widgetContract:
+    "Widget HTML is a responsive body fragment. The canvas already supplies the title, sandbox label, Reset, Stop, and text-alternative chrome; do not duplicate them inside the widget.",
+} as const;
 
 export interface WebMcpToolDefinition {
   name: string;
@@ -31,629 +80,1421 @@ export interface WebMcpRegistration {
   cleanup: () => void;
 }
 
-const emptyInputSchema: JsonSchema = {
-  type: "object",
-  properties: {},
-  additionalProperties: false,
+const nonceSchema = {
+  type: "string",
+  minLength: 12,
+  maxLength: 200,
+  description: "In-memory nonce returned by learn_begin_session.",
 };
 
 const idempotencySchema = {
   type: "string",
   minLength: 8,
   maxLength: 160,
-  description: "Stable key for this exact command and any retry.",
+  description: "Stable key for this exact write and any retry.",
 };
 
-function commandSchema(
-  required: string[],
-  properties: Record<string, unknown>,
-): JsonSchema {
-  return {
-    type: "object",
-    additionalProperties: false,
-    required: [...required, "idempotencyKey"],
-    properties: { ...properties, idempotencyKey: idempotencySchema },
-  };
-}
-
-const operationsSchema = {
-  type: "array",
-  minItems: 1,
-  maxItems: 20,
-  items: {
-    type: "object",
-    required: ["op"],
-    properties: {
-      op: {
-        type: "string",
-        enum: [
-          "replace_metadata",
-          "upsert_node",
-          "remove_node",
-          "upsert_edge",
-          "remove_edge",
-          "set_completion",
-        ],
-      },
-    },
+const researchReferenceSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["id", "title", "url", "publisher", "claim"],
+  properties: {
+    id: { type: "string", minLength: 2, maxLength: 120 },
+    title: { type: "string", minLength: 3, maxLength: 240 },
+    url: { type: "string", minLength: 10, maxLength: 1000 },
+    publisher: { type: "string", minLength: 2, maxLength: 160 },
+    publishedAt: { type: "string", maxLength: 80 },
+    claim: { type: "string", minLength: 8, maxLength: 500 },
   },
 };
 
-function objectInput(value: unknown): Record<string, unknown> {
+const trustedContentSchema = {
+  oneOf: [
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "text"],
+      properties: {
+        type: { const: "prose" },
+        heading: { type: "string", maxLength: 120 },
+        text: { type: "string", minLength: 4, maxLength: 3000 },
+        emphasis: { type: "string", maxLength: 600 },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "items"],
+      properties: {
+        type: { const: "key_points" },
+        items: {
+          type: "array",
+          minItems: 1,
+          maxItems: 8,
+          items: { type: "string", minLength: 2, maxLength: 400 },
+        },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "tokens", "caption"],
+      properties: {
+        type: { const: "token_sequence" },
+        tokens: {
+          type: "array",
+          minItems: 2,
+          maxItems: 16,
+          items: { type: "string", minLength: 1, maxLength: 60 },
+        },
+        caption: { type: "string", minLength: 4, maxLength: 600 },
+        highlightedIndex: { type: "integer", minimum: 0 },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "tokens", "focusIndex", "weights", "explanation"],
+      properties: {
+        type: { const: "attention_map" },
+        tokens: {
+          type: "array",
+          minItems: 2,
+          maxItems: 12,
+          items: { type: "string", minLength: 1, maxLength: 60 },
+        },
+        focusIndex: { type: "integer", minimum: 0 },
+        weights: {
+          type: "array",
+          minItems: 2,
+          maxItems: 12,
+          items: { type: "number", minimum: 0, maximum: 1 },
+        },
+        explanation: { type: "string", minLength: 8, maxLength: 800 },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "stages", "caption"],
+      properties: {
+        type: { const: "transformer_stack" },
+        stages: {
+          type: "array",
+          minItems: 2,
+          maxItems: 10,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["label", "detail"],
+            properties: {
+              label: { type: "string", minLength: 1, maxLength: 100 },
+              detail: { type: "string", minLength: 2, maxLength: 300 },
+            },
+          },
+        },
+        caption: { type: "string", minLength: 4, maxLength: 600 },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "leftLabel", "rightLabel", "rows"],
+      properties: {
+        type: { const: "comparison" },
+        leftLabel: { type: "string", minLength: 1, maxLength: 100 },
+        rightLabel: { type: "string", minLength: 1, maxLength: 100 },
+        rows: {
+          type: "array",
+          minItems: 1,
+          maxItems: 8,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["label", "left", "right"],
+            properties: {
+              label: { type: "string", minLength: 1, maxLength: 100 },
+              left: { type: "string", minLength: 1, maxLength: 400 },
+              right: { type: "string", minLength: 1, maxLength: 400 },
+            },
+          },
+        },
+      },
+    },
+  ],
+};
+
+function objectInput(value: unknown, label = "Tool input"): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Tool input must be an object.");
+    throw new Error(`${label} must be an object.`);
   }
   return value as Record<string, unknown>;
 }
 
-function requiredString(
+function stringValue(
   object: Record<string, unknown>,
   key: string,
-  min: number,
-  max: number,
+  min = 1,
+  max = 1000,
 ): string {
   const value = object[key];
   if (typeof value !== "string") throw new Error(`${key} must be a string.`);
-  const trimmed = value.trim();
-  if (trimmed.length < min || trimmed.length > max) {
+  const clean = value.trim();
+  if (clean.length < min || clean.length > max) {
     throw new Error(`${key} must contain ${min}–${max} characters.`);
   }
-  return trimmed;
+  return clean;
 }
 
-function requiredInteger(
+function optionalString(
+  object: Record<string, unknown>,
+  key: string,
+  max = 1000,
+): string | undefined {
+  if (object[key] === undefined) return undefined;
+  return stringValue(object, key, 1, max);
+}
+
+function integerValue(
   object: Record<string, unknown>,
   key: string,
   minimum = 0,
+  maximum = Number.MAX_SAFE_INTEGER,
 ): number {
   const value = object[key];
-  if (!Number.isInteger(value) || Number(value) < minimum) {
-    throw new Error(`${key} must be an integer of at least ${minimum}.`);
+  if (!Number.isInteger(value) || Number(value) < minimum || Number(value) > maximum) {
+    throw new Error(`${key} must be an integer between ${minimum} and ${maximum}.`);
   }
   return Number(value);
 }
 
-function idempotencyKey(object: Record<string, unknown>): string {
-  return requiredString(object, "idempotencyKey", 8, 160);
-}
-
-function reveal(sectionId: string): void {
-  window.setTimeout(() => {
-    const section = document.getElementById(sectionId);
-    let disclosure =
-      section instanceof HTMLDetailsElement
-        ? section
-        : section?.closest("details") ?? null;
-    while (disclosure instanceof HTMLDetailsElement) {
-      disclosure.open = true;
-      disclosure = disclosure.parentElement?.closest("details") ?? null;
-    }
-    section?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, 0);
-}
-
-function parseClaims(input: Record<string, unknown>): ContextClaim[] {
-  const rawClaims = input.claims;
-  if (!Array.isArray(rawClaims) || rawClaims.length < 1 || rawClaims.length > 6) {
-    throw new Error("claims must contain one to six reviewable hypotheses.");
+function stringArray(
+  object: Record<string, unknown>,
+  key: string,
+  maximum = 20,
+): string[] {
+  const value = object[key];
+  if (!Array.isArray(value) || value.length > maximum) {
+    throw new Error(`${key} must be an array with at most ${maximum} items.`);
   }
-  const kinds: ContextClaim["kind"][] = [
-    "stated_goal",
-    "current_project",
-    "active_research",
-    "prior_knowledge",
-    "misconception",
-    "behaviour_pattern",
-    "business_constraint",
-    "preference",
-    "accessibility",
-    "journey_evidence",
-  ];
-  const sources: ContextClaim["source"][] = [
-    "learner",
-    "codex_observation",
-    "ogram_profile",
-    "ogram_pixel",
-    "ogram_journey",
-  ];
-  return rawClaims.map((raw) => {
-    const claim = objectInput(raw);
-    if (!kinds.includes(claim.kind as ContextClaim["kind"])) {
-      throw new Error("Each claim needs a supported kind.");
+  return value.map((item, index) => {
+    if (typeof item !== "string" || !item.trim()) {
+      throw new Error(`${key}[${index}] must be a non-empty string.`);
     }
-    if (!sources.includes(claim.source as ContextClaim["source"])) {
-      throw new Error("Each claim needs a supported source.");
-    }
-    if (
-      claim.sensitivity !== "low" &&
-      claim.sensitivity !== "personal" &&
-      claim.sensitivity !== "restricted"
-    ) {
-      throw new Error("Each claim needs a valid sensitivity.");
-    }
-    if (
-      claim.confidence !== undefined &&
-      (typeof claim.confidence !== "number" ||
-        claim.confidence < 0 ||
-        claim.confidence > 1)
-    ) {
-      throw new Error("Claim confidence must be between 0 and 1.");
-    }
-    if (
-      !Array.isArray(claim.evidenceRefs) ||
-      !claim.evidenceRefs.every((item) => typeof item === "string")
-    ) {
-      throw new Error("Claim evidenceRefs must contain opaque string ids.");
-    }
-    if (
-      !Array.isArray(claim.allowedPurposes) ||
-      claim.allowedPurposes.length < 1 ||
-      !claim.allowedPurposes.every((item) => typeof item === "string")
-    ) {
-      throw new Error("Claim allowedPurposes must contain string ids.");
-    }
-    return {
-      id: requiredString(claim, "id", 4, 120),
-      kind: claim.kind as ContextClaim["kind"],
-      summary: requiredString(claim, "summary", 12, 320),
-      source: claim.source as ContextClaim["source"],
-      confidence: claim.confidence as number | undefined,
-      sensitivity: claim.sensitivity,
-      evidenceRefs: claim.evidenceRefs as string[],
-      allowedPurposes: claim.allowedPurposes as string[],
-      observedAt:
-        typeof claim.observedAt === "string"
-          ? claim.observedAt
-          : new Date().toISOString(),
-      expiresAt:
-        typeof claim.expiresAt === "string" ? claim.expiresAt : undefined,
-      review: "pending",
-    };
+    return item.trim();
   });
 }
 
-function parseOperations(value: unknown): ExperiencePatchOperation[] {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 20) {
-    throw new Error("operations must contain one to twenty bounded operations.");
+function enumArray<Value extends string>(
+  object: Record<string, unknown>,
+  key: string,
+  values: readonly Value[],
+  maximum = 20,
+): Value[] {
+  return stringArray(object, key, maximum).map((value, index) => {
+    if (!values.includes(value as Value)) {
+      throw new Error(`${key}[${index}] must be one of: ${values.join(", ")}.`);
+    }
+    return value as Value;
+  });
+}
+
+function enumValue<Value extends string>(
+  object: Record<string, unknown>,
+  key: string,
+  values: readonly Value[],
+): Value {
+  const value = object[key];
+  if (typeof value !== "string" || !values.includes(value as Value)) {
+    throw new Error(`${key} must be one of: ${values.join(", ")}.`);
   }
-  return structuredClone(value) as ExperiencePatchOperation[];
+  return value as Value;
 }
 
-function parseAsset(value: unknown): AssetReference {
-  const asset = objectInput(value);
-  if (asset.kind !== "image" && asset.kind !== "audio" && asset.kind !== "video") {
-    throw new Error("asset.kind must be image, audio, or video.");
-  }
-  const uri = requiredString(asset, "uri", 8, 500);
-  if (!uri.startsWith("https://") && !uri.startsWith("ogram-asset://")) {
-    throw new Error("asset.uri must use HTTPS or an Ogram asset handle.");
-  }
-  return {
-    id: requiredString(asset, "id", 4, 120),
-    kind: asset.kind,
-    uri,
-    alt: requiredString(asset, "alt", 3, 400),
-    caption:
-      typeof asset.caption === "string" ? asset.caption.trim() : undefined,
-    transcript:
-      typeof asset.transcript === "string"
-        ? asset.transcript.trim()
-        : undefined,
-    digest: requiredString(asset, "digest", 8, 180),
-    generatedBy:
-      typeof asset.generatedBy === "string"
-        ? asset.generatedBy.trim()
-        : undefined,
-  };
-}
-
-function publicContext(actions: CanvasActions) {
-  const state = actions.getState();
-  return {
-    revision: state.revision,
-    contextSnapshotId: state.contextSnapshotId,
-    learningBrief: state.learningBrief,
-    claims: state.contextClaims.map((claim) => ({
-      ...claim,
-      evidenceRefs: claim.evidenceRefs.map(() => "opaque-reference"),
-    })),
-    consentBoundary: {
-      observationsAreHypotheses: true,
-      learnerReviewRequired: true,
-      rawConversationRequested: false,
-      selectedSourceMaterialRequiresSeparateConsent: true,
-    },
-  };
-}
-
-function publicSession(actions: CanvasActions) {
-  const state = actions.getState();
-  return {
-    revision: state.revision,
-    published: {
-      experienceId: state.activeExperience.experienceId,
-      revision: state.activeExperience.draftRevision,
-      title: state.activeExperience.metadata.title,
-      digest: state.design.validation?.digest,
-    },
-    design: {
-      status: state.design.status,
-      draftRevision: state.design.draft?.draftRevision ?? null,
-      valid: state.design.validation?.valid ?? null,
-      diagnosticCounts: state.design.validation
-        ? {
-            errors: state.design.validation.diagnostics.filter(
-              (item) => item.severity === "error",
-            ).length,
-            warnings: state.design.validation.diagnostics.filter(
-              (item) => item.severity === "warning",
-            ).length,
-          }
-        : null,
-      learnerApprovalRecorded: state.design.approvedDraftRevision !== null,
-    },
-    runtime: {
-      status: state.runtime.status,
-      currentNodeId: state.runtime.currentNodeId,
-      visitedNodeIds: state.runtime.visitedNodeIds,
-      responseEvidence: Object.values(state.runtime.responses).map((response) => ({
-        nodeId: response.nodeId,
-        correct: response.correct,
-        confidence: response.confidence,
-        assisted: response.assisted,
-      })),
-    },
-    learnerFeedback: state.learnerFeedback,
-    ledger: {
-      eventCount: state.events.length,
-      lastSequence: state.events.at(-1)?.sequence ?? 0,
-      orderedOutboxCount: state.sync.orderedOutbox.length,
-      recentEvents: state.events.slice(-12).map((event) => ({
-        sequence: event.sequence,
-        type: event.type,
-        actor: event.actor,
-        at: event.at,
-        summary: event.summary,
-      })),
-    },
-  };
-}
-
-export function createOgramLearningTools(
+function requireNonce(
+  object: Record<string, unknown>,
   actions: CanvasActions,
-): WebMcpToolDefinition[] {
-  const readOnly = {
+): void {
+  const supplied = stringValue(object, "nonce", 12, 200);
+  const active = actions.getNonce();
+  if (!active || supplied !== active) {
+    throw new Error("The session nonce is missing or expired. Call learn_begin_session first.");
+  }
+}
+
+function parseReference(value: unknown): ResearchReference {
+  const item = objectInput(value, "Research reference");
+  const result: ResearchReference = {
+    id: stringValue(item, "id", 2, 120),
+    title: stringValue(item, "title", 3, 240),
+    url: stringValue(item, "url", 10, 1000),
+    publisher: stringValue(item, "publisher", 2, 160),
+    claim: stringValue(item, "claim", 8, 500),
+  };
+  const publishedAt = optionalString(item, "publishedAt", 80);
+  if (publishedAt) result.publishedAt = publishedAt;
+  return result;
+}
+
+function numberArray(object: Record<string, unknown>, key: string): number[] {
+  const value = object[key];
+  if (!Array.isArray(value) || !value.length) throw new Error(`${key} must be a non-empty array.`);
+  return value.map((item, index) => {
+    if (typeof item !== "number" || !Number.isFinite(item) || item < 0 || item > 1) {
+      throw new Error(`${key}[${index}] must be a number between 0 and 1.`);
+    }
+    return item;
+  });
+}
+
+function parseTrustedContent(value: unknown): TrustedPatchContent {
+  const item = objectInput(value, "Content block");
+  const type = stringValue(item, "type", 2, 40);
+  if (type === "prose") {
+    const block: Extract<RegionContent, { type: "prose" }> = {
+      type,
+      text: stringValue(item, "text", 4, 3000),
+    };
+    const heading = optionalString(item, "heading", 120);
+    const emphasis = optionalString(item, "emphasis", 600);
+    if (heading) block.heading = heading;
+    if (emphasis) block.emphasis = emphasis;
+    return block;
+  }
+  if (type === "key_points") {
+    const items = stringArray(item, "items", 8);
+    if (!items.length) throw new Error("key_points needs at least one item.");
+    return { type, items };
+  }
+  if (type === "token_sequence") {
+    const tokens = stringArray(item, "tokens", 16);
+    if (tokens.length < 2) throw new Error("token_sequence needs at least two tokens.");
+    const highlightedIndex =
+      item.highlightedIndex === undefined
+        ? undefined
+        : integerValue(item, "highlightedIndex", 0, tokens.length - 1);
+    return {
+      type,
+      tokens,
+      caption: stringValue(item, "caption", 4, 600),
+      ...(highlightedIndex === undefined ? {} : { highlightedIndex }),
+    };
+  }
+  if (type === "attention_map") {
+    const tokens = stringArray(item, "tokens", 12);
+    const weights = numberArray(item, "weights");
+    if (tokens.length < 2 || tokens.length !== weights.length) {
+      throw new Error("attention_map tokens and weights must have the same length of at least two.");
+    }
+    return {
+      type,
+      tokens,
+      weights,
+      focusIndex: integerValue(item, "focusIndex", 0, tokens.length - 1),
+      explanation: stringValue(item, "explanation", 8, 800),
+    };
+  }
+  if (type === "transformer_stack") {
+    if (!Array.isArray(item.stages) || item.stages.length < 2 || item.stages.length > 10) {
+      throw new Error("transformer_stack needs two to ten stages.");
+    }
+    return {
+      type,
+      stages: item.stages.map((value) => {
+        const stage = objectInput(value, "Stack stage");
+        return {
+          label: stringValue(stage, "label", 1, 100),
+          detail: stringValue(stage, "detail", 2, 300),
+        };
+      }),
+      caption: stringValue(item, "caption", 4, 600),
+    };
+  }
+  if (type === "comparison") {
+    if (!Array.isArray(item.rows) || !item.rows.length || item.rows.length > 8) {
+      throw new Error("comparison needs one to eight rows.");
+    }
+    return {
+      type,
+      leftLabel: stringValue(item, "leftLabel", 1, 100),
+      rightLabel: stringValue(item, "rightLabel", 1, 100),
+      rows: item.rows.map((value) => {
+        const row = objectInput(value, "Comparison row");
+        return {
+          label: stringValue(row, "label", 1, 100),
+          left: stringValue(row, "left", 1, 400),
+          right: stringValue(row, "right", 1, 400),
+        };
+      }),
+    };
+  }
+  throw new Error(`Unsupported trusted content type: ${type}.`);
+}
+
+function parseInteraction(value: unknown): LearnerInteraction | undefined {
+  if (value === undefined) return undefined;
+  const item = objectInput(value, "Interaction");
+  const type = enumValue(item, "type", ["choice", "reflection"] as const);
+  if (type === "choice") {
+    if (!Array.isArray(item.options) || item.options.length < 2 || item.options.length > 6) {
+      throw new Error("A choice interaction needs two to six options.");
+    }
+    const options = item.options.map((value) => {
+      const option = objectInput(value, "Choice option");
+      if (typeof option.correct !== "boolean") throw new Error("Choice option correct must be boolean.");
+      return {
+        id: stringValue(option, "id", 1, 100),
+        label: stringValue(option, "label", 1, 300),
+        correct: option.correct,
+        feedback: stringValue(option, "feedback", 3, 500),
+      };
+    });
+    if (options.filter((option) => option.correct).length !== 1) {
+      throw new Error("A choice interaction needs exactly one correct option.");
+    }
+    return { type, prompt: stringValue(item, "prompt", 5, 500), options };
+  }
+  return {
+    type,
+    prompt: stringValue(item, "prompt", 5, 500),
+    placeholder: stringValue(item, "placeholder", 1, 300),
+    minimumCharacters: integerValue(item, "minimumCharacters", 10, 1000),
+    feedback: stringValue(item, "feedback", 3, 600),
+  };
+}
+
+function parseLessonMetadata(
+  value: unknown,
+): Omit<LessonDocumentV3, "regions"> {
+  const document = objectInput(value, "Lesson metadata");
+  return {
+    id: stringValue(document, "id", 3, 160),
+    revision: integerValue(document, "revision", 1),
+    topic: stringValue(document, "topic", 3, 240),
+    title: stringValue(document, "title", 6, 240),
+    subtitle: stringValue(document, "subtitle", 3, 400),
+    audience: stringValue(document, "audience", 3, 400),
+    estimatedMinutes: integerValue(document, "estimatedMinutes", 1, 120),
+    objective: stringValue(document, "objective", 20, 700),
+    approvedClaimIds: stringArray(document, "approvedClaimIds", 40),
+  };
+}
+
+function parseLessonRegion(value: unknown, label = "Lesson region"): LessonRegion {
+  const region = objectInput(value, label);
+  if (!Array.isArray(region.content) || !region.content.length) {
+    throw new Error(`${label} needs accessible content.`);
+  }
+  const sourceRefs = Array.isArray(region.sourceRefs)
+    ? stringArray(region, "sourceRefs", 20)
+    : [];
+  const interaction = parseInteraction(region.interaction);
+  const now = new Date().toISOString();
+  return {
+    id: stringValue(region, "id", 2, 120),
+    order: integerValue(region, "order", 1, 99),
+    label: stringValue(region, "label", 2, 120),
+    title: stringValue(region, "title", 3, 240),
+    objective: stringValue(region, "objective", 4, 500),
+    kind: enumValue(
+      region,
+      "kind",
+      ["orient", "explain", "model", "practice", "reflect"] as const,
+    ),
+    content: region.content.map(parseTrustedContent),
+    ...(interaction ? { interaction } : {}),
+    provenance: [
+      {
+        actor: "agent" as const,
+        label: "Prepared by Codex",
+        sourceRefs,
+        at: now,
+      },
+    ],
+  };
+}
+
+function parseLessonDocument(value: unknown): LessonDocumentV3 {
+  const document = objectInput(value, "Lesson document");
+  if (!Array.isArray(document.regions)) throw new Error("Lesson regions must be an array.");
+  return {
+    ...parseLessonMetadata(document),
+    regions: document.regions.map((region, index) =>
+      parseLessonRegion(region, `Region ${index + 1}`),
+    ),
+  };
+}
+
+function parseLessonOutline(value: unknown) {
+  const outline = objectInput(value, "Lesson outline");
+  if (!Array.isArray(outline.regions)) {
+    throw new Error("Lesson outline regions must be an array.");
+  }
+  return {
+    document: parseLessonMetadata(outline),
+    regions: outline.regions.map((value, index) => {
+      const region = objectInput(value, `Outline region ${index + 1}`);
+      return {
+        id: stringValue(region, "id", 2, 120),
+        order: integerValue(region, "order", 1, 99),
+        label: stringValue(region, "label", 2, 120),
+        title: stringValue(region, "title", 3, 240),
+        objective: stringValue(region, "objective", 4, 500),
+        kind: enumValue(
+          region,
+          "kind",
+          ["orient", "explain", "model", "practice", "reflect"] as const,
+        ),
+      };
+    }),
+  };
+}
+
+function defaultTransformerLesson(actions: CanvasActions): LessonDocumentV3 {
+  const state = actions.getState();
+  const accepted = state.contextClaims.filter(
+    (claim) => claim.review === "accepted" || claim.review === "corrected",
+  );
+  const document = structuredClone(transformerLessonFixture);
+  document.revision = Math.max(
+    state.lesson.draft?.revision ?? 0,
+    state.lesson.publishedRevision ?? 0,
+  ) + 1;
+  document.approvedClaimIds = accepted.map((claim) => claim.id);
+  if (accepted.length) {
+    document.subtitle = "A technical-beginner path shaped by learner-approved context";
+    document.regions[0]?.content.push({
+      type: "key_points",
+      items: accepted.map(
+        (claim) => `Tailoring signal: ${claim.correctedSummary ?? claim.summary}`,
+      ),
+    });
+  }
+  return document;
+}
+
+function revealRegion(regionId: string): void {
+  window.setTimeout(() => {
+    document.getElementById(`region-${regionId}`)?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "center",
+    });
+  }, 40);
+}
+
+function currentViewport() {
+  const visibleRegionIds = Array.from(
+    document.querySelectorAll<HTMLElement>("[data-canvas-region]"),
+  )
+    .filter((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.bottom > 0 && rect.top < window.innerHeight;
+    })
+    .map((element) => element.dataset.canvasRegion)
+    .filter((value): value is string => Boolean(value));
+  return {
+    width: window.innerWidth,
+    height: window.innerHeight,
+    scrollY: Math.round(window.scrollY),
+    visibleRegionIds,
+  };
+}
+
+function nextActions(stage: LearningSessionStage, lessonStatus: string): string[] {
+  if (stage === "ready") return ["Call learn_begin_session."];
+  if (stage === "context_review") {
+    return [
+      "Ask for scoped consent before consulting this chat, past Codex tasks or conversations, saved-project history, Ogram, or connected sources.",
+      "If history is allowed, use the host's task-listing and task-reading capabilities; do not conclude there is no context merely because this chat is short.",
+      "Propose only minimized context claims, or let the learner choose the generic path.",
+      "After every context choice is resolved, shape the lesson with learn_prepare_lesson start, one region call per section, then finalize.",
+    ];
+  }
+  if (stage === "lesson_review") {
+    return lessonStatus === "approved"
+      ? ["Call learn_publish_lesson with this exact approved revision."]
+      : ["Wait for the learner to approve the compiled lesson on the canvas."];
+  }
+  return [
+    "Read learn_get_canvas_snapshot before changing a region.",
+    "Patch the focused region, inject a bounded widget directly on this canvas, or attach sourced research.",
+    "Keep generated visuals out of the conversation; the WebMCP canvas is the only visual output surface for this learning session.",
+  ];
+}
+
+function readOnlyAnnotations() {
+  return {
     readOnlyHint: true,
     destructiveHint: false,
     idempotentHint: true,
     openWorldHint: false,
   };
-  const write = {
+}
+
+function writeAnnotations(openWorldHint = false) {
+  return {
     readOnlyHint: false,
     destructiveHint: false,
     idempotentHint: true,
-    openWorldHint: false,
+    openWorldHint,
+  };
+}
+
+export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[] {
+  const begin: WebMcpToolDefinition = {
+    name: "learn_begin_session",
+    description:
+      "Required first call. Start or resume a learning session, create a progressive canvas skeleton, and return the guide plus context-discovery and canvas-only visual-output policies you must follow.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["topic"],
+      properties: {
+        topic: { type: "string", minLength: 3, maxLength: 240 },
+        goal: { type: "string", minLength: 3, maxLength: 500 },
+      },
+    },
+    annotations: writeAnnotations(),
+    execute(input) {
+      const object = objectInput(input);
+      return {
+        ...actions.beginSession({
+        topic: stringValue(object, "topic", 3, 240),
+        goal: optionalString(object, "goal", 500),
+        }),
+        contextDiscoveryPolicy,
+        visualOutputPolicy: canvasVisualOutputPolicy,
+      };
+    },
   };
 
-  return [
-    {
-      name: "ogram_get_canvas_contract",
-      description:
-        "Start here. Read the generative canvas capabilities, trusted learning primitives, pedagogical limits, human-only actions, workflow, and document schema.",
-      inputSchema: emptyInputSchema,
-      annotations: readOnly,
-      execute: () => ({
-        ...canvasContract,
-        documentSchema: learningExperienceInputSchema,
-        workflow: [
-          "Read reviewed context with ogram_get_learning_context.",
-          "Optionally propose new hypotheses and wait for learner review.",
-          "Compose a complete LearningExperienceDocument from supported primitives.",
-          "Create or patch a revisioned draft and validate it.",
-          "Repair hard errors; warnings preserve agent judgment.",
-          "Request learner review. Only the learner approves the exact digest.",
-          "Publish after approval; use session evidence for reviewed adaptations.",
-        ],
-        essentialWebMcpRole:
-          "WebMCP is the live query/command port between agent reasoning and this visible canvas. Ogram remains the compiler, renderer, consent authority, runtime, memory, and ledger.",
-      }),
+  const getContext: WebMcpToolDefinition = {
+    name: "learn_get_context",
+    description:
+      "Read minimized context claims, their provenance, scoped consent coverage, learner review status, and the available current-chat, history, project, Ogram, and connector discovery routes. Never infer approval from proposal alone.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["nonce"],
+      properties: { nonce: nonceSchema },
     },
-    {
-      name: "ogram_get_learning_context",
-      description:
-        "Read the versioned learning brief and reviewable context claims. Only accepted or corrected claim ids may be used as personalization provenance.",
-      inputSchema: emptyInputSchema,
-      annotations: readOnly,
-      execute: () => publicContext(actions),
+    annotations: readOnlyAnnotations(),
+    execute(input) {
+      const object = objectInput(input);
+      requireNonce(object, actions);
+      const state = actions.getState();
+      return {
+        revision: state.revision,
+        personalization: state.session.personalization,
+        consent: state.session.contextConsent,
+        discoveryPolicy: contextDiscoveryPolicy,
+        claims: state.contextClaims,
+        acceptedClaimIds: state.contextClaims
+          .filter((claim) => claim.review === "accepted" || claim.review === "corrected")
+          .map((claim) => claim.id),
+      };
     },
-    {
-      name: "ogram_propose_learning_needs",
-      description:
-        "Propose privacy-minimized learning-need hypotheses for visible learner review. This never approves a claim and must not contain raw conversations, files, secrets, or reconstructed client content.",
-      inputSchema: commandSchema(["baseRevision", "claims"], {
+  };
+
+  const proposeContext: WebMcpToolDefinition = {
+    name: "learn_propose_context",
+    description:
+      "After explicit scoped consent, add privacy-minimized learner context from this chat, past Codex tasks/conversations, saved-project history, Ogram, or connected MCP sources. Retrieve host history agent-side; claims remain unusable until individually approved on the canvas.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["nonce", "baseRevision", "idempotencyKey", "consent", "claims"],
+      properties: {
+        nonce: nonceSchema,
         baseRevision: { type: "integer", minimum: 0 },
+        idempotencyKey: idempotencySchema,
+        consent: {
+          type: "object",
+          additionalProperties: false,
+          required: ["obtainedAt", "scope", "providerIds", "sourceScopes"],
+          properties: {
+            obtainedAt: { type: "string", minLength: 8, maxLength: 80 },
+            scope: { type: "string", minLength: 8, maxLength: 400 },
+            providerIds: {
+              type: "array",
+              minItems: 1,
+              maxItems: 20,
+              items: { type: "string", minLength: 1, maxLength: 120 },
+            },
+            sourceScopes: {
+              type: "array",
+              minItems: 1,
+              maxItems: 5,
+              description:
+                "Exact source families the learner allowed Codex to inspect before minimizing claims.",
+              items: {
+                type: "string",
+                enum: [
+                  "current_conversation",
+                  "codex_history",
+                  "project_history",
+                  "ogram_profile",
+                  "connected_sources",
+                ],
+              },
+            },
+          },
+        },
         claims: {
           type: "array",
           minItems: 1,
-          maxItems: 6,
+          maxItems: 8,
           items: {
             type: "object",
+            additionalProperties: false,
             required: [
               "id",
               "kind",
               "summary",
               "source",
               "sensitivity",
-              "evidenceRefs",
               "allowedPurposes",
+              "evidenceRef",
             ],
             properties: {
-              id: { type: "string", minLength: 4, maxLength: 120 },
-              kind: { type: "string" },
-              summary: { type: "string", minLength: 12, maxLength: 320 },
-              source: { type: "string" },
-              confidence: { type: "number", minimum: 0, maximum: 1 },
-              sensitivity: {
+              id: { type: "string", minLength: 2, maxLength: 120 },
+              kind: {
                 type: "string",
-                enum: ["low", "personal", "restricted"],
+                enum: [
+                  "stated_goal",
+                  "prior_knowledge",
+                  "current_project",
+                  "preference",
+                  "accessibility",
+                  "business_constraint",
+                ],
               },
-              evidenceRefs: { type: "array", items: { type: "string" } },
+              summary: { type: "string", minLength: 3, maxLength: 240 },
+              source: {
+                type: "object",
+                additionalProperties: false,
+                required: ["route", "providerId", "providerLabel", "resourceType"],
+                properties: {
+                  route: {
+                    type: "string",
+                    enum: [
+                      "learner",
+                      "conversation",
+                      "codex_history",
+                      "project_history",
+                      "ogram",
+                      "connected_mcp",
+                    ],
+                  },
+                  providerId: { type: "string", minLength: 1, maxLength: 120 },
+                  providerLabel: { type: "string", minLength: 1, maxLength: 120 },
+                  resourceType: { type: "string", minLength: 1, maxLength: 120 },
+                },
+              },
+              confidence: { type: "number", minimum: 0, maximum: 1 },
+              sensitivity: { type: "string", enum: ["low", "personal", "restricted"] },
               allowedPurposes: {
                 type: "array",
                 minItems: 1,
-                items: { type: "string" },
+                maxItems: 8,
+                items: { type: "string", minLength: 2, maxLength: 160 },
               },
-              observedAt: { type: "string" },
-              expiresAt: { type: "string" },
+              evidenceRef: { type: "string", minLength: 2, maxLength: 300 },
             },
-            additionalProperties: false,
           },
         },
-      }),
-      annotations: write,
-      execute: (input) => {
-        const object = objectInput(input);
-        const result = actions.proposeLearningNeeds({
-          baseRevision: requiredInteger(object, "baseRevision"),
-          idempotencyKey: idempotencyKey(object),
-          claims: parseClaims(object),
-        });
-        reveal("context-dock");
-        return {
-          ok: true,
-          ...result,
-          visibleChange: "Pending hypotheses are visible in the context dock.",
-          learnerActionRequired: "Accept or reject each claim.",
-        };
       },
     },
-    {
-      name: "ogram_create_experience_draft",
-      description:
-        "Create a complete agent-authored experience from any supported primitive composition. Objective, content, topology, branching, interaction, feedback, and transfer are all authored—not selected from a lesson recipe.",
-      inputSchema: commandSchema(
-        ["basePublishedRevision", "document"],
-        {
-          basePublishedRevision: { type: "integer", minimum: 1 },
-          document: learningExperienceInputSchema,
-        },
-      ),
-      annotations: write,
-      execute: (input) => {
-        const object = objectInput(input);
-        const result = actions.createDraft({
-          basePublishedRevision: requiredInteger(
-            object,
-            "basePublishedRevision",
-            1,
+    annotations: writeAnnotations(true),
+    execute(input) {
+      const object = objectInput(input);
+      requireNonce(object, actions);
+      const consentObject = objectInput(object.consent, "Consent attestation");
+      if (!Array.isArray(object.claims) || !object.claims.length || object.claims.length > 8) {
+        throw new Error("claims must contain one to eight minimized claims.");
+      }
+      const observedAt = new Date().toISOString();
+      const claims: LearnerContextClaim[] = object.claims.map((value) => {
+        const claim = objectInput(value, "Context claim");
+        const sourceObject = objectInput(claim.source, "Context source");
+        const source: ContextSource = {
+          route: enumValue(
+            sourceObject,
+            "route",
+            [
+              "learner",
+              "conversation",
+              "codex_history",
+              "project_history",
+              "ogram",
+              "connected_mcp",
+            ] as const,
           ),
-          idempotencyKey: idempotencyKey(object),
-          document: asExperienceDocument(object.document),
-        });
-        return {
-          ok: true,
-          ...result,
-          nextTool: "ogram_validate_experience",
-          visibleChange: "The current session remains in place while Codex shapes the draft.",
+          providerId: stringValue(sourceObject, "providerId", 1, 120),
+          providerLabel: stringValue(sourceObject, "providerLabel", 1, 120),
+          resourceType: stringValue(sourceObject, "resourceType", 1, 120),
         };
-      },
-    },
-    {
-      name: "ogram_patch_experience_draft",
-      description:
-        "Patch the draft using bounded semantic operations. Arbitrary code, executable expressions, HTML, CSS, and JSON-pointer mutation are not accepted.",
-      inputSchema: commandSchema(["baseDraftRevision", "operations"], {
-        baseDraftRevision: { type: "integer", minimum: 1 },
-        operations: operationsSchema,
-      }),
-      annotations: write,
-      execute: (input) => {
-        const object = objectInput(input);
-        const result = actions.patchDraft({
-          baseDraftRevision: requiredInteger(object, "baseDraftRevision", 1),
-          idempotencyKey: idempotencyKey(object),
-          operations: parseOperations(object.operations),
-        });
-        return { ok: true, ...result, nextTool: "ogram_validate_experience" };
-      },
-    },
-    {
-      name: "ogram_validate_experience",
-      description:
-        "Compile the exact draft against structure, capabilities, learning science policy, privacy, accessibility, governed media, and bounded flow. Hard errors block review.",
-      inputSchema: commandSchema(["draftRevision"], {
-        draftRevision: { type: "integer", minimum: 1 },
-      }),
-      annotations: write,
-      execute: (input) => {
-        const object = objectInput(input);
-        const result = actions.validateDraft({
-          draftRevision: requiredInteger(object, "draftRevision", 1),
-          idempotencyKey: idempotencyKey(object),
-        });
+        const confidence = claim.confidence;
+        if (
+          confidence !== undefined &&
+          (typeof confidence !== "number" || confidence < 0 || confidence > 1)
+        ) {
+          throw new Error("confidence must be between 0 and 1.");
+        }
         return {
-          ok: result.valid,
-          ...result,
-          nextTool: result.valid
-            ? "ogram_request_learner_review"
-            : "ogram_patch_experience_draft",
+          id: stringValue(claim, "id", 2, 120),
+          kind: enumValue(
+            claim,
+            "kind",
+            [
+              "stated_goal",
+              "prior_knowledge",
+              "current_project",
+              "preference",
+              "accessibility",
+              "business_constraint",
+            ] as readonly ContextClaimKind[],
+          ),
+          summary: stringValue(claim, "summary", 3, 240),
+          source,
+          ...(confidence === undefined ? {} : { confidence }),
+          sensitivity: enumValue(
+            claim,
+            "sensitivity",
+            ["low", "personal", "restricted"] as const,
+          ),
+          allowedPurposes: stringArray(claim, "allowedPurposes", 8),
+          evidenceRef: stringValue(claim, "evidenceRef", 2, 300),
+          review: "pending",
+          observedAt,
         };
-      },
+      });
+      return actions.proposeContext({
+        baseRevision: integerValue(object, "baseRevision"),
+        idempotencyKey: stringValue(object, "idempotencyKey", 8, 160),
+        consent: {
+          obtainedAt: stringValue(consentObject, "obtainedAt", 8, 80),
+          scope: stringValue(consentObject, "scope", 8, 400),
+          providerIds: stringArray(consentObject, "providerIds", 20),
+          sourceScopes: enumArray(
+            consentObject,
+            "sourceScopes",
+            [
+              "current_conversation",
+              "codex_history",
+              "project_history",
+              "ogram_profile",
+              "connected_sources",
+            ] as readonly ContextDiscoveryScope[],
+            5,
+          ),
+        },
+        claims,
+      });
     },
-    {
-      name: "ogram_request_learner_review",
-      description:
-        "Place the exact compiler-approved draft in visible learner review. This does not approve or publish it; only the learner creates that consent receipt.",
-      inputSchema: commandSchema(["draftRevision"], {
-        draftRevision: { type: "integer", minimum: 1 },
-      }),
-      annotations: write,
-      execute: (input) => {
-        const object = objectInput(input);
-        const result = actions.requestDraftReview({
-          draftRevision: requiredInteger(object, "draftRevision", 1),
-          idempotencyKey: idempotencyKey(object),
-        });
-        reveal("draft-review");
-        return {
-          ok: true,
-          ...result,
-          visibleChange: "The exact revision is awaiting learner approval.",
-          humanOnlyAction: "approve this revision",
-        };
-      },
+  };
+
+  const getSession: WebMcpToolDefinition = {
+    name: "learn_get_session",
+    description:
+      "Read session stage, lesson approval state, progress, revisions, recent events, and the next valid actions.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["nonce"],
+      properties: { nonce: nonceSchema },
     },
-    {
-      name: "ogram_publish_experience",
-      description:
-        "Publish and start the exact draft only after learner approval. This fails closed when the human receipt is absent, stale, or bound to another digest.",
-      inputSchema: commandSchema(["draftRevision"], {
-        draftRevision: { type: "integer", minimum: 1 },
-      }),
-      annotations: write,
-      execute: (input) => {
-        const object = objectInput(input);
-        const result = actions.publishDraft({
-          draftRevision: requiredInteger(object, "draftRevision", 1),
-          idempotencyKey: idempotencyKey(object),
-        });
-        reveal("learning-stage");
-        return {
-          ok: true,
-          ...result,
-          visibleChange: "The compiled experience is live on the shared canvas.",
-          learnerOwnsResponses: true,
-        };
-      },
+    annotations: readOnlyAnnotations(),
+    execute(input) {
+      const object = objectInput(input);
+      requireNonce(object, actions);
+      const state = actions.getState();
+      return {
+        version: state.version,
+        revision: state.revision,
+        session: state.session,
+        contextDiscoveryPolicy,
+        visualOutputPolicy: canvasVisualOutputPolicy,
+        lesson: {
+          status: state.lesson.status,
+          draftRevision: state.lesson.draft?.revision ?? null,
+          construction: state.lesson.construction
+            ? {
+                draftRevision: state.lesson.construction.document.revision,
+                title: state.lesson.construction.document.title,
+                shapedRegions: state.lesson.construction.regions.filter(
+                  (region) => region.status === "ready",
+                ).length,
+                totalRegions: state.lesson.construction.regions.length,
+                pendingRegionIds: state.lesson.construction.regions
+                  .filter((region) => region.status !== "ready")
+                  .map((region) => region.id),
+              }
+            : null,
+          approvedDraftRevision: state.lesson.approvedDraftRevision,
+          publishedRevision: state.lesson.publishedRevision,
+          validation: state.lesson.validation,
+        },
+        progress: {
+          regionCount: state.regions.length,
+          responseCount: state.regions.filter((region) => region.response).length,
+        },
+        recentEvents: state.events.slice(-8),
+        nextValidActions: nextActions(state.session.stage, state.lesson.status),
+      };
     },
-    {
-      name: "ogram_register_generated_asset",
-      description:
-        "Attach an image, audio, or video reference to the current draft. WebMCP carries governed metadata—not binary media or embed code. Accessibility is enforced by the compiler.",
-      inputSchema: commandSchema(["draftRevision", "asset"], {
+  };
+
+  const prepareLesson: WebMcpToolDefinition = {
+    name: "learn_prepare_lesson",
+    description:
+      "Shape and compile a lesson draft. Prefer the progressive start → region (one call per region) → finalize phases so the learner watches the canvas take shape. Use complete, or omit phase, only for a one-shot document or the bundled transformer blueprint.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["nonce", "baseRevision", "idempotencyKey"],
+      properties: {
+        nonce: nonceSchema,
+        baseRevision: { type: "integer", minimum: 0 },
+        idempotencyKey: idempotencySchema,
+        phase: {
+          type: "string",
+          enum: ["start", "region", "finalize", "complete"],
+          description:
+            "Progressive authoring phase. Each call uses the latest canvas revision returned by the previous call.",
+        },
         draftRevision: { type: "integer", minimum: 1 },
-        asset: {
+        template: { type: "string", enum: ["transformer_technical_beginner"] },
+        regionId: {
+          type: "string",
+          minLength: 2,
+          maxLength: 120,
+          description:
+            "For a progressive bundled template region call, the stable region id returned by phase=start.",
+        },
+        outline: {
           type: "object",
-          additionalProperties: false,
-          required: ["id", "kind", "uri", "alt", "digest"],
-          properties: {
-            id: { type: "string", minLength: 4, maxLength: 120 },
-            kind: { type: "string", enum: ["image", "audio", "video"] },
-            uri: { type: "string", minLength: 8, maxLength: 500 },
-            alt: { type: "string", minLength: 3, maxLength: 400 },
-            caption: { type: "string", maxLength: 400 },
-            transcript: { type: "string", maxLength: 8000 },
-            digest: { type: "string", minLength: 8, maxLength: 180 },
-            generatedBy: { type: "string", maxLength: 120 },
+          description:
+            "For phase=start: lesson metadata plus 4–12 stable region stubs (id, order, label, title, objective, kind).",
+        },
+        region: {
+          type: "object",
+          description:
+            "For phase=region: one complete trusted-content region matching a stub from the active outline.",
+        },
+        document: {
+          type: "object",
+          description:
+            "LessonDocumentV3 with 4–12 stable regions, trusted content specs, and at least one learner interaction.",
+        },
+      },
+    },
+    annotations: writeAnnotations(),
+    execute(input) {
+      const object = objectInput(input);
+      requireNonce(object, actions);
+      const phase =
+        object.phase === undefined
+          ? "complete"
+          : enumValue(
+              object,
+              "phase",
+              ["start", "region", "finalize", "complete"] as const,
+            );
+      const common = {
+        baseRevision: integerValue(object, "baseRevision"),
+        idempotencyKey: stringValue(object, "idempotencyKey", 8, 160),
+      };
+      if (phase === "start") {
+        const parsed = object.outline
+          ? parseLessonOutline(object.outline)
+          : object.template === "transformer_technical_beginner"
+            ? (() => {
+                const document = defaultTransformerLesson(actions);
+                return {
+                  document: {
+                    id: document.id,
+                    revision: document.revision,
+                    topic: document.topic,
+                    title: document.title,
+                    subtitle: document.subtitle,
+                    audience: document.audience,
+                    estimatedMinutes: document.estimatedMinutes,
+                    objective: document.objective,
+                    approvedClaimIds: document.approvedClaimIds,
+                  },
+                  regions: document.regions.map((region) => ({
+                    id: region.id,
+                    order: region.order,
+                    label: region.label,
+                    title: region.title,
+                    objective: region.objective,
+                    kind: region.kind,
+                  })),
+                };
+              })()
+            : (() => {
+                throw new Error("phase=start requires an outline or the bundled transformer template.");
+              })();
+        return actions.startLessonConstruction({
+          ...common,
+          document: parsed.document,
+          outline: parsed.regions,
+        });
+      }
+      if (phase === "region") {
+        const region = object.region
+          ? parseLessonRegion(object.region)
+          : object.template === "transformer_technical_beginner"
+            ? defaultTransformerLesson(actions).regions.find(
+                (candidate) =>
+                  candidate.id === stringValue(object, "regionId", 2, 120),
+              )
+            : undefined;
+        if (!region) {
+          throw new Error("phase=region requires a complete region or a valid bundled template regionId.");
+        }
+        return actions.shapeLessonRegion({
+          ...common,
+          draftRevision: integerValue(object, "draftRevision", 1),
+          region,
+        });
+      }
+      if (phase === "finalize") {
+        return actions.finalizeLessonConstruction({
+          ...common,
+          draftRevision: integerValue(object, "draftRevision", 1),
+        });
+      }
+      const current = actions.getState();
+      const useTemplate =
+        object.document === undefined &&
+        (object.template === "transformer_technical_beginner" ||
+          /transformer/i.test(current.session.topic ?? ""));
+      if (object.document === undefined && !useTemplate) {
+        throw new Error("A lesson document is required for topics without a bundled template.");
+      }
+      return actions.prepareLesson({
+        ...common,
+        document: useTemplate
+          ? defaultTransformerLesson(actions)
+          : parseLessonDocument(object.document),
+      });
+    },
+  };
+
+  const publishLesson: WebMcpToolDefinition = {
+    name: "learn_publish_lesson",
+    description:
+      "Publish the exact compiled lesson revision only after the learner approved it on the canvas.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["nonce", "baseRevision", "draftRevision", "idempotencyKey"],
+      properties: {
+        nonce: nonceSchema,
+        baseRevision: { type: "integer", minimum: 0 },
+        draftRevision: { type: "integer", minimum: 1 },
+        idempotencyKey: idempotencySchema,
+      },
+    },
+    annotations: writeAnnotations(),
+    execute(input) {
+      const object = objectInput(input);
+      requireNonce(object, actions);
+      return actions.publishLesson({
+        baseRevision: integerValue(object, "baseRevision"),
+        draftRevision: integerValue(object, "draftRevision", 1),
+        idempotencyKey: stringValue(object, "idempotencyKey", 8, 160),
+      });
+    },
+  };
+
+  const getSnapshot: WebMcpToolDefinition = {
+    name: "learn_get_canvas_snapshot",
+    description:
+      "Read the semantic learning canvas before helping: stable regions, focus, selected text, interaction evidence, revisions, visible viewport, and renderer capabilities.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["nonce"],
+      properties: { nonce: nonceSchema },
+    },
+    annotations: readOnlyAnnotations(),
+    execute(input) {
+      const object = objectInput(input);
+      requireNonce(object, actions);
+      const state = actions.getState();
+      const visibleRegions = state.lesson.construction?.regions ?? state.regions;
+      return {
+        canvasRevision: state.revision,
+        topic: state.session.topic,
+        stage: state.session.stage,
+        focusedRegionId: state.focus.regionId,
+        selectedText: state.focus.selectedText,
+        viewport: currentViewport(),
+        regions: visibleRegions.map((region) => ({
+          id: region.id,
+          order: region.order,
+          label: region.label,
+          title: region.title,
+          objective: region.objective,
+          kind: region.kind,
+          revision: region.revision,
+          status: region.status,
+          content: region.content,
+          interaction: region.interaction
+            ? {
+                type: region.interaction.type,
+                prompt: region.interaction.prompt,
+                completed: Boolean(region.response),
+                response: region.response ?? null,
+              }
+            : null,
+          attribution: region.provenance.at(-1) ?? null,
+          latestUndoToken: region.history.at(-1)?.undoToken ?? null,
+        })),
+        rendererCapabilities: {
+          trusted: [
+            "prose",
+            "key_points",
+            "token_sequence",
+            "attention_map",
+            "transformer_stack",
+            "comparison",
+            "source_cards",
+          ],
+          sandboxWidget: {
+            supported: true,
+            htmlBytes: 12_288,
+            cssBytes: 12_288,
+            javascriptBytes: 24_576,
+            network: false,
           },
         },
-      }),
-      annotations: write,
-      execute: (input) => {
-        const object = objectInput(input);
-        const result = actions.registerDraftAsset({
-          draftRevision: requiredInteger(object, "draftRevision", 1),
-          idempotencyKey: idempotencyKey(object),
-          asset: parseAsset(object.asset),
-        });
-        return {
-          ok: true,
-          ...result,
-          nextTool: "ogram_patch_experience_draft",
-          note: "Reference the asset id from media.explainer, then validate the new revision.",
-        };
-      },
+        visualOutputPolicy: canvasVisualOutputPolicy,
+      };
     },
-    {
-      name: "ogram_get_learning_session",
-      description:
-        "Read the design transaction, published revision, privacy-minimized learner evidence, feedback, and append-only ledger cursor. Raw free-text responses are never returned.",
-      inputSchema: emptyInputSchema,
-      annotations: readOnly,
-      execute: () => publicSession(actions),
-    },
-    {
-      name: "ogram_propose_adaptation",
-      description:
-        "Propose a bounded revision from the published experience using feedback or response evidence. It is compiled and still requires learner review; completed history is immutable.",
-      inputSchema: commandSchema(
-        ["basePublishedRevision", "rationale", "operations"],
-        {
-          basePublishedRevision: { type: "integer", minimum: 1 },
-          rationale: { type: "string", minLength: 12, maxLength: 360 },
-          operations: operationsSchema,
+  };
+
+  const patchRegion: WebMcpToolDefinition = {
+    name: "learn_patch_region",
+    description:
+      "Immediately and reversibly replace, append, annotate, or mark one stable region using trusted learning content. Never changes learner responses.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "nonce",
+        "regionId",
+        "baseRegionRevision",
+        "idempotencyKey",
+        "operation",
+        "rationale",
+      ],
+      properties: {
+        nonce: nonceSchema,
+        regionId: { type: "string", minLength: 2, maxLength: 120 },
+        baseRegionRevision: { type: "integer", minimum: 0 },
+        idempotencyKey: idempotencySchema,
+        operation: {
+          type: "string",
+          enum: ["replace", "append", "annotate", "set_status"],
         },
-      ),
-      annotations: write,
-      execute: (input) => {
-        const object = objectInput(input);
-        const result = actions.proposeAdaptation({
-          basePublishedRevision: requiredInteger(
-            object,
-            "basePublishedRevision",
-            1,
-          ),
-          idempotencyKey: idempotencyKey(object),
-          rationale: requiredString(object, "rationale", 12, 360),
-          operations: parseOperations(object.operations),
-        });
-        if (result.valid) reveal("draft-review");
-        return {
-          ok: result.valid,
-          ...result,
-          learnerReviewRequired: true,
-          historyRewritten: false,
-        };
+        content: {
+          type: "array",
+          minItems: 1,
+          maxItems: 8,
+          items: trustedContentSchema,
+        },
+        status: { type: "string", enum: ["ready", "agent_working", "updated"] },
+        rationale: { type: "string", minLength: 4, maxLength: 500 },
+        sourceRefs: {
+          type: "array",
+          maxItems: 20,
+          items: { type: "string", minLength: 2, maxLength: 1000 },
+        },
       },
     },
+    annotations: writeAnnotations(),
+    execute(input) {
+      const object = objectInput(input);
+      requireNonce(object, actions);
+      const operation = enumValue(
+        object,
+        "operation",
+        ["replace", "append", "annotate", "set_status"] as const,
+      );
+      const content = Array.isArray(object.content)
+        ? object.content.map(parseTrustedContent)
+        : undefined;
+      const status =
+        object.status === undefined
+          ? undefined
+          : enumValue(
+              object,
+              "status",
+              ["ready", "agent_working", "updated"] as readonly CanvasRegionStatus[],
+            );
+      const result = actions.patchRegion({
+        regionId: stringValue(object, "regionId", 2, 120),
+        baseRegionRevision: integerValue(object, "baseRegionRevision"),
+        idempotencyKey: stringValue(object, "idempotencyKey", 8, 160),
+        operation,
+        content,
+        status,
+        rationale: stringValue(object, "rationale", 4, 500),
+        sourceRefs: Array.isArray(object.sourceRefs)
+          ? stringArray(object, "sourceRefs", 20)
+          : [],
+      });
+      revealRegion(result.regionId);
+      return result;
+    },
+  };
+
+  const injectWidget: WebMcpToolDefinition = {
+    name: "learn_inject_widget",
+    description:
+      "Author a bounded HTML/CSS/JS interaction directly inside one learning-canvas region. This is the only surface for generated widgets: never create an inline conversation visualization first. Supply a responsive body fragment only; canvas chrome provides the title, Reset, Stop, and text alternative. The widget runs in a no-origin, no-network sandbox and remains undoable.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "nonce",
+        "regionId",
+        "baseRegionRevision",
+        "idempotencyKey",
+        "title",
+        "html",
+        "css",
+        "javascript",
+        "accessibleSummary",
+        "height",
+        "rationale",
+      ],
+      properties: {
+        nonce: nonceSchema,
+        regionId: { type: "string", minLength: 2, maxLength: 120 },
+        baseRegionRevision: { type: "integer", minimum: 0 },
+        idempotencyKey: idempotencySchema,
+        widgetId: { type: "string", minLength: 2, maxLength: 120 },
+        title: { type: "string", minLength: 3, maxLength: 160 },
+        html: {
+          type: "string",
+          maxLength: 12288,
+          description:
+            "Responsive body fragment only; omit html/head/body, a duplicate title, Reset/Stop controls, and wrapper chrome.",
+        },
+        css: {
+          type: "string",
+          maxLength: 12288,
+          description:
+            "Mobile-first CSS that remains usable at 320px without horizontal overflow.",
+        },
+        javascript: { type: "string", maxLength: 24576 },
+        accessibleSummary: { type: "string", minLength: 8, maxLength: 1200 },
+        height: { type: "integer", minimum: 180, maximum: 720 },
+        rationale: { type: "string", minLength: 4, maxLength: 500 },
+      },
+    },
+    annotations: writeAnnotations(),
+    execute(input) {
+      const object = objectInput(input);
+      requireNonce(object, actions);
+      const idempotencyKey = stringValue(object, "idempotencyKey", 8, 160);
+      const result = actions.injectWidget({
+        regionId: stringValue(object, "regionId", 2, 120),
+        baseRegionRevision: integerValue(object, "baseRegionRevision"),
+        idempotencyKey,
+        widget: {
+          type: "sandbox_widget",
+          widgetId:
+            optionalString(object, "widgetId", 120) ??
+            `widget-${idempotencyKey.replace(/[^a-z0-9-]/gi, "-")}`,
+          title: stringValue(object, "title", 3, 160),
+          html: typeof object.html === "string" ? object.html : "",
+          css: typeof object.css === "string" ? object.css : "",
+          javascript:
+            typeof object.javascript === "string" ? object.javascript : "",
+          accessibleSummary: stringValue(object, "accessibleSummary", 8, 1200),
+          height: integerValue(object, "height", 180, 720),
+        },
+        rationale: stringValue(object, "rationale", 4, 500),
+      });
+      revealRegion(result.regionId);
+      return result;
+    },
+  };
+
+  const attachResearch: WebMcpToolDefinition = {
+    name: "learn_attach_research",
+    description:
+      "Attach a bounded synthesis and canonical citation cards produced by agent-side research to one region. Connector credentials and raw source content never enter the page.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "nonce",
+        "regionId",
+        "baseRegionRevision",
+        "idempotencyKey",
+        "summary",
+        "sources",
+      ],
+      properties: {
+        nonce: nonceSchema,
+        regionId: { type: "string", minLength: 2, maxLength: 120 },
+        baseRegionRevision: { type: "integer", minimum: 0 },
+        idempotencyKey: idempotencySchema,
+        summary: { type: "string", minLength: 12, maxLength: 1800 },
+        sources: {
+          type: "array",
+          minItems: 1,
+          maxItems: 8,
+          items: researchReferenceSchema,
+        },
+      },
+    },
+    annotations: writeAnnotations(true),
+    execute(input) {
+      const object = objectInput(input);
+      requireNonce(object, actions);
+      if (!Array.isArray(object.sources)) throw new Error("sources must be an array.");
+      const result = actions.attachResearch({
+        regionId: stringValue(object, "regionId", 2, 120),
+        baseRegionRevision: integerValue(object, "baseRegionRevision"),
+        idempotencyKey: stringValue(object, "idempotencyKey", 8, 160),
+        summary: stringValue(object, "summary", 12, 1800),
+        sources: object.sources.map(parseReference),
+      });
+      revealRegion(result.regionId);
+      return result;
+    },
+  };
+
+  const revertRegion: WebMcpToolDefinition = {
+    name: "learn_revert_region",
+    description:
+      "Restore a prior agent-owned version of one region with its undo token. Learner answers and evidence are never reverted.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "nonce",
+        "regionId",
+        "baseRegionRevision",
+        "idempotencyKey",
+        "undoToken",
+      ],
+      properties: {
+        nonce: nonceSchema,
+        regionId: { type: "string", minLength: 2, maxLength: 120 },
+        baseRegionRevision: { type: "integer", minimum: 0 },
+        idempotencyKey: idempotencySchema,
+        undoToken: { type: "string", minLength: 8, maxLength: 200 },
+      },
+    },
+    annotations: writeAnnotations(),
+    execute(input) {
+      const object = objectInput(input);
+      requireNonce(object, actions);
+      const result = actions.revertRegion({
+        regionId: stringValue(object, "regionId", 2, 120),
+        baseRegionRevision: integerValue(object, "baseRegionRevision"),
+        idempotencyKey: stringValue(object, "idempotencyKey", 8, 160),
+        undoToken: stringValue(object, "undoToken", 8, 200),
+        actor: "agent",
+      });
+      revealRegion(result.regionId);
+      return result;
+    },
+  };
+
+  return [
+    begin,
+    getContext,
+    proposeContext,
+    getSession,
+    prepareLesson,
+    publishLesson,
+    getSnapshot,
+    patchRegion,
+    injectWidget,
+    attachResearch,
+    revertRegion,
   ];
 }
 
-export async function registerOgramLearningTools(
-  actions: CanvasActions,
-): Promise<WebMcpRegistration> {
-  const tools = createOgramLearningTools(actions);
-  window.__OGRAM_WEBMCP_TOOLS__ = Object.fromEntries(
-    tools.map((tool) => [tool.name, tool]),
-  );
+export const v3ToolNames = [
+  "learn_begin_session",
+  "learn_get_context",
+  "learn_propose_context",
+  "learn_get_session",
+  "learn_prepare_lesson",
+  "learn_publish_lesson",
+  "learn_get_canvas_snapshot",
+  "learn_patch_region",
+  "learn_inject_widget",
+  "learn_attach_research",
+  "learn_revert_region",
+] as const;
 
+export function activeToolNames(
+  stage: LearningSessionStage,
+  hasNonce: boolean,
+): string[] {
+  if (!hasNonce || stage === "ready") return ["learn_begin_session"];
+  const contextTools = [
+    "learn_begin_session",
+    "learn_get_session",
+    "learn_get_context",
+    "learn_propose_context",
+    "learn_get_canvas_snapshot",
+    "learn_prepare_lesson",
+  ];
+  if (stage === "context_review") return contextTools;
+  if (stage === "lesson_review") {
+    return [...contextTools, "learn_publish_lesson"];
+  }
+  return [...v3ToolNames];
+}
+
+export async function registerLearnTools(
+  actions: CanvasActions,
+  stage: LearningSessionStage,
+  hasNonce: boolean,
+): Promise<WebMcpRegistration> {
+  const allTools = createLearnTools(actions);
+  const allRegistry = Object.fromEntries(allTools.map((tool) => [tool.name, tool]));
+  window.__OGRAM_WEBMCP_TOOLS__ = allRegistry;
+
+  const names = activeToolNames(stage, hasNonce);
+  const active = allTools.filter((tool) => names.includes(tool.name));
   const controller = new AbortController();
   const supported = typeof document.modelContext?.registerTool === "function";
   if (supported) {
-    await Promise.allSettled(
-      tools.map((tool) =>
-        document.modelContext!.registerTool(tool, { signal: controller.signal }),
-      ),
-    );
+    try {
+      for (const tool of active) {
+        await document.modelContext!.registerTool(tool, { signal: controller.signal });
+      }
+    } catch (error) {
+      controller.abort();
+      throw error;
+    }
   }
 
   return {
     supported,
-    toolCount: tools.length,
-    toolNames: tools.map((tool) => tool.name),
+    toolCount: active.length,
+    toolNames: active.map((tool) => tool.name),
     cleanup: () => {
       controller.abort();
-      delete window.__OGRAM_WEBMCP_TOOLS__;
+      if (window.__OGRAM_WEBMCP_TOOLS__ === allRegistry) {
+        delete window.__OGRAM_WEBMCP_TOOLS__;
+      }
     },
   };
 }

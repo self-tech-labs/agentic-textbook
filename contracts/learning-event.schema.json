@@ -1,61 +1,55 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://learn.ogram.ch/contracts/learning-event.schema.json",
-  "title": "Ogram Learning Canvas Event Envelope",
-  "description": "Privacy-minimized, append-only, idempotent event shared by the learning canvas, Ogram service, and future companions.",
+  "$id": "https://learn.ogram.ch/contracts/v3/learning-event.schema.json",
+  "title": "learn.ogram v3 canvas event",
+  "description": "A sequenced, privacy-minimized event emitted by the agent-native learning canvas.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "eventId",
-    "sequence",
-    "stateRevision",
-    "idempotencyKey",
-    "occurredAt",
-    "type",
-    "actor",
-    "experienceId",
-    "experienceRevision",
-    "data"
-  ],
+  "required": ["id", "sequence", "type", "actor", "at", "summary"],
   "properties": {
-    "schemaVersion": { "const": 2 },
-    "eventId": { "type": "string", "minLength": 8, "maxLength": 160 },
-    "sequence": { "type": "integer", "minimum": 1 },
-    "stateRevision": { "type": "integer", "minimum": 1 },
-    "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 160 },
-    "occurredAt": { "type": "string", "format": "date-time" },
+    "id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 200
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
     "type": {
       "type": "string",
       "enum": [
-        "context.snapshot.loaded",
+        "agent.session.started",
         "context.claim.proposed",
         "context.claim.reviewed",
-        "design.draft.created",
-        "design.draft.patched",
-        "design.draft.validated",
-        "design.review.requested",
-        "design.review.approved",
-        "design.experience.published",
-        "design.asset.registered",
-        "runtime.started",
-        "runtime.node.entered",
-        "runtime.response.submitted",
-        "runtime.feedback.presented",
-        "runtime.completed",
-        "learner.feedback.submitted",
-        "adaptation.proposed"
+        "context.personalization.skipped",
+        "lesson.draft.prepared",
+        "lesson.draft.approved",
+        "lesson.published",
+        "canvas.region.focused",
+        "canvas.region.patched",
+        "canvas.widget.injected",
+        "canvas.research.attached",
+        "canvas.region.reverted",
+        "learner.response.submitted"
       ]
     },
     "actor": {
       "type": "string",
       "enum": ["agent", "learner", "ogram"]
     },
-    "experienceId": { "type": ["string", "null"], "maxLength": 120 },
-    "experienceRevision": { "type": ["integer", "null"], "minimum": 1 },
-    "data": {
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 500
+    },
+    "payload": {
       "type": "object",
-      "description": "Sanitized event fields. Raw conversations, prompts, file paths, credentials, client content, and free-text learner responses are prohibited.",
+      "description": "Bounded IDs, revisions, digests, counts, provider labels, and sanitized summaries only. Credentials, raw connector content, full conversations, local paths, arbitrary prompts, and free-text learner answers are prohibited.",
       "additionalProperties": true
     }
   }

@@ -38,7 +38,13 @@ export const fixtureContextClaims: ContextClaim[] = [
     kind: "business_constraint",
     summary:
       "The learner regularly turns approved workshop decisions into concise client follow-ups.",
-    source: "ogram_profile",
+    source: "ogram_pixel",
+    sourceDetail: {
+      providerId: "ogram-pixel",
+      providerLabel: "Ogram Pixel",
+      connector: "first_party",
+      resourceType: "authorized workshop interaction summary",
+    },
     sensitivity: "personal",
     evidenceRefs: ["ogram-workshop:mock-profile"],
     allowedPurposes: ["lesson_personalization", "example_selection"],

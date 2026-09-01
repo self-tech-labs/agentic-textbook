@@ -27,7 +27,15 @@ export type ContextClaimSource =
   | "codex_observation"
   | "ogram_profile"
   | "ogram_pixel"
-  | "ogram_journey";
+  | "ogram_journey"
+  | "connected_mcp";
+
+export interface ContextSourceDetail {
+  providerId: string;
+  providerLabel: string;
+  connector: "first_party" | "mcp";
+  resourceType?: string;
+}
 
 export type ContextClaimReview =
   | "pending"
@@ -50,6 +58,7 @@ export interface ContextClaim {
     | "journey_evidence";
   summary: string;
   source: ContextClaimSource;
+  sourceDetail?: ContextSourceDetail;
   confidence?: number;
   sensitivity: "low" | "personal" | "restricted";
   evidenceRefs: string[];
@@ -306,51 +315,6 @@ export interface LearningRuntimeState {
   completedAt?: string;
 }
 
-export type CanvasEventActor = "agent" | "learner" | "ogram";
-
-export type CanvasEventType =
-  | "context.snapshot.loaded"
-  | "context.claim.proposed"
-  | "context.claim.reviewed"
-  | "design.draft.created"
-  | "design.draft.patched"
-  | "design.draft.validated"
-  | "design.review.requested"
-  | "design.review.approved"
-  | "design.experience.published"
-  | "design.asset.registered"
-  | "runtime.started"
-  | "runtime.node.entered"
-  | "runtime.response.submitted"
-  | "runtime.feedback.presented"
-  | "runtime.completed"
-  | "learner.feedback.submitted"
-  | "adaptation.proposed";
-
-export interface CanvasEvent {
-  id: string;
-  sequence: number;
-  revision: number;
-  idempotencyKey: string;
-  type: CanvasEventType;
-  actor: CanvasEventActor;
-  at: string;
-  summary: string;
-  experienceId?: string;
-  experienceRevision?: number;
-  payload?: Record<string, unknown>;
-}
-
-export interface ConsentReceipt {
-  id: string;
-  type: "context_use" | "experience_publication" | "adaptive_revision";
-  actor: "learner";
-  at: string;
-  subjectIds: string[];
-  purpose: string;
-  digest: string;
-}
-
 export type ExperiencePatchOperation =
   | {
       op: "replace_metadata";
@@ -361,45 +325,3 @@ export type ExperiencePatchOperation =
   | { op: "upsert_edge"; edge: LearningEdge }
   | { op: "remove_edge"; edgeId: string }
   | { op: "set_completion"; completion: CompletionPolicy };
-
-export interface DesignState {
-  status:
-    | "published"
-    | "drafting"
-    | "validation_failed"
-    | "awaiting_review"
-    | "approved";
-  draft: LearningExperienceDocument | null;
-  validation: CompileResult | null;
-  approvedDraftRevision: number | null;
-  reviewRequestedAt?: string;
-}
-
-export interface CommandReceipt {
-  key: string;
-  result: Record<string, unknown>;
-}
-
-export interface LearningCanvasState {
-  version: 2;
-  revision: number;
-  contextSnapshotId: string;
-  contextClaims: ContextClaim[];
-  learningBrief: LearningBrief;
-  activeExperience: LearningExperienceDocument;
-  publishedRevisions: LearningExperienceDocument[];
-  design: DesignState;
-  runtime: LearningRuntimeState;
-  events: CanvasEvent[];
-  consentReceipts: ConsentReceipt[];
-  commandReceipts: CommandReceipt[];
-  learnerFeedback: {
-    level: "too_easy" | "right_level" | "too_hard";
-    note?: string;
-    submittedAt: string;
-  } | null;
-  sync: {
-    status: "local" | "queued" | "synced";
-    orderedOutbox: string[];
-  };
-}

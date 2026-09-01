@@ -385,7 +385,7 @@ export function compileExperience(
     nodeIds.add(node.id);
     if (!isPrimitiveId(node.primitiveId)) {
       diagnostics.push(
-        diagnostic("capability.primitive", "error", `${path}.primitiveId`, `Primitive “${String(node.primitiveId)}” is not in the registry.`, "Choose a primitive returned by ogram_get_canvas_contract."),
+        diagnostic("capability.primitive", "error", `${path}.primitiveId`, `Primitive “${String(node.primitiveId)}” is not in the registry.`, "Choose a primitive supported by the internal compiler registry."),
       );
       return;
     }

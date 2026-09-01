@@ -1,366 +1,328 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { compileExperience } from "./domain/compiler";
-import {
-  cloneExperienceFixture,
-  experienceFixtures,
-} from "./domain/fixtures";
-import { createInitialCanvasState } from "./hooks/useLearningCanvas";
+import type { WebMcpToolDefinition } from "./lib/webmcp";
 
-function createReviewState(status: "awaiting_review" | "approved") {
-  const savedState = createInitialCanvasState();
-  const fixture = experienceFixtures[1];
-  if (!fixture) throw new Error("Expected the review fixture.");
-  const draft = cloneExperienceFixture(
-    fixture,
-    savedState.activeExperience.draftRevision + 1,
-    savedState.contextSnapshotId,
-    savedState.learningBrief.id,
-  );
-  const approvedClaimIds = savedState.contextClaims
-    .filter((claim) => claim.review === "accepted" || claim.review === "corrected")
-    .map((claim) => claim.id);
-  const validation = compileExperience(draft, approvedClaimIds);
-  if (!validation.valid) throw new Error("Expected the review fixture to compile.");
-  savedState.design = {
-    status,
-    draft,
-    validation,
-    approvedDraftRevision: status === "approved" ? draft.draftRevision : null,
-    reviewRequestedAt: new Date().toISOString(),
-  };
-  return { savedState, draft };
+function tool(name: string): WebMcpToolDefinition {
+  const match = window.__OGRAM_WEBMCP_TOOLS__?.[name];
+  if (!match) throw new Error(`Missing fallback tool ${name}.`);
+  return match;
 }
 
-describe("Ogram Learning Canvas", () => {
+describe("learn.ogram v3", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    delete window.__OGRAM_WEBMCP_TOOLS__;
     Object.defineProperty(document, "modelContext", {
       value: undefined,
       configurable: true,
     });
   });
 
-  it("runs an agent-authored experience through learner-owned evidence", async () => {
+  it("starts as a passive agent-native canvas with no in-page conversation", async () => {
     render(<App />);
+
     expect(
-      screen.getByRole("heading", {
-        name: "Choose where your next piece of work should begin",
-      }),
+      screen.getByRole("heading", { name: /learn a difficult idea/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Ogram compiler/i)).not.toBeVisible();
-    expect(
-      screen.queryByText(/Ogram sees the journey\. Codex makes it tangible/i),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /ask codex/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/start in the conversation on the left/i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText(/open this page in codex desktop/i)).toBeInTheDocument(),
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: /start lesson/i }));
-    fireEvent.click(screen.getByRole("button", { name: /fork the current task/i }));
-    fireEvent.click(screen.getByRole("button", { name: /check my answer/i }));
-    expect(screen.getByText(/fork keeps the approved strategy available/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^continue/i }));
+    await waitFor(() => expect(tool("learn_begin_session")).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/local preview · v3/i)).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole("button", { name: /continue to practice/i }));
-    fireEvent.click(screen.getByRole("button", { name: /fork from the exploration task/i }));
-    fireEvent.click(screen.getByRole("button", { name: /check my answer/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^continue/i }));
+    fireEvent.click(screen.getByRole("button", { name: /choose context/i }));
+    expect(screen.getByText(/context reviewed/i)).toBeInTheDocument();
+    expect(screen.getByText(/past Codex work, projects/i)).toBeInTheDocument();
+  });
 
-    const reflection = screen.getByRole("textbox", {
-      name: /your explanation/i,
+  it("does not race native registration during React development remounts", async () => {
+    const registerTool = vi.fn(async () => undefined);
+    Object.defineProperty(document, "modelContext", {
+      value: { registerTool },
+      configurable: true,
     });
-    fireEvent.change(reflection, {
-      target: {
-        value:
-          "A fork keeps approved decisions for a related new deliverable while fresh starts an unrelated goal.",
-      },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /save my answer/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^continue/i }));
 
-    const commitment = screen.getByRole("textbox", {
-      name: /your plan/i,
-    });
-    fireEvent.change(commitment, {
-      target: {
-        value:
-          "When my next deliverable changes, I will fork with a brief of approved decisions.",
-      },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /save my plan/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^finish/i }));
-
-    await waitFor(() =>
-      expect(
-        screen.getByRole("heading", { name: /finished today’s session/i }),
-      ).toBeInTheDocument(),
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
     );
-    expect(screen.getByText(/judge whether it helped when you use it in real work/i)).toBeInTheDocument();
+
+    await waitFor(() => expect(registerTool).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText(/site-tool registration failed/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/open this page in codex desktop/i)).not.toBeInTheDocument();
   });
 
-  it("replays the real WebMCP design transaction and requires human publication", async () => {
+  it("runs the generic transformers path, focuses a region, and accepts a reversible widget", async () => {
     render(<App />);
-    fireEvent.click(
-      screen.getByRole("button", { name: /about this session/i }),
-    );
-    fireEvent.click(screen.getByText("Session options"));
-    fireEvent.click(
-      screen.getByRole("button", { name: /preview another session/i }),
-    );
-
-    await waitFor(() =>
-      expect(
-        screen.getByRole("heading", {
-          name: "What to include in a task handoff",
-        }),
-      ).toBeInTheDocument(),
-    );
-    expect(
-      screen.queryByRole("heading", {
-        name: "Choose where your next piece of work should begin",
-      }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/you approve this version of the session/i),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /start this session/i }));
-    await waitFor(() =>
-      expect(
-        screen.getByRole("heading", {
-          name: "Prepare a useful handoff for a related new task",
-        }),
-      ).toBeInTheDocument(),
-    );
-  });
-
-  it("keeps secondary session information in an accessible in-frame drawer", async () => {
-    render(<App />);
-    const trigger = screen.getByRole("button", { name: /about this session/i });
-
-    fireEvent.click(trigger);
-
-    const drawer = screen.getByRole("dialog", { name: /about this session/i });
-    expect(drawer).toBeVisible();
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: /close session details/i }),
-      ).toHaveFocus(),
-    );
-
-    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
-    expect(screen.getByText("Session options").closest("summary")).toHaveFocus();
-
-    fireEvent.keyDown(document, { key: "Tab" });
-    expect(
-      screen.getByRole("button", { name: /close session details/i }),
-    ).toHaveFocus();
-
-    fireEvent.keyDown(document, { key: "Escape" });
-
-    expect(drawer).not.toBeVisible();
-    await waitFor(() => expect(trigger).toHaveFocus());
-  });
-
-  it("preserves a saved journey from the newer Codex experiment without crashing", () => {
-    const savedState = createInitialCanvasState();
-    savedState.activeExperience.nodes[0] = {
-      ...savedState.activeExperience.nodes[0],
-      primitiveId: "practice.codex_task",
-    } as unknown as (typeof savedState.activeExperience.nodes)[number];
-    window.localStorage.setItem(
-      "ogram-learning-canvas:v2",
-      JSON.stringify(savedState),
-    );
-
-    render(<App />);
-
-    expect(
-      screen.getByRole("heading", {
-        name: /This step needs a newer version of Ogram/i,
-      }),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/already completed is still here/i)).toBeInTheDocument();
-  });
-
-  it("refreshes legacy bundled copy without clearing saved progress", () => {
-    const savedState = createInitialCanvasState();
-    savedState.activeExperience.metadata.title = "The three doors";
-    const objective = savedState.activeExperience.nodes.find(
-      (node) => node.id === "door-objective",
-    );
-    if (!objective || objective.primitiveId !== "orient.objective") {
-      throw new Error("Expected the bundled objective node.");
-    }
-    objective.props.heading = "Know when the work has changed rooms";
-    savedState.runtime.visitedNodeIds = ["door-objective"];
-    savedState.publishedRevisions[0] = structuredClone(
-      savedState.activeExperience,
-    );
-    window.localStorage.setItem(
-      "ogram-learning-canvas:v2",
-      JSON.stringify(savedState),
-    );
-
-    render(<App />);
-
-    expect(
-      screen.getByRole("heading", {
-        name: "Choose where your next piece of work should begin",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", {
-        name: "Know when the work has changed rooms",
-      }),
-    ).not.toBeInTheDocument();
-    expect(
-      JSON.parse(
-        window.localStorage.getItem("ogram-learning-canvas:v2") ?? "{}",
-      ).runtime.visitedNodeIds,
-    ).toEqual(["door-objective"]);
-  });
-
-  it("surfaces and focuses one context choice at a time before returning to the session", async () => {
-    const savedState = createInitialCanvasState();
-    const firstClaim = savedState.contextClaims[0];
-    const secondClaim = savedState.contextClaims[1];
-    if (!firstClaim || !secondClaim) throw new Error("Expected two fixture context claims.");
-    savedState.contextClaims[0] = {
-      ...firstClaim,
-      review: "pending",
-    };
-    savedState.contextClaims[1] = {
-      ...secondClaim,
-      review: "pending",
-    };
-    window.localStorage.setItem(
-      "ogram-learning-canvas:v2",
-      JSON.stringify(savedState),
-    );
-
-    render(<App />);
-
-    expect(
-      screen.getByRole("heading", { name: /can i use this/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", {
-        name: "Choose where your next piece of work should begin",
-      }),
-    ).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText(firstClaim.summary)).toHaveFocus());
-
-    fireEvent.click(screen.getByRole("button", { name: /use this/i }));
-
-    await waitFor(() => expect(screen.getByText(secondClaim.summary)).toHaveFocus());
-    fireEvent.click(screen.getByRole("button", { name: /leave this out/i }));
-
-    expect(
-      screen.getByRole("heading", {
-        name: "Choose where your next piece of work should begin",
-      }),
-    ).toBeInTheDocument();
-    await waitFor(() =>
-      expect(
-        screen.getByRole("article", {
-          name: "When to continue, fork, or start fresh",
-        }),
-      ).toHaveFocus(),
-    );
-  });
-
-  it("keeps context review ahead of a ready session proposal", async () => {
-    const { savedState } = createReviewState("awaiting_review");
-    const firstClaim = savedState.contextClaims[0];
-    if (!firstClaim) throw new Error("Expected the fixture context claim.");
-    savedState.contextClaims[0] = { ...firstClaim, review: "pending" };
-    window.localStorage.setItem(
-      "ogram-learning-canvas:v2",
-      JSON.stringify(savedState),
-    );
-
-    render(<App />);
-
-    expect(screen.getByRole("heading", { name: /can i use this/i })).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /start this session/i }),
-    ).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /use this/i }));
-
-    expect(
-      screen.getByRole("button", { name: /start this session/i }),
-    ).toBeInTheDocument();
-    await waitFor(() => expect(document.getElementById("draft-review")).toHaveFocus());
-  });
-
-  it("retries publication from an already approved proposal", async () => {
-    const { savedState } = createReviewState("approved");
-    window.localStorage.setItem(
-      "ogram-learning-canvas:v2",
-      JSON.stringify(savedState),
-    );
-
-    render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: /try starting again/i }));
-
-    await waitFor(() =>
-      expect(
-        screen.getByRole("heading", {
-          name: "Prepare a useful handoff for a related new task",
-        }),
-      ).toBeInTheDocument(),
-    );
-  });
-
-  it("keeps an unfinished response mounted while a new proposal awaits review", async () => {
-    render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /start lesson/i }));
-    fireEvent.click(screen.getByRole("button", { name: /fork the current task/i }));
-    fireEvent.click(screen.getByRole("button", { name: /check my answer/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^continue/i }));
-    fireEvent.click(screen.getByRole("button", { name: /continue to practice/i }));
-    fireEvent.click(screen.getByRole("button", { name: /fork from the exploration task/i }));
-    fireEvent.click(screen.getByRole("button", { name: /check my answer/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^continue/i }));
-
-    const reflection = screen.getByRole("textbox", {
-      name: /your explanation/i,
-    });
-    const unfinished = "This unfinished explanation must survive the proposal gate.";
-    fireEvent.change(reflection, { target: { value: unfinished } });
-
     await waitFor(() => expect(window.__OGRAM_WEBMCP_TOOLS__).toBeDefined());
-    const fixture = experienceFixtures[1];
-    if (!fixture) throw new Error("Expected the proposal fixture.");
-    const draft = cloneExperienceFixture(fixture, 2);
-    const create = window.__OGRAM_WEBMCP_TOOLS__?.ogram_create_experience_draft;
-    const validate = window.__OGRAM_WEBMCP_TOOLS__?.ogram_validate_experience;
-    const requestReview = window.__OGRAM_WEBMCP_TOOLS__?.ogram_request_learner_review;
-    if (!create || !validate || !requestReview) {
-      throw new Error("Expected the WebMCP design tools.");
-    }
+
+    let nonce = "";
+    await act(async () => {
+      const result = tool("learn_begin_session").execute({
+        topic: "How transformers work",
+        goal: "Understand enough to explain self-attention.",
+      }) as { nonce: string; guide: string[] };
+      nonce = result.nonce;
+      expect(result.guide).toHaveLength(5);
+    });
+
+    expect(
+      screen.getByRole("heading", { name: /context stays proposed until you say yes/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/self-attention/i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(window.__OGRAM_WEBMCP_TOOLS__?.learn_get_session).toBeDefined(),
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue without personal context/i }),
+    );
+    const beforeDraft = tool("learn_get_session").execute({ nonce }) as {
+      revision: number;
+    };
 
     await act(async () => {
-      await create.execute({
-        basePublishedRevision: 1,
-        idempotencyKey: "mounted-draft-create",
-        document: draft,
-      });
-      await validate.execute({
-        draftRevision: 2,
-        idempotencyKey: "mounted-draft-validate",
-      });
-      await requestReview.execute({
-        draftRevision: 2,
-        idempotencyKey: "mounted-draft-review",
+      tool("learn_prepare_lesson").execute({
+        nonce,
+        baseRevision: beforeDraft.revision,
+        idempotencyKey: "prepare-transformers-generic-01",
+        template: "transformer_technical_beginner",
       });
     });
 
-    expect(screen.getByRole("button", { name: /start this session/i })).toBeInTheDocument();
-    const hiddenReflection = document.querySelector("textarea");
-    expect(hiddenReflection).toHaveValue(unfinished);
-    expect(hiddenReflection?.closest("[hidden]")).not.toBeNull();
+    expect(
+      screen.getByRole("heading", { name: /how transformers build context/i }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(window.__OGRAM_WEBMCP_TOOLS__?.learn_get_session).toBeDefined(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /approve this lesson/i }));
+
+    const approved = tool("learn_get_session").execute({ nonce }) as {
+      revision: number;
+      lesson: { draftRevision: number };
+    };
+    await act(async () => {
+      tool("learn_publish_lesson").execute({
+        nonce,
+        baseRevision: approved.revision,
+        draftRevision: approved.lesson.draftRevision,
+        idempotencyKey: "publish-transformers-generic-01",
+      });
+    });
+
+    expect(
+      screen.getByRole("heading", { name: /self-attention: gather the useful context/i }),
+    ).toBeInTheDocument();
+    const lessonDeck = document.querySelector(".lesson-deck");
+    const lessonSlots = lessonDeck?.querySelectorAll<HTMLElement>(".lesson-slot");
+    expect(document.documentElement).toHaveClass("has-lesson-deck");
+    expect(lessonSlots).toHaveLength(6);
+    expect(lessonSlots?.[0]).toHaveAttribute("id", "region-transformer-goal");
+    expect(lessonSlots?.[0]).toHaveAttribute("data-canvas-region", "transformer-goal");
+    expect(lessonSlots?.[0]).toHaveAttribute("data-panel-mode", "screen");
+    expect(lessonSlots?.[0]?.querySelectorAll(".lesson-scene-marker")).toHaveLength(2);
+    expect(lessonSlots?.[0]?.querySelector(".lesson-panel > section")).toBeInTheDocument();
+    expect(screen.getByText(/query–key scores are normalized with softmax/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /what is the training target/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /show tokens scene 2 of 2/i }));
+    fireEvent.click(screen.getByRole("button", { name: /inspect token model/i }));
+    expect(screen.getByText("“model”").parentElement).toHaveTextContent(
+      /starts with a learned vector/i,
+    );
+    await waitFor(() =>
+      expect(window.__OGRAM_WEBMCP_TOOLS__?.learn_get_canvas_snapshot).toBeDefined(),
+    );
+
+    const attentionHeading = screen.getByRole("heading", {
+      name: /self-attention: gather the useful context/i,
+    });
+    const attentionRegion = attentionHeading.closest("section");
+    if (!attentionRegion) throw new Error("Expected the attention region.");
+    fireEvent.pointerDown(attentionRegion);
+
+    const snapshot = tool("learn_get_canvas_snapshot").execute({ nonce }) as {
+      focusedRegionId: string;
+      regions: Array<{ id: string; revision: number }>;
+    };
+    expect(snapshot.focusedRegionId).toBe("self-attention");
+    const attention = snapshot.regions.find((region) => region.id === "self-attention");
+    if (!attention) throw new Error("Expected the semantic attention region.");
+
+    await act(async () => {
+      tool("learn_inject_widget").execute({
+        nonce,
+        regionId: "self-attention",
+        baseRegionRevision: attention.revision,
+        idempotencyKey: "inject-three-token-softmax-01",
+        title: "Three-token softmax playground",
+        html: '<main><label>Score <input id="score" type="range" min="0" max="10" /></label><output id="value">0</output></main>',
+        css: "body{padding:24px;background:#f4f7ef;color:#173f31} main{display:grid;gap:16px} input{width:100%}",
+        javascript:
+          "const score=document.querySelector('#score');const value=document.querySelector('#value');score.addEventListener('input',()=>{value.textContent=score.value;window.learnOgram.emit('score',score.value)});",
+        accessibleSummary:
+          "A slider changes one of three attention scores so the learner can observe the normalized weight change.",
+        height: 240,
+        rationale: "Show softmax with three manipulable token scores.",
+      });
+    });
+
+    const widgetHeading = await screen.findByRole("heading", {
+      name: /three-token softmax playground/i,
+    });
+    expect(widgetHeading).toBeInTheDocument();
+    const widget = widgetHeading.closest("section");
+    if (!widget) throw new Error("Expected the sandbox card.");
+    const iframe = within(widget).getByTitle(/three-token softmax playground/i);
+    expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
+    expect(iframe).not.toHaveAttribute("sandbox", expect.stringContaining("allow-same-origin"));
+    expect(iframe.getAttribute("srcdoc")).toContain("connect-src 'none'");
+    expect(iframe.getAttribute("srcdoc")).toContain("form-action 'none'");
+    expect(iframe.getAttribute("srcdoc")).toContain("navigate-to 'none'");
+    expect(within(attentionRegion).getByRole("button", { name: "Undo" })).toBeInTheDocument();
+  });
+
+  it("keeps connector context proposed until the learner reviews each minimized claim", async () => {
+    render(<App />);
+    await waitFor(() => expect(window.__OGRAM_WEBMCP_TOOLS__).toBeDefined());
+    let nonce = "";
+    let revision = 0;
+    await act(async () => {
+      const started = tool("learn_begin_session").execute({
+        topic: "How transformers work",
+      }) as { nonce: string; revision: number };
+      nonce = started.nonce;
+      revision = started.revision;
+    });
+    await waitFor(() =>
+      expect(window.__OGRAM_WEBMCP_TOOLS__?.learn_propose_context).toBeDefined(),
+    );
+
+    await act(async () => {
+      tool("learn_propose_context").execute({
+        nonce,
+        baseRevision: revision,
+        idempotencyKey: "propose-two-context-claims-01",
+        consent: {
+          obtainedAt: "2026-08-31T14:00:00.000Z",
+          scope: "Propose relevant conversation and calendar context for this lesson only.",
+          providerIds: ["codex-conversation", "google-calendar"],
+          sourceScopes: ["current_conversation", "connected_sources"],
+        },
+        claims: [
+          {
+            id: "claim-coding-baseline",
+            kind: "prior_knowledge",
+            summary: "The learner writes JavaScript but is new to machine-learning math.",
+            source: {
+              route: "conversation",
+              providerId: "codex-conversation",
+              providerLabel: "This Codex conversation",
+              resourceType: "learner statement",
+            },
+            sensitivity: "low",
+            allowedPurposes: ["lesson personalization"],
+            evidenceRef: "conversation-turn-opaque-01",
+          },
+          {
+            id: "claim-time-box",
+            kind: "business_constraint",
+            summary: "The learner has a twenty-minute study window before the next meeting.",
+            source: {
+              route: "connected_mcp",
+              providerId: "google-calendar",
+              providerLabel: "Google Calendar",
+              resourceType: "availability summary",
+            },
+            sensitivity: "personal",
+            allowedPurposes: ["lesson pacing"],
+            evidenceRef: "calendar-availability-opaque-01",
+          },
+        ],
+      });
+    });
+
+    expect(screen.getByText(/writes javascript but is new/i)).toBeInTheDocument();
+    expect(screen.getByText(/twenty-minute study window/i)).toBeInTheDocument();
+    const useButtons = screen.getAllByRole("button", { name: /use this/i });
+    expect(useButtons).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /^correct$/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /don’t use/i })).toHaveLength(2);
+    fireEvent.click(useButtons[0]!);
+    fireEvent.click(useButtons[1]!);
+
+    const context = tool("learn_get_context").execute({ nonce }) as {
+      acceptedClaimIds: string[];
+      personalization: string;
+    };
+    expect(context.personalization).toBe("approved");
+    expect(context.acceptedClaimIds).toEqual([
+      "claim-coding-baseline",
+      "claim-time-box",
+    ]);
+  });
+
+  it("renders progressive lesson construction as each region arrives", async () => {
+    render(<App />);
+    await waitFor(() => expect(window.__OGRAM_WEBMCP_TOOLS__).toBeDefined());
+    let nonce = "";
+    await act(async () => {
+      nonce = (
+        tool("learn_begin_session").execute({ topic: "How transformers work" }) as {
+          nonce: string;
+        }
+      ).nonce;
+    });
+    await waitFor(() =>
+      expect(window.__OGRAM_WEBMCP_TOOLS__?.learn_get_session).toBeDefined(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue without personal context/i }),
+    );
+
+    const beforeStart = tool("learn_get_session").execute({ nonce }) as {
+      revision: number;
+    };
+    let revision = beforeStart.revision;
+    let draftRevision = 0;
+    let firstRegionId = "";
+    await act(async () => {
+      const started = tool("learn_prepare_lesson").execute({
+        nonce,
+        baseRevision: revision,
+        idempotencyKey: "ui-progressive-start-01",
+        phase: "start",
+        template: "transformer_technical_beginner",
+      }) as { revision: number; draftRevision: number; regionIds: string[] };
+      revision = started.revision;
+      draftRevision = started.draftRevision;
+      firstRegionId = started.regionIds[0]!;
+    });
+
+    expect(screen.getByText(/0\/6 sections shaped/i)).toBeInTheDocument();
+    expect(screen.getByText(/each json commit is validated/i)).toBeInTheDocument();
+
+    await act(async () => {
+      tool("learn_prepare_lesson").execute({
+        nonce,
+        baseRevision: revision,
+        idempotencyKey: "ui-progressive-region-01",
+        phase: "region",
+        template: "transformer_technical_beginner",
+        draftRevision,
+        regionId: firstRegionId,
+      });
+    });
+
+    expect(screen.getByText(/1\/6 sections shaped/i)).toBeInTheDocument();
+    expect(screen.getByText("The job in one sentence")).toBeInTheDocument();
+    expect(document.querySelector('[data-json-render="ogram.learning.v1"]')).toBeInTheDocument();
+    expect(screen.getByLabelText("Shaped")).toBeInTheDocument();
   });
 });
