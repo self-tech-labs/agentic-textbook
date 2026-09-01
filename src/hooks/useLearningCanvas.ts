@@ -7,6 +7,7 @@ import type {
   ContextConsentAttestation,
   LearnerContextClaim,
   LessonDocumentV3,
+  LessonRegion,
   LearningSessionStage,
   RegionContent,
   RegionHistoryEntry,
@@ -202,6 +203,7 @@ export function createInitialCanvasState(): AgentLearningCanvasState {
     lesson: {
       status: "skeleton",
       draft: null,
+      construction: null,
       validation: null,
       approvedDraftRevision: null,
       publishedRevision: null,
@@ -215,10 +217,10 @@ export function createInitialCanvasState(): AgentLearningCanvasState {
 
 export const firstToolGuide = [
   "Tell me what you want to understand and why it matters to you.",
-  "Choose whether I may use context from this conversation or connected sources.",
-  "Review, correct, or reject every proposed context card on the canvas.",
-  "Approve the lesson outline, then work through the living notebook at your pace.",
-  "When you get stuck, ask me here in Codex. I can read the focused region, reshape it, add an interaction, or research the question.",
+  "Choose whether I may look for useful context in this chat, past Codex tasks and conversations, saved project history, Ogram, or connected sources.",
+  "Review each minimized context card on the canvas: use it or do not use it.",
+  "Keep the canvas open while I shape the lesson section by section, then approve the compiled outline.",
+  "When you get stuck, ask me here in Codex. I can read the focused region, reshape it, add an interaction directly on this canvas, or research the question.",
 ] as const;
 
 export interface CanvasActions {
@@ -250,6 +252,39 @@ export interface CanvasActions {
     correctedSummary?: string;
   }) => { eventId: string; claimId: string; decision: string; revision: number };
   skipContext: () => { eventId: string; revision: number };
+  startLessonConstruction: (input: {
+    baseRevision: number;
+    idempotencyKey: string;
+    document: Omit<LessonDocumentV3, "regions">;
+    outline: Array<
+      Pick<LessonRegion, "id" | "order" | "label" | "title" | "objective" | "kind">
+    >;
+  }) => {
+    revision: number;
+    eventId: string;
+    draftRevision: number;
+    regionIds: string[];
+    status: "shaping";
+  };
+  shapeLessonRegion: (input: {
+    baseRevision: number;
+    idempotencyKey: string;
+    draftRevision: number;
+    region: LessonRegion;
+  }) => {
+    revision: number;
+    eventId: string;
+    draftRevision: number;
+    regionId: string;
+    shapedRegions: number;
+    totalRegions: number;
+    status: "shaping" | "ready_to_finalize";
+  };
+  finalizeLessonConstruction: (input: {
+    baseRevision: number;
+    idempotencyKey: string;
+    draftRevision: number;
+  }) => ReturnType<CanvasActions["prepareLesson"]>;
   prepareLesson: (input: {
     baseRevision: number;
     idempotencyKey: string;
@@ -348,6 +383,18 @@ function ensureAgentWritable(state: AgentLearningCanvasState): void {
   }
 }
 
+function ensureLessonAuthoringReady(state: AgentLearningCanvasState): void {
+  if (state.contextClaims.some((claim) => claim.review === "pending")) {
+    throw new Error("Every proposed context claim must be reviewed or skipped first.");
+  }
+  if (state.session.personalization === "undecided") {
+    throw new Error("The learner must approve context use or choose the generic lesson first.");
+  }
+  if (state.session.stage === "ready") {
+    throw new Error("Call learn_begin_session before preparing a lesson.");
+  }
+}
+
 export function useLearningCanvas(): {
   state: AgentLearningCanvasState;
   actions: CanvasActions;
@@ -394,7 +441,7 @@ export function useLearningCanvas(): {
           guide: firstToolGuide,
           suggestedPrompts: [
             "Use no personal context; prepare the technical-beginner lesson.",
-            "I consent to you proposing relevant context from this conversation for my review.",
+            "I consent to you checking relevant past Codex tasks and project conversations, then proposing only minimized context for my review.",
             "Read the canvas and help me with the region I am focused on.",
           ],
           revision: current.revision,
@@ -431,7 +478,7 @@ export function useLearningCanvas(): {
         guide: firstToolGuide,
         suggestedPrompts: [
           "Use no personal context; prepare the technical-beginner lesson.",
-          "I consent to you proposing relevant context from this conversation for my review.",
+          "I consent to you checking relevant past Codex tasks and project conversations, then proposing only minimized context for my review.",
           "Once the notebook is published, read my focused region before changing it.",
         ],
         revision: evolved.state.revision,
@@ -450,7 +497,11 @@ export function useLearningCanvas(): {
         throw new Error("Context can only be proposed before the lesson is prepared.");
       }
       if (!input.claims.length) throw new Error("At least one context claim is required.");
-      if (!input.consent.scope.trim() || !input.consent.obtainedAt) {
+      if (
+        !input.consent.scope.trim() ||
+        !input.consent.obtainedAt ||
+        !input.consent.sourceScopes.length
+      ) {
         throw new Error("A conversation-consent attestation is required before context can be proposed.");
       }
       const knownIds = new Set(current.contextClaims.map((claim) => claim.id));
@@ -472,6 +523,26 @@ export function useLearningCanvas(): {
         ) {
           throw new Error(
             `Consent does not cover context provider ${claim.source.providerId}.`,
+          );
+        }
+        const requiredScope =
+          claim.source.route === "conversation"
+            ? "current_conversation"
+            : claim.source.route === "codex_history"
+              ? "codex_history"
+              : claim.source.route === "project_history"
+                ? "project_history"
+                : claim.source.route === "ogram"
+                  ? "ogram_profile"
+                  : claim.source.route === "connected_mcp"
+                    ? "connected_sources"
+                    : null;
+        if (
+          requiredScope &&
+          !input.consent.sourceScopes.includes(requiredScope)
+        ) {
+          throw new Error(
+            `Consent does not cover the ${requiredScope.replaceAll("_", " ")} context scope.`,
           );
         }
       }
@@ -584,6 +655,187 @@ export function useLearningCanvas(): {
       return { eventId: evolved.event.id, revision: evolved.state.revision };
     };
 
+    const startLessonConstruction: CanvasActions["startLessonConstruction"] = (
+      input,
+    ) => {
+      const current = stateRef.current;
+      const previous = receipt<
+        ReturnType<CanvasActions["startLessonConstruction"]>
+      >(current, input.idempotencyKey);
+      if (previous) return previous;
+      requireCanvasRevision(current, input.baseRevision);
+      ensureLessonAuthoringReady(current);
+      if (current.session.stage !== "context_review") {
+        throw new Error(
+          "Progressive construction is available while preparing the first lesson. Use a complete draft for a published notebook revision.",
+        );
+      }
+      if (input.outline.length < 4 || input.outline.length > 12) {
+        throw new Error("A lesson outline must contain four to twelve regions.");
+      }
+      if (input.document.title.trim().length < 6) {
+        throw new Error("The lesson title must contain at least six characters.");
+      }
+      if (input.document.objective.trim().length < 20) {
+        throw new Error("The lesson needs one observable learning objective.");
+      }
+      if (
+        input.document.topic.trim().toLocaleLowerCase() !==
+        current.session.topic?.trim().toLocaleLowerCase()
+      ) {
+        throw new Error("The progressive draft topic must match the active session topic.");
+      }
+      const accepted = new Set(acceptedClaimIds(current));
+      for (const claimId of input.document.approvedClaimIds) {
+        if (!accepted.has(claimId)) {
+          throw new Error(
+            `Personalization claim ${claimId} has not been approved by the learner.`,
+          );
+        }
+      }
+      const ids = new Set<string>();
+      const orders = new Set<number>();
+      const regions = input.outline.map((region) => {
+        if (ids.has(region.id)) {
+          throw new Error(`Lesson region id ${region.id} is duplicated.`);
+        }
+        if (orders.has(region.order)) {
+          throw new Error(`Lesson region order ${region.order} is duplicated.`);
+        }
+        ids.add(region.id);
+        orders.add(region.order);
+        return {
+          ...clone(region),
+          revision: 0,
+          status: "skeleton" as const,
+          content: [],
+          provenance: [],
+          history: [],
+        } satisfies CanvasRegion;
+      });
+      regions.sort((left, right) => left.order - right.order);
+
+      const evolved = appendEvent(
+        {
+          ...current,
+          lesson: {
+            ...current.lesson,
+            status: "skeleton",
+            draft: null,
+            construction: {
+              document: clone(input.document),
+              regions,
+              startedAt: new Date().toISOString(),
+            },
+            validation: null,
+            approvedDraftRevision: null,
+          },
+        },
+        "agent",
+        "lesson.construction.started",
+        `Started shaping “${input.document.title}” on the canvas.`,
+        {
+          draftRevision: input.document.revision,
+          regionCount: regions.length,
+        },
+      );
+      const result = {
+        revision: evolved.state.revision,
+        eventId: evolved.event.id,
+        draftRevision: input.document.revision,
+        regionIds: regions.map((region) => region.id),
+        status: "shaping" as const,
+      };
+      commit(withReceipt(evolved.state, input.idempotencyKey, result));
+      return result;
+    };
+
+    const shapeLessonRegion: CanvasActions["shapeLessonRegion"] = (input) => {
+      const current = stateRef.current;
+      const previous = receipt<ReturnType<CanvasActions["shapeLessonRegion"]>>(
+        current,
+        input.idempotencyKey,
+      );
+      if (previous) return previous;
+      requireCanvasRevision(current, input.baseRevision);
+      ensureLessonAuthoringReady(current);
+      if (current.session.stage !== "context_review") {
+        throw new Error("Progressive construction has already left the preparation stage.");
+      }
+      const construction = current.lesson.construction;
+      if (!construction) {
+        throw new Error("Start progressive lesson construction before shaping a region.");
+      }
+      if (construction.document.revision !== input.draftRevision) {
+        throw new Error(
+          `The active construction is draft revision ${construction.document.revision}.`,
+        );
+      }
+      const outlineRegion = construction.regions.find(
+        (region) => region.id === input.region.id,
+      );
+      if (!outlineRegion) {
+        throw new Error(`Lesson region ${input.region.id} is not in the approved outline.`);
+      }
+      const stableFields = ["order", "label", "title", "objective", "kind"] as const;
+      for (const field of stableFields) {
+        if (outlineRegion[field] !== input.region[field]) {
+          throw new Error(
+            `Lesson region ${input.region.id} changed its ${field}; restart construction to change the outline.`,
+          );
+        }
+      }
+      if (!input.region.content.length) {
+        throw new Error(`Lesson region ${input.region.id} needs accessible content.`);
+      }
+      if (input.region.content.some((block) => block.type === "sandbox_widget")) {
+        throw new Error("Progressive lesson regions accept trusted renderers only.");
+      }
+
+      const nextRegion: CanvasRegion = {
+        ...clone(input.region),
+        revision: outlineRegion.revision + 1,
+        status: "ready",
+        history: [],
+      };
+      const regions = construction.regions.map((region) =>
+        region.id === nextRegion.id ? nextRegion : region,
+      );
+      const shapedRegions = regions.filter((region) => region.status === "ready").length;
+      const evolved = appendEvent(
+        {
+          ...current,
+          lesson: {
+            ...current.lesson,
+            construction: { ...construction, regions },
+          },
+        },
+        "agent",
+        "lesson.construction.region_shaped",
+        `Shaped “${nextRegion.title}” on the lesson canvas.`,
+        {
+          draftRevision: input.draftRevision,
+          regionId: nextRegion.id,
+          shapedRegions,
+          totalRegions: regions.length,
+        },
+      );
+      const result = {
+        revision: evolved.state.revision,
+        eventId: evolved.event.id,
+        draftRevision: input.draftRevision,
+        regionId: nextRegion.id,
+        shapedRegions,
+        totalRegions: regions.length,
+        status:
+          shapedRegions === regions.length
+            ? ("ready_to_finalize" as const)
+            : ("shaping" as const),
+      };
+      commit(withReceipt(evolved.state, input.idempotencyKey, result));
+      return result;
+    };
+
     const prepareLesson: CanvasActions["prepareLesson"] = (input) => {
       const current = stateRef.current;
       const previous = receipt<ReturnType<CanvasActions["prepareLesson"]>>(
@@ -592,15 +844,7 @@ export function useLearningCanvas(): {
       );
       if (previous) return previous;
       requireCanvasRevision(current, input.baseRevision);
-      if (current.contextClaims.some((claim) => claim.review === "pending")) {
-        throw new Error("Every proposed context claim must be reviewed or skipped first.");
-      }
-      if (current.session.personalization === "undecided") {
-        throw new Error("The learner must approve context use or choose the generic lesson first.");
-      }
-      if (current.session.stage === "ready") {
-        throw new Error("Call learn_begin_session before preparing a lesson.");
-      }
+      ensureLessonAuthoringReady(current);
 
       const validation = validateLessonDocument(input.document, acceptedClaimIds(current));
       const protectedResponses = current.regions.filter((region) => region.response);
@@ -636,6 +880,7 @@ export function useLearningCanvas(): {
             ...current.lesson,
             status: validation.valid ? "awaiting_review" : current.lesson.status,
             draft: validation.valid ? clone(input.document) : current.lesson.draft,
+            construction: validation.valid ? null : current.lesson.construction,
             validation,
             approvedDraftRevision: null,
           },
@@ -665,6 +910,50 @@ export function useLearningCanvas(): {
       };
       commit(withReceipt(evolved.state, input.idempotencyKey, result));
       return result;
+    };
+
+    const finalizeLessonConstruction: CanvasActions["finalizeLessonConstruction"] = (
+      input,
+    ) => {
+      const current = stateRef.current;
+      const previous = receipt<
+        ReturnType<CanvasActions["finalizeLessonConstruction"]>
+      >(current, input.idempotencyKey);
+      if (previous) return previous;
+      requireCanvasRevision(current, input.baseRevision);
+      const construction = current.lesson.construction;
+      if (!construction) {
+        throw new Error("There is no progressive lesson construction to finalize.");
+      }
+      if (construction.document.revision !== input.draftRevision) {
+        throw new Error(
+          `The active construction is draft revision ${construction.document.revision}.`,
+        );
+      }
+      const unfinished = construction.regions.filter(
+        (region) => region.status !== "ready" || !region.content.length,
+      );
+      if (unfinished.length) {
+        throw new Error(
+          `Shape every outlined region before finalizing. Still waiting for: ${unfinished.map((region) => region.id).join(", ")}.`,
+        );
+      }
+      const regions: LessonRegion[] = construction.regions.map((region) => ({
+        id: region.id,
+        order: region.order,
+        label: region.label,
+        title: region.title,
+        objective: region.objective,
+        kind: region.kind,
+        content: clone(region.content),
+        ...(region.interaction ? { interaction: clone(region.interaction) } : {}),
+        provenance: clone(region.provenance),
+      }));
+      return prepareLesson({
+        baseRevision: input.baseRevision,
+        idempotencyKey: input.idempotencyKey,
+        document: { ...clone(construction.document), regions },
+      });
     };
 
     const approveLesson: CanvasActions["approveLesson"] = (draftRevision) => {
@@ -860,6 +1149,16 @@ export function useLearningCanvas(): {
       ensureAgentWritable(current);
       const region = requireRegion(current, input.regionId);
       requireRegionRevision(region, input.baseRegionRevision);
+      if (/<\/?(?:html|head|body)\b/i.test(input.widget.html)) {
+        throw new Error(
+          "Widget HTML must be a body fragment; the learning canvas owns the document shell.",
+        );
+      }
+      if (/<h1\b/i.test(input.widget.html)) {
+        throw new Error(
+          "Widget HTML must not duplicate the canvas title. Use a subordinate heading inside the body fragment.",
+        );
+      }
       if (input.widget.html.length > 12_288) throw new Error("Widget HTML exceeds 12 KB.");
       if (input.widget.css.length > 12_288) throw new Error("Widget CSS exceeds 12 KB.");
       if (input.widget.javascript.length > 24_576) {
@@ -1079,6 +1378,9 @@ export function useLearningCanvas(): {
       proposeContext,
       reviewContextClaim,
       skipContext,
+      startLessonConstruction,
+      shapeLessonRegion,
+      finalizeLessonConstruction,
       prepareLesson,
       approveLesson,
       publishLesson,

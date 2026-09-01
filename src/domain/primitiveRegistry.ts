@@ -156,7 +156,9 @@ export const canvasContract = {
       "Every personalization claim is a reviewable hypothesis with provenance, purpose, sensitivity, and an opaque evidence reference.",
     supportedRoutes: [
       "learner input",
-      "Codex observation",
+      "the current Codex conversation",
+      "past Codex tasks and conversations through codex_history",
+      "saved-project task history through project_history",
       "Ogram profile, pixel, or journey",
       "any connected MCP provider through connected_mcp plus sourceDetail",
     ],
@@ -188,11 +190,13 @@ export const canvasContract = {
       javascriptBytes: 24_576,
     },
     visualGuidelines: [
+      "The learning canvas is the only destination for generated visuals and interactive widgets; do not create a second inline conversation artifact.",
       "Choose the smallest representation that makes the concept materially easier to understand.",
       "Keep one dominant visual or explanatory structure per region change.",
       "Label important values and relationships directly and preserve a text alternative.",
       "Keep controls keyboard accessible, layouts responsive, and meaning independent of color.",
       "Prefer a trusted declarative renderer; use the bounded sandbox only when interaction materially helps.",
+      "Treat sandbox HTML as a responsive body fragment because the canvas owns the title, controls, fallback, and document shell.",
     ],
     learnerAuthority: [
       "Only the learner submits answers and reflection.",

@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useLearningCanvas, type CanvasActions } from "../hooks/useLearningCanvas";
+import { transformerLessonFixture } from "../domain/transformerFixture";
 import {
   activeToolNames,
   createLearnTools,
@@ -122,6 +123,69 @@ describe("learn.ogram v3 WebMCP surface", () => {
     context.cleanup();
   });
 
+  it("makes past Codex history a first-class, consent-scoped context route", () => {
+    const { result } = renderHook(() => useLearningCanvas());
+    const actions = result.current.actions;
+    let started!: {
+      nonce: string;
+      revision: number;
+      contextDiscoveryPolicy: {
+        guidance: string;
+        scopes: ReadonlyArray<{ id: string }>;
+      };
+      visualOutputPolicy: { destination: string; guidance: string };
+    };
+    act(() => {
+      started = findTool(actions, "learn_begin_session").execute({
+        topic: "How transformers work",
+      }) as typeof started;
+    });
+
+    expect(started.contextDiscoveryPolicy.guidance).toMatch(/past Codex tasks/i);
+    expect(started.contextDiscoveryPolicy.scopes.map((scope) => scope.id)).toContain(
+      "project_history",
+    );
+    expect(started.visualOutputPolicy).toMatchObject({
+      destination: "webmcp_canvas_only",
+    });
+    expect(started.visualOutputPolicy.guidance).toMatch(/do not create.*inline visualization/i);
+
+    act(() => {
+      findTool(actions, "learn_propose_context").execute({
+        nonce: started.nonce,
+        baseRevision: started.revision,
+        idempotencyKey: "context-from-codex-history-01",
+        consent: {
+          obtainedAt: "2026-09-01T09:00:00Z",
+          scope: "Inspect relevant past Codex tasks for this lesson only.",
+          providerIds: ["codex-tasks"],
+          sourceScopes: ["codex_history"],
+        },
+        claims: [
+          {
+            id: "claim-history-baseline",
+            kind: "prior_knowledge",
+            summary: "The learner has previously built React interfaces but has not studied attention math.",
+            source: {
+              route: "codex_history",
+              providerId: "codex-tasks",
+              providerLabel: "Past Codex tasks",
+              resourceType: "task summary",
+            },
+            sensitivity: "low",
+            allowedPurposes: ["lesson depth"],
+            evidenceRef: "codex-task-opaque-01",
+          },
+        ],
+      });
+    });
+
+    expect(actions.getState().contextClaims[0]?.source.route).toBe("codex_history");
+    expect(actions.getState().session.contextConsent?.sourceScopes).toEqual([
+      "codex_history",
+    ]);
+  });
+
   it("requires consent coverage and separate learner review before personalization", () => {
     const { result } = renderHook(() => useLearningCanvas());
     const actions = result.current.actions;
@@ -158,6 +222,7 @@ describe("learn.ogram v3 WebMCP surface", () => {
           obtainedAt: "2026-08-31T14:00:00Z",
           scope: "Use this conversation context only for this lesson.",
           providerIds: ["codex-conversation"],
+          sourceScopes: ["current_conversation"],
         },
         claims: [claim],
       }),
@@ -172,6 +237,7 @@ describe("learn.ogram v3 WebMCP surface", () => {
           obtainedAt: "2026-08-31T14:00:00Z",
           scope: "Use the summarized Figma context only for this lesson.",
           providerIds: ["figma"],
+          sourceScopes: ["connected_sources"],
         },
         claims: [claim],
       });
@@ -246,6 +312,90 @@ describe("learn.ogram v3 WebMCP surface", () => {
         idempotencyKey: "publish-wrong-revision-01",
       }),
     ).toThrow(/exact compiled revision/i);
+  });
+
+  it("shapes a lesson region by region before compiling the exact draft", () => {
+    const { result } = renderHook(() => useLearningCanvas());
+    const actions = result.current.actions;
+    const started = findTool(actions, "learn_begin_session").execute({
+      topic: "How transformers work",
+    }) as { nonce: string };
+    act(() => actions.skipContext());
+
+    const document = structuredClone(transformerLessonFixture);
+    const outline = {
+      id: document.id,
+      revision: document.revision,
+      topic: document.topic,
+      title: document.title,
+      subtitle: document.subtitle,
+      audience: document.audience,
+      estimatedMinutes: document.estimatedMinutes,
+      objective: document.objective,
+      approvedClaimIds: document.approvedClaimIds,
+      regions: document.regions.map((region) => ({
+        id: region.id,
+        order: region.order,
+        label: region.label,
+        title: region.title,
+        objective: region.objective,
+        kind: region.kind,
+      })),
+    };
+
+    let revision = actions.getState().revision;
+    act(() => {
+      const shaped = findTool(actions, "learn_prepare_lesson").execute({
+        nonce: started.nonce,
+        baseRevision: revision,
+        idempotencyKey: "start-progressive-transformer-01",
+        phase: "start",
+        outline,
+      }) as { revision: number; status: string };
+      revision = shaped.revision;
+      expect(shaped.status).toBe("shaping");
+    });
+    expect(actions.getState().lesson.construction?.regions).toHaveLength(6);
+    expect(actions.getState().session.stage).toBe("context_review");
+
+    document.regions.forEach((region, index) => {
+      act(() => {
+        const shaped = findTool(actions, "learn_prepare_lesson").execute({
+          nonce: started.nonce,
+          baseRevision: revision,
+          idempotencyKey: `shape-progressive-transformer-${index + 1}`,
+          phase: "region",
+          draftRevision: document.revision,
+          region,
+        }) as { revision: number; shapedRegions: number; status: string };
+        revision = shaped.revision;
+        expect(shaped.shapedRegions).toBe(index + 1);
+        expect(shaped.status).toBe(index === document.regions.length - 1 ? "ready_to_finalize" : "shaping");
+      });
+    });
+    expect(
+      actions.getState().lesson.construction?.regions.every(
+        (region) => region.status === "ready" && region.content.length > 0,
+      ),
+    ).toBe(true);
+
+    act(() => {
+      findTool(actions, "learn_prepare_lesson").execute({
+        nonce: started.nonce,
+        baseRevision: revision,
+        idempotencyKey: "finalize-progressive-transformer-01",
+        phase: "finalize",
+        draftRevision: document.revision,
+      });
+    });
+    expect(actions.getState()).toMatchObject({
+      session: { stage: "lesson_review" },
+      lesson: {
+        status: "awaiting_review",
+        construction: null,
+        draft: { title: document.title, revision: document.revision },
+      },
+    });
   });
 
   it("keeps scoped region writes idempotent, concurrency-safe, undoable, and separate from learner evidence", () => {
@@ -422,5 +572,21 @@ describe("learn.ogram v3 WebMCP surface", () => {
     expect(actions.getState().regions.find((item) => item.id === region.id)?.revision).toBe(
       region.revision,
     );
+
+    expect(() =>
+      findTool(actions, "learn_inject_widget").execute({
+        nonce,
+        regionId: region.id,
+        baseRegionRevision: region.revision,
+        idempotencyKey: "whole-document-widget-01",
+        title: "Duplicated visualization",
+        html: "<html><body><h1>Duplicated visualization</h1></body></html>",
+        css: "body{}",
+        javascript: "",
+        accessibleSummary: "A whole document must not be injected into the canvas region.",
+        height: 240,
+        rationale: "Exercise the canvas-owned wrapper gate.",
+      }),
+    ).toThrow(/body fragment/i);
   });
 });

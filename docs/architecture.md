@@ -9,7 +9,7 @@ flowchart LR
   subgraph Host[Codex Desktop]
     Conversation[Codex conversation]
     Agent[Codex agent]
-    Sources[Conversation + optional MCP sources]
+    Sources[Current chat + Codex/project history + optional MCP sources]
   end
 
   subgraph Page[learn.ogram top-level page]
@@ -78,14 +78,19 @@ Each registration group has its own `AbortController`. A stage transition aborts
 
 Context has two distinct gates:
 
-1. Before Codex consults conversation history or a connector, the learner explicitly authorizes a scope and provider set. `learn_propose_context` carries that attestation.
-2. The page renders each minimized claim with route, provider, resource type, sensitivity, purpose, and opaque evidence reference. The learner accepts, corrects, or rejects it.
+1. Before Codex consults the current chat, past tasks/conversations, saved-project history, Ogram, or a connector, the learner explicitly authorizes source scopes and provider IDs. `learn_propose_context` carries that attestation.
+2. Retrieval stays in the Codex host. A short current chat does not collapse the discovery scope: when approved, Codex can use task-listing and task-reading capabilities to inspect relevant accessible history.
+3. The page renders each minimized claim with route, provider, resource type, sensitivity, purpose, and opaque evidence reference. The learner makes one binary decision: **Use this** or **Don’t use**.
 
 An agent cannot mark a claim approved. A claim cannot personalize a lesson until card-level review is complete. Choosing the generic path rejects any still-pending claims and records `personalization: skipped`.
 
 ## Authoring and publication
 
-`learn_prepare_lesson` replaces the old multi-call draft workflow. It accepts a complete region document or the bundled technical-beginner transformer template, validates it, and places a valid result in learner review.
+`learn_prepare_lesson` supports two authoring paths. The preferred path is progressive: `start` commits typed metadata and 4–12 stable region stubs, each `region` call fills one stub with trusted content, and `finalize` assembles and validates the exact document. The preparation preview therefore changes from skeleton rows into compact renders of the real components while Codex is still working. A `complete` phase remains for compatibility and the bundled transformer template.
+
+This split is the transport layer that makes live rendering possible. A WebMCP handler normally receives complete tool arguments, so a renderer alone cannot expose tokens produced before the call begins. Smaller idempotent calls create observable commit points without accepting invalid partial JSON or generated code.
+
+The transport shape mirrors [json-render’s SpecStream model](https://json-render.dev/docs/streaming): stable IDs receive bounded commits and the UI updates after each one. At the rendering boundary, `TrustedContentRenderer.tsx` converts each typed `RegionContent[]` payload into json-render’s flat `root + elements` spec, validates it against the `ogram.learning.v1` catalog, and renders it through the `@json-render/react` registry. The shaping preview and published notebook call that same renderer with different presentation modes; there is no second hand-written content switch. Region-sized WebMCP commits remain the observable transport because a tool handler receives complete arguments rather than an in-flight token stream.
 
 The v3 validator checks:
 
@@ -114,9 +119,9 @@ The semantic snapshot includes:
 
 If an `agent_working` region receives no completion within ninety seconds, local housekeeping returns it to `ready`, records a timeout event, and preserves its prior content. The rest of the notebook remains usable throughout.
 
-## Trusted renderers
+## Trusted json-render catalog
 
-V3 ships native, responsive renderers for:
+V3 ships an explicit `@json-render/react` catalog and native, responsive registry implementations for:
 
 - editorial prose and emphasized explanations;
 - concise key-point grids;
@@ -126,11 +131,15 @@ V3 ships native, responsive renderers for:
 - comparisons;
 - research synthesis and source cards.
 
+Token sequences, attention sources, and transformer-stack stages expose keyboard-accessible inspection states. Static explanatory text remains static; visual models invite manipulation when it adds information rather than motion alone.
+
 The transformer fixture uses six stable regions: goal, tokens/embeddings, self-attention, transformer block, next-token practice, and teach-back. The choice and reflection controls create immutable learner evidence.
 
-## Sandboxed widgets
+## Canvas-only visual output and sandboxed widgets
 
-`learn_inject_widget` accepts HTML, CSS, JavaScript, title, accessible summary, and fixed height. The page enforces 12 KB HTML, 12 KB CSS, 24 KB JavaScript, and a 180–720 px height.
+The WebMCP contract names the learning canvas as the only visual-output destination. Codex should not invoke a host visualization surface or first produce an inline conversation widget and then copy it into the lesson. Trusted declarative content is preferred; when bespoke interaction materially helps, `learn_inject_widget` authors it directly inside the focused region.
+
+`learn_inject_widget` accepts a body-fragment HTML payload, CSS, JavaScript, title, accessible summary, and initial height. The page rejects document shells and duplicate top-level titles, then enforces 12 KB HTML, 12 KB CSS, 24 KB JavaScript, and a 180–720 px height. The canvas supplies the visible title, Reset/Stop controls, fallback, and text alternative. A sandbox-side `ResizeObserver` requests a bounded parent height so the iframe does not become a nested reading scroller.
 
 The iframe is created with:
 
@@ -152,13 +161,16 @@ Every agent write checks its idempotency receipt before its expected revision. A
 
 ## Responsive and accessibility contract
 
-The desktop layout assumes a right-hand Codex browser pane: a narrow sticky concept map, generous notebook measure, and a subtle left-edge agent bridge. At narrower widths, the map becomes a horizontal region index and all two-column review layouts stack. The page has no horizontal page overflow; intentionally wide diagrams/tables scroll inside their own bounded containers.
+The desktop layout assumes a right-hand Codex browser pane: a narrow sticky concept map, generous notebook measure, and a subtle left-edge agent bridge. At narrower widths, the map becomes a horizontal region index and all two-column review layouts stack. Anchor offsets reserve both sticky layers, the compact map uses one continuous connector line, progressive previews fit rather than clipping their last card, and comparison tables become stacked cards instead of creating a horizontal reading trap.
+
+The next major iteration is the slot-based sticky lesson deck specified in `docs/sticky-section-ux-plan.md`. It deliberately separates document-flow slots (focus, anchoring, and reachable tall content) from sticky visual panels (the constrained object the learner sees).
 
 Landmarks, semantic headings, native controls, focus-visible styling, text alternatives, SVG titles, live regions, keyboard Escape handling, and reduced-motion rules are part of the shipped implementation.
 
 ## Prototype boundaries
 
 - A site cannot force an unsolicited Codex message; the bootstrap tool returns the guide Codex should relay.
+- A site cannot read Codex task history. The host agent performs consented discovery and sends minimized claims through the page tool.
 - The page cannot control Codex Desktop’s split layout.
 - The in-browser persistence adapter is a local prototype cache, not a multi-tenant canonical store.
 - The sandbox constrains capabilities but cannot guarantee interruption of all pathological CPU-heavy JavaScript; production should add stronger process/time isolation.

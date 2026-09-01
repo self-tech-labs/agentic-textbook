@@ -33,7 +33,11 @@ describe("learn.ogram v3", () => {
     );
 
     await waitFor(() => expect(tool("learn_begin_session")).toBeDefined());
-    await waitFor(() => expect(screen.getByText(/1 tools · v3/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/local preview · v3/i)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /choose context/i }));
+    expect(screen.getByText(/context reviewed/i)).toBeInTheDocument();
+    expect(screen.getByText(/past Codex work, projects/i)).toBeInTheDocument();
   });
 
   it("does not race native registration during React development remounts", async () => {
@@ -116,8 +120,22 @@ describe("learn.ogram v3", () => {
     expect(
       screen.getByRole("heading", { name: /self-attention: gather the useful context/i }),
     ).toBeInTheDocument();
+    const lessonDeck = document.querySelector(".lesson-deck");
+    const lessonSlots = lessonDeck?.querySelectorAll<HTMLElement>(".lesson-slot");
+    expect(document.documentElement).toHaveClass("has-lesson-deck");
+    expect(lessonSlots).toHaveLength(6);
+    expect(lessonSlots?.[0]).toHaveAttribute("id", "region-transformer-goal");
+    expect(lessonSlots?.[0]).toHaveAttribute("data-canvas-region", "transformer-goal");
+    expect(lessonSlots?.[0]).toHaveAttribute("data-panel-mode", "screen");
+    expect(lessonSlots?.[0]?.querySelectorAll(".lesson-scene-marker")).toHaveLength(2);
+    expect(lessonSlots?.[0]?.querySelector(".lesson-panel > section")).toBeInTheDocument();
     expect(screen.getByText(/query–key scores are normalized with softmax/i)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /what is the training target/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /show tokens scene 2 of 2/i }));
+    fireEvent.click(screen.getByRole("button", { name: /inspect token model/i }));
+    expect(screen.getByText("“model”").parentElement).toHaveTextContent(
+      /starts with a learned vector/i,
+    );
     await waitFor(() =>
       expect(window.__OGRAM_WEBMCP_TOOLS__?.learn_get_canvas_snapshot).toBeDefined(),
     );
@@ -155,7 +173,7 @@ describe("learn.ogram v3", () => {
       });
     });
 
-    const widgetHeading = screen.getByRole("heading", {
+    const widgetHeading = await screen.findByRole("heading", {
       name: /three-token softmax playground/i,
     });
     expect(widgetHeading).toBeInTheDocument();
@@ -195,6 +213,7 @@ describe("learn.ogram v3", () => {
           obtainedAt: "2026-08-31T14:00:00.000Z",
           scope: "Propose relevant conversation and calendar context for this lesson only.",
           providerIds: ["codex-conversation", "google-calendar"],
+          sourceScopes: ["current_conversation", "connected_sources"],
         },
         claims: [
           {
@@ -233,6 +252,8 @@ describe("learn.ogram v3", () => {
     expect(screen.getByText(/twenty-minute study window/i)).toBeInTheDocument();
     const useButtons = screen.getAllByRole("button", { name: /use this/i });
     expect(useButtons).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /^correct$/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /don’t use/i })).toHaveLength(2);
     fireEvent.click(useButtons[0]!);
     fireEvent.click(useButtons[1]!);
 
@@ -245,5 +266,63 @@ describe("learn.ogram v3", () => {
       "claim-coding-baseline",
       "claim-time-box",
     ]);
+  });
+
+  it("renders progressive lesson construction as each region arrives", async () => {
+    render(<App />);
+    await waitFor(() => expect(window.__OGRAM_WEBMCP_TOOLS__).toBeDefined());
+    let nonce = "";
+    await act(async () => {
+      nonce = (
+        tool("learn_begin_session").execute({ topic: "How transformers work" }) as {
+          nonce: string;
+        }
+      ).nonce;
+    });
+    await waitFor(() =>
+      expect(window.__OGRAM_WEBMCP_TOOLS__?.learn_get_session).toBeDefined(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue without personal context/i }),
+    );
+
+    const beforeStart = tool("learn_get_session").execute({ nonce }) as {
+      revision: number;
+    };
+    let revision = beforeStart.revision;
+    let draftRevision = 0;
+    let firstRegionId = "";
+    await act(async () => {
+      const started = tool("learn_prepare_lesson").execute({
+        nonce,
+        baseRevision: revision,
+        idempotencyKey: "ui-progressive-start-01",
+        phase: "start",
+        template: "transformer_technical_beginner",
+      }) as { revision: number; draftRevision: number; regionIds: string[] };
+      revision = started.revision;
+      draftRevision = started.draftRevision;
+      firstRegionId = started.regionIds[0]!;
+    });
+
+    expect(screen.getByText(/0\/6 sections shaped/i)).toBeInTheDocument();
+    expect(screen.getByText(/each json commit is validated/i)).toBeInTheDocument();
+
+    await act(async () => {
+      tool("learn_prepare_lesson").execute({
+        nonce,
+        baseRevision: revision,
+        idempotencyKey: "ui-progressive-region-01",
+        phase: "region",
+        template: "transformer_technical_beginner",
+        draftRevision,
+        regionId: firstRegionId,
+      });
+    });
+
+    expect(screen.getByText(/1\/6 sections shaped/i)).toBeInTheDocument();
+    expect(screen.getByText("The job in one sentence")).toBeInTheDocument();
+    expect(document.querySelector('[data-json-render="ogram.learning.v1"]')).toBeInTheDocument();
+    expect(screen.getByLabelText("Shaped")).toBeInTheDocument();
   });
 });

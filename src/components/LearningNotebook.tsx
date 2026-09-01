@@ -1,12 +1,18 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { ThinkingOrb } from "thinking-orbs";
 import type {
   AgentLearningCanvasState,
   CanvasRegion,
   LearnerContextClaim,
+  LessonRegion,
   RegionContent,
 } from "../domain/agentCanvas";
 import type { CanvasActions } from "../hooks/useLearningCanvas";
-import { SandboxedWidget } from "./SandboxedWidget";
+import {
+  TrustedContentProvider,
+  TrustedContentRenderer,
+  trustedContentComponentNames,
+} from "./TrustedContentRenderer";
 
 export interface NotebookRegistration {
   supported: boolean;
@@ -25,22 +31,56 @@ interface LearningNotebookProps {
 function AgentBridge({
   registration,
   working,
+  constructionProgress,
 }: {
   registration: NotebookRegistration;
   working: boolean;
+  constructionProgress: { shaped: number; total: number } | null;
 }) {
   const status = registration.registering
     ? "Connecting"
     : registration.supported
-      ? working
-        ? "Codex is shaping the focused region"
-        : `${registration.toolCount} site tool${registration.toolCount === 1 ? "" : "s"} available`
+      ? constructionProgress
+        ? constructionProgress.shaped === constructionProgress.total
+          ? "Notebook ready to compile"
+          : `Shaping notebook · ${constructionProgress.shaped}/${constructionProgress.total}`
+        : working
+          ? "Codex is shaping the focused region"
+          : "Canvas connected to Codex"
       : "Open in Codex Desktop";
   return (
     <div className={`agent-bridge ${working ? "agent-bridge--working" : ""}`} aria-label={status}>
-      <span className="agent-bridge__signal" aria-hidden="true" />
+      <span className="agent-bridge__signal" aria-hidden="true">
+        {working ? <ThinkingOrb state="shaping" size={20} theme="light" /> : <i />}
+      </span>
       <span className="agent-bridge__label">{status}</span>
     </div>
+  );
+}
+
+function SessionControls({ actions }: { actions: CanvasActions }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  return (
+    <details className="session-menu" ref={detailsRef}>
+      <summary>Session</summary>
+      <div className="session-menu__popover" role="dialog" aria-label="Start a new topic">
+        <span className="session-menu__eyebrow">Local notebook</span>
+        <strong>Start a new topic?</strong>
+        <p>This removes the current notebook and its saved answers from this browser.</p>
+        <div className="session-menu__actions">
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => detailsRef.current?.removeAttribute("open")}
+          >
+            Keep it
+          </button>
+          <button type="button" className="danger-button" onClick={actions.reset}>
+            Clear notebook
+          </button>
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -73,22 +113,93 @@ function AppHeader({
       </div>
       <div className="app-header__right">
         <span className="app-header__meta">
-          {registration.registering ? "Registering…" : `${registration.toolCount} tools · v3`}
+          {registration.registering
+            ? "Connecting…"
+            : registration.supported
+              ? "Codex ready · v3"
+              : "Local preview · v3"}
         </span>
-        {state.session.id ? (
-          <details className="session-menu">
-            <summary>Session</summary>
-            <div>
-              <strong>Start a different topic?</strong>
-              <p>This clears the local v3 notebook, including its saved learner evidence.</p>
-              <button type="button" className="secondary-button" onClick={actions.reset}>
-                Start a new topic
-              </button>
-            </div>
-          </details>
-        ) : null}
+        {state.session.id ? <SessionControls actions={actions} /> : null}
       </div>
     </header>
+  );
+}
+
+const readyLoopSteps = [
+  {
+    number: "01",
+    label: "Name the goal",
+    description: "You set the topic and the finish line in the Codex conversation.",
+    canvasLabel: "Goal captured",
+  },
+  {
+    number: "02",
+    label: "Choose context",
+    description: "You can allow relevant context from this chat, past Codex work, projects, or connected sources—then review every claim here.",
+    canvasLabel: "Context reviewed",
+  },
+  {
+    number: "03",
+    label: "Watch it form",
+    description: "Sections arrive one by one while Codex constructs the learning path.",
+    canvasLabel: "3 of 6 sections",
+  },
+  {
+    number: "04",
+    label: "Focus + reshape",
+    description: "Select a region, ask naturally, and only that part changes.",
+    canvasLabel: "Region in focus",
+  },
+] as const;
+
+function ReadyLoop() {
+  const [activeStep, setActiveStep] = useState(2);
+  const active = readyLoopSteps[activeStep]!;
+  return (
+    <aside className="ready-specimen" aria-labelledby="learning-loop-title">
+      <div className="ready-specimen__heading">
+        <span>Click through the loop</span>
+        <strong id="learning-loop-title">One canvas, two roles</strong>
+      </div>
+      <div className={`loop-model loop-model--${activeStep + 1}`} aria-live="polite">
+        <div className="loop-model__actors" aria-hidden="true">
+          <span>You decide</span>
+          <i>↔</i>
+          <span>Codex shapes</span>
+        </div>
+        <div className="loop-model__canvas">
+          <header>
+            <span>Learning canvas</span>
+            <i>{active.number}</i>
+          </header>
+          <strong>{active.canvasLabel}</strong>
+          <div className="loop-model__lines" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </div>
+          {activeStep === 1 ? <span className="loop-model__approval">✓ learner approved</span> : null}
+          {activeStep === 2 ? <span className="loop-model__building">shaping now</span> : null}
+          {activeStep === 3 ? <span className="loop-model__focus">focused</span> : null}
+        </div>
+        <p>{active.description}</p>
+      </div>
+      <ol className="loop-steps">
+        {readyLoopSteps.map((step, index) => (
+          <li key={step.number} className={activeStep === index ? "is-active" : ""}>
+            <button
+              type="button"
+              aria-current={activeStep === index ? "step" : undefined}
+              onClick={() => setActiveStep(index)}
+            >
+              <span>{step.number}</span>
+              <span>{step.label}</span>
+              <i aria-hidden="true">{activeStep === index ? "—" : "+"}</i>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </aside>
   );
 }
 
@@ -101,7 +212,7 @@ function ReadyCanvas({
 }) {
   const [copied, setCopied] = useState(false);
   const starter =
-    "Teach me how transformers work. Start by calling learn_begin_session on this page, relay its short guide, and ask before using any personal context.";
+    "Teach me how transformers work. Start by calling learn_begin_session on this page, relay its short guide, ask which current or past Codex context you may inspect, then shape the lesson live section by section. Keep every generated visual on the WebMCP canvas—do not create an inline visualization in our conversation.";
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(starter);
@@ -157,19 +268,7 @@ function ReadyCanvas({
 
         {registrationError ? <p className="inline-error">{registrationError}</p> : null}
       </section>
-      <aside className="ready-specimen" aria-label="How the shared learning loop works">
-        <div className="specimen-orbit" aria-hidden="true">
-          <span className="specimen-orbit__core">you</span>
-          <span className="specimen-orbit__agent">C</span>
-          <span className="specimen-orbit__path" />
-        </div>
-        <ol>
-          <li><span>01</span> Name the concept and your reason.</li>
-          <li><span>02</span> Approve only the context that helps.</li>
-          <li><span>03</span> Let Codex construct the first notebook.</li>
-          <li><span>04</span> Focus anything and ask naturally on the left.</li>
-        </ol>
-      </aside>
+      <ReadyLoop />
     </main>
   );
 }
@@ -181,17 +280,14 @@ function ContextCard({
   claim: LearnerContextClaim;
   actions: CanvasActions;
 }) {
-  const [correcting, setCorrecting] = useState(false);
-  const [correction, setCorrection] = useState(claim.summary);
   const [error, setError] = useState<string | null>(null);
 
-  const review = (decision: "accepted" | "corrected" | "rejected") => {
+  const review = (decision: "accepted" | "rejected") => {
     try {
       setError(null);
       actions.reviewContextClaim({
         claimId: claim.id,
         decision,
-        correctedSummary: decision === "corrected" ? correction : undefined,
       });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The claim could not be reviewed.");
@@ -211,34 +307,14 @@ function ContextCard({
         <span>for {claim.allowedPurposes.join(", ")}</span>
       </div>
       {claim.review === "pending" ? (
-        <>
-          {correcting ? (
-            <label className="correction-field">
-              Your correction
-              <textarea
-                value={correction}
-                onChange={(event) => setCorrection(event.target.value)}
-                maxLength={240}
-                rows={3}
-              />
-            </label>
-          ) : null}
-          <div className="context-card__actions">
-            <button type="button" className="primary-button" onClick={() => review("accepted")}>
-              Use this
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => (correcting ? review("corrected") : setCorrecting(true))}
-            >
-              {correcting ? "Save correction" : "Correct"}
-            </button>
-            <button type="button" className="text-button" onClick={() => review("rejected")}>
-              Don’t use
-            </button>
-          </div>
-        </>
+        <div className="context-card__actions" aria-label="Choose whether this context may shape the lesson">
+          <button type="button" className="primary-button" onClick={() => review("accepted")}>
+            Use this
+          </button>
+          <button type="button" className="secondary-button" onClick={() => review("rejected")}>
+            Don’t use
+          </button>
+        </div>
       ) : (
         <span className="review-stamp">
           {claim.review === "accepted"
@@ -253,20 +329,133 @@ function ContextCard({
   );
 }
 
-function NotebookSkeleton({ regions }: { regions: CanvasRegion[] }) {
+type OutlineRegion = CanvasRegion | LessonRegion;
+
+function sectionLabel(region: OutlineRegion): string {
+  const [, descriptor] = region.label.split(" · ", 2);
+  return descriptor ?? region.kind;
+}
+
+function NotebookOutline({
+  regions,
+  mode,
+  activelyShaping = false,
+}: {
+  regions: OutlineRegion[];
+  mode: "shaping" | "review";
+  activelyShaping?: boolean;
+}) {
+  const firstQueuedIndex = regions.findIndex(
+    (region) => "status" in region && region.status === "skeleton",
+  );
+  const complete = mode === "review" || firstQueuedIndex === -1;
   return (
-    <div className="notebook-skeleton" aria-label="Lesson structure being prepared" aria-busy="true">
-      {regions.map((region) => (
-        <section key={region.id} className="skeleton-region">
-          <span>{region.label}</span>
-          <div>
+    <ol
+      className={`notebook-outline notebook-outline--${mode}`}
+      aria-label={mode === "shaping" ? "Lesson structure being prepared" : "Compiled lesson structure"}
+      aria-busy={mode === "shaping" && activelyShaping && !complete}
+    >
+      {regions.map((region, index) => {
+        const status = "status" in region ? region.status : "ready";
+        const shaped = status !== "skeleton";
+        const active = mode === "shaping" && activelyShaping && !shaped && index === firstQueuedIndex;
+        const componentCount = region.content.length + (region.interaction ? 1 : 0);
+        return (
+        <li
+          key={region.id}
+          id={`construction-region-${region.id}`}
+          className={`notebook-outline__row notebook-outline__row--${shaped ? "ready" : active ? "active" : "queued"}`}
+        >
+          <span className="notebook-outline__index">
+            {String(region.order).padStart(2, "0")}
+          </span>
+          <span className="notebook-outline__label">{sectionLabel(region)}</span>
+          <span className="notebook-outline__mark">
+            {shaped ? (
+              <i aria-label={mode === "review" ? "Stable" : "Shaped"}>✓</i>
+            ) : active ? (
+              <ThinkingOrb
+                state="shaping"
+                size={20}
+                theme="light"
+                aria-label={`Shaping ${region.title}`}
+              />
+            ) : (
+              <i className="is-queued" aria-label="Queued" />
+            )}
+          </span>
+          <div className="notebook-outline__content">
             <h3>{region.title}</h3>
-            <p>{region.objective}</p>
-            <i />
-            <i />
+            {mode === "review" ? (
+              <p className="notebook-outline__objective">{region.objective}</p>
+            ) : shaped ? (
+              <TrustedContentRenderer blocks={region.content} mode="preview" />
+            ) : (
+              <div className="skeleton-lines" aria-hidden="true"><i /><i /></div>
+            )}
           </div>
-        </section>
-      ))}
+          <small className="notebook-outline__meta">
+            {mode === "review"
+              ? region.kind
+              : shaped
+                ? `${componentCount} component${componentCount === 1 ? "" : "s"}`
+                : active
+                  ? "rendering"
+                  : "queued"}
+          </small>
+        </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function ConstructionActivity({
+  regions,
+  constructionStarted,
+  contextReady,
+}: {
+  regions: CanvasRegion[];
+  constructionStarted: boolean;
+  contextReady: boolean;
+}) {
+  const shaped = regions.filter((region) => region.status !== "skeleton").length;
+  const complete = shaped === regions.length && regions.length > 0;
+  const activeRegion = regions.find((region) => region.status === "skeleton");
+  const status = complete
+    ? "All region specs are ready"
+    : constructionStarted
+      ? `Composing ${activeRegion?.title ?? "the next region"}`
+      : contextReady
+        ? "Ready for the first region spec"
+        : "Notebook scaffold ready";
+  const description = complete
+    ? "The trusted document is ready for its compiler check."
+    : constructionStarted
+      ? "Each JSON commit is validated, then rendered through the same catalog as the finished notebook."
+      : contextReady
+        ? "Codex can now commit one bounded JSON region at a time."
+        : "Choose what context may shape the lesson before rendering begins.";
+  return (
+    <div className={`construction-activity ${constructionStarted ? "is-active" : ""}`} role="status" aria-live="polite">
+      <ThinkingOrb
+        state={complete ? "solving" : constructionStarted ? "shaping" : contextReady ? "connecting" : "breathing"}
+        size={64}
+        theme="light"
+        aria-label={status}
+      />
+      <div className="construction-activity__copy">
+        <span>JSON renderer · trusted catalog</span>
+        <strong>{status}</strong>
+        <p>{description}</p>
+        <div className="construction-activity__meta">
+          <span>{shaped}/{regions.length} region commits</span>
+          <span>{trustedContentComponentNames.length} governed components</span>
+        </div>
+      </div>
+      <div className="construction-activity__meter" aria-hidden="true">
+        <i style={{ width: `${regions.length ? (shaped / regions.length) * 100 : 0}%` }} />
+      </div>
     </div>
   );
 }
@@ -275,6 +464,9 @@ function ContextReview({ state, actions }: { state: AgentLearningCanvasState; ac
   const [error, setError] = useState<string | null>(null);
   const pending = state.contextClaims.filter((claim) => claim.review === "pending");
   const reviewed = state.contextClaims.filter((claim) => claim.review !== "pending");
+  const construction = state.lesson.construction;
+  const previewRegions = construction?.regions ?? state.regions;
+  const shapedRegions = previewRegions.filter((region) => region.status !== "skeleton").length;
   const skip = () => {
     try {
       setError(null);
@@ -289,8 +481,9 @@ function ContextReview({ state, actions }: { state: AgentLearningCanvasState; ac
         <p className="eyebrow">First: decide what may shape this lesson</p>
         <h1 id="context-title">Context stays proposed until you say yes.</h1>
         <p className="context-review__lede">
-          Codex may bring a small claim from your conversation or a connected source, but the
-          canvas receives no raw mail, calendar data, or credentials. Review each claim here.
+          With your permission, Codex may look across this chat, relevant past tasks and project
+          conversations, Ogram, or a connected source. Only a short claim enters the canvas—never
+          raw messages, files, calendar data, or credentials. Use it or leave it out.
         </p>
 
         {state.contextClaims.length ? (
@@ -305,8 +498,8 @@ function ContextReview({ state, actions }: { state: AgentLearningCanvasState; ac
             <div>
               <strong>No learner context has entered the canvas.</strong>
               <p>
-                Tell Codex in the conversation whether it may propose relevant context, or continue
-                with the generic technical-beginner path.
+                Tell Codex whether it may inspect relevant current or past work and propose a few
+                minimized claims, or continue with the generic technical-beginner path.
               </p>
             </div>
           </div>
@@ -316,8 +509,10 @@ function ContextReview({ state, actions }: { state: AgentLearningCanvasState; ac
           <div className="gate-ready" role="status">
             <span aria-hidden="true">✓</span>
             <p>
-              <strong>Context choice complete.</strong> Codex can now compile the notebook for your
-              review.
+              <strong>Context choice complete.</strong>{" "}
+              {construction
+                ? "Keep this canvas open—the lesson is taking shape section by section."
+                : "Codex can now shape the notebook live for your review."}
             </p>
           </div>
         ) : null}
@@ -331,10 +526,23 @@ function ContextReview({ state, actions }: { state: AgentLearningCanvasState; ac
       </section>
       <aside className="preparation-preview">
         <div className="preview-heading">
-          <span>Notebook preview</span>
-          <span>{state.session.topic}</span>
+          <span>{construction?.document.title ?? "Notebook preview"}</span>
+          <span>
+            {construction
+              ? `${shapedRegions}/${previewRegions.length} sections shaped`
+              : state.session.topic}
+          </span>
         </div>
-        <NotebookSkeleton regions={state.regions} />
+        <ConstructionActivity
+          regions={previewRegions}
+          constructionStarted={Boolean(construction)}
+          contextReady={pending.length === 0 && state.session.personalization !== "undecided"}
+        />
+        <NotebookOutline
+          regions={previewRegions}
+          mode="shaping"
+          activelyShaping={Boolean(construction)}
+        />
       </aside>
     </main>
   );
@@ -392,138 +600,10 @@ function LessonReview({ state, actions }: { state: AgentLearningCanvasState; act
           <span id="outline-title">Notebook structure</span>
           <span>{draft.regions.length} stable regions</span>
         </div>
-        <ol>
-          {draft.regions.map((region) => (
-            <li key={region.id}>
-              <span>{String(region.order).padStart(2, "0")}</span>
-              <div>
-                <strong>{region.title}</strong>
-                <p>{region.objective}</p>
-              </div>
-              <small>{region.kind}</small>
-            </li>
-          ))}
-        </ol>
+        <NotebookOutline regions={draft.regions} mode="review" />
       </section>
     </main>
   );
-}
-
-function AttentionMap({ block }: { block: Extract<RegionContent, { type: "attention_map" }> }) {
-  const width = 720;
-  const height = 250;
-  const gap = width / (block.tokens.length + 1);
-  const targetX = gap * (block.focusIndex + 1);
-  const descriptionId = useId();
-  return (
-    <figure className="attention-figure">
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-labelledby={descriptionId}
-        preserveAspectRatio="xMidYMid meet"
-      >
-        <title id={descriptionId}>
-          Attention into {block.tokens[block.focusIndex]}: {block.tokens.map((token, index) => `${token} ${Math.round(block.weights[index]! * 100)} percent`).join(", ")}.
-        </title>
-        <text x="24" y="25" className="svg-kicker">KEYS + VALUES</text>
-        {block.tokens.map((token, index) => {
-          const x = gap * (index + 1);
-          const weight = block.weights[index]!;
-          return (
-            <g key={`${token}-${index}`}>
-              <path
-                d={`M ${x} 76 C ${x} 138, ${targetX} 128, ${targetX} 184`}
-                className="attention-path"
-                style={{ strokeWidth: 1.5 + weight * 14, opacity: 0.18 + weight * 0.82 }}
-              />
-              <rect x={x - 46} y="46" width="92" height="42" rx="21" className="attention-token" />
-              <text x={x} y="72" textAnchor="middle" className="attention-token-label">{token}</text>
-              <text x={x} y="111" textAnchor="middle" className="attention-weight">{Math.round(weight * 100)}%</text>
-            </g>
-          );
-        })}
-        <rect x={targetX - 64} y="181" width="128" height="48" rx="4" className="attention-target" />
-        <text x={targetX} y="211" textAnchor="middle" className="attention-target-label">
-          query: {block.tokens[block.focusIndex]}
-        </text>
-      </svg>
-      <figcaption>{block.explanation}</figcaption>
-    </figure>
-  );
-}
-
-function ContentBlock({ block }: { block: RegionContent }) {
-  if (block.type === "prose") {
-    return (
-      <div className="prose-block">
-        {block.heading ? <h3>{block.heading}</h3> : null}
-        <p>{block.text}</p>
-        {block.emphasis ? <blockquote>{block.emphasis}</blockquote> : null}
-      </div>
-    );
-  }
-  if (block.type === "key_points") {
-    return <ul className="key-points">{block.items.map((item) => <li key={item}>{item}</li>)}</ul>;
-  }
-  if (block.type === "token_sequence") {
-    return (
-      <figure className="token-figure">
-        <div className="token-row" aria-label={`Token sequence: ${block.tokens.join(", ")}`}>
-          {block.tokens.map((token, index) => (
-            <span key={`${token}-${index}`} className={block.highlightedIndex === index ? "is-highlighted" : ""}>
-              <small>{index + 1}</small>{token}
-            </span>
-          ))}
-        </div>
-        <figcaption>{block.caption}</figcaption>
-      </figure>
-    );
-  }
-  if (block.type === "attention_map") return <AttentionMap block={block} />;
-  if (block.type === "transformer_stack") {
-    return (
-      <figure className="stack-figure">
-        <ol>
-          {block.stages.map((stage, index) => (
-            <li key={`${stage.label}-${index}`}>
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <div><strong>{stage.label}</strong><p>{stage.detail}</p></div>
-            </li>
-          ))}
-        </ol>
-        <figcaption>{block.caption}</figcaption>
-      </figure>
-    );
-  }
-  if (block.type === "comparison") {
-    return (
-      <div className="comparison-wrap">
-        <table>
-          <thead><tr><th>Signal</th><th>{block.leftLabel}</th><th>{block.rightLabel}</th></tr></thead>
-          <tbody>{block.rows.map((row) => <tr key={row.label}><th>{row.label}</th><td>{row.left}</td><td>{row.right}</td></tr>)}</tbody>
-        </table>
-      </div>
-    );
-  }
-  if (block.type === "source_cards") {
-    return (
-      <aside className="research-block">
-        <div className="research-block__heading"><span aria-hidden="true">↗</span><strong>Research attached by Codex</strong></div>
-        <p>{block.summary}</p>
-        <ul>
-          {block.sources.map((source) => (
-            <li key={source.id}>
-              <a href={source.url} target="_blank" rel="noreferrer">{source.title}</a>
-              <span>{source.publisher}{source.publishedAt ? ` · ${source.publishedAt}` : ""}</span>
-              <p>{source.claim}</p>
-            </li>
-          ))}
-        </ul>
-      </aside>
-    );
-  }
-  return <SandboxedWidget widget={block} />;
 }
 
 function LearnerInteraction({
@@ -602,17 +682,83 @@ function LearnerInteraction({
   );
 }
 
+type LessonSceneType = RegionContent["type"] | "interaction";
+
+interface LessonScene {
+  id: string;
+  label: string;
+  type: LessonSceneType;
+  blocks: RegionContent[];
+  interaction: boolean;
+}
+
+const lessonSceneLabels: Record<LessonSceneType, string> = {
+  prose: "Concept",
+  key_points: "Essentials",
+  token_sequence: "Tokens",
+  attention_map: "Model",
+  transformer_stack: "Block",
+  comparison: "Compare",
+  source_cards: "Sources",
+  sandbox_widget: "Lab",
+  interaction: "Practice",
+};
+
+function buildLessonScenes(region: CanvasRegion): LessonScene[] {
+  const labelTotals = region.content.reduce<Record<string, number>>((totals, block) => {
+    const label = lessonSceneLabels[block.type];
+    totals[label] = (totals[label] ?? 0) + 1;
+    return totals;
+  }, {});
+  const labelOccurrences: Record<string, number> = {};
+  const contentScenes = region.content.map((block, index) => {
+    const baseLabel = lessonSceneLabels[block.type];
+    labelOccurrences[baseLabel] = (labelOccurrences[baseLabel] ?? 0) + 1;
+    const label =
+      labelTotals[baseLabel]! > 1
+        ? `${baseLabel} ${labelOccurrences[baseLabel]}`
+        : baseLabel;
+    return {
+      id: `${region.id}-${block.type}-${index}`,
+      label,
+      type: block.type,
+      blocks: [block],
+      interaction: false,
+    };
+  });
+  const interactionScene: LessonScene[] = region.interaction
+    ? [
+        {
+          id: `${region.id}-interaction`,
+          label: region.interaction.type === "reflection" ? "Reflect" : "Practice",
+          type: "interaction",
+          blocks: [],
+          interaction: true,
+        },
+      ]
+    : [];
+
+  return [...contentScenes, ...interactionScene];
+}
+
 function RegionSection({
   region,
   focused,
   actions,
+  scenes,
+  activeScene,
+  onSceneSelect,
 }: {
   region: CanvasRegion;
   focused: boolean;
   actions: CanvasActions;
+  scenes: LessonScene[];
+  activeScene: number;
+  onSceneSelect: (index: number) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const latestUndo = region.history.at(-1)?.undoToken;
+  const scene = scenes[activeScene] ?? scenes[0];
   const captureSelection = () => {
     const selection = window.getSelection();
     const text = selection?.toString().trim() || null;
@@ -634,42 +780,83 @@ function RegionSection({
   };
   return (
     <section
-      id={`region-${region.id}`}
       className={`notebook-region ${focused ? "notebook-region--focused" : ""} notebook-region--${region.status}`}
-      data-canvas-region={region.id}
       aria-labelledby={`${region.id}-title`}
+      aria-describedby={`${region.id}-objective`}
       onPointerDown={() => actions.focusRegion(region.id)}
       onMouseUp={captureSelection}
       onKeyUp={captureSelection}
     >
-      <header className="region-header">
-        <div>
-          <span className="region-index">{region.label}</span>
-          <h2 id={`${region.id}-title`}>{region.title}</h2>
-          <p>{region.objective}</p>
-        </div>
-        {focused ? <span className="focus-badge">In focus</span> : null}
-      </header>
+      <div className="region-stage-header">
+        <header className="region-header">
+          <div>
+            <span className="region-index">{region.label}</span>
+            <h2 id={`${region.id}-title`}>{region.title}</h2>
+            <p id={`${region.id}-objective`} className="sr-only">{region.objective}</p>
+          </div>
+          {focused ? <span className="focus-badge">In focus</span> : null}
+        </header>
 
-      {region.status === "agent_working" ? (
-        <div className="agent-working" role="status">
-          <span aria-hidden="true"><i /><i /><i /></span>
-          <p><strong>Codex is working in this region.</strong> The rest of the notebook stays usable.</p>
-        </div>
-      ) : null}
+        {region.status === "agent_working" ? (
+          <div className="agent-working" role="status">
+            <ThinkingOrb
+              state="working"
+              size={20}
+              theme="light"
+              aria-label={`Codex is working in ${region.title}`}
+            />
+            <p><strong>Codex is working in this region.</strong> The rest of the notebook stays usable.</p>
+          </div>
+        ) : null}
 
-      <div className="region-content">
-        {region.content.map((block, index) => (
-          <ContentBlock key={`${block.type}-${index}`} block={block} />
-        ))}
+        <nav className="lesson-scene-nav" aria-label={`${region.title} section scenes`}>
+          <span className="lesson-scene-nav__status" aria-live="polite">
+            <strong>{String(activeScene + 1).padStart(2, "0")}</strong>
+            <span>{scene?.label ?? "Section"}</span>
+            <span>of {String(scenes.length).padStart(2, "0")}</span>
+          </span>
+          <div className="lesson-scene-nav__steps">
+            {scenes.map((item, index) => (
+              <button
+                key={item.id}
+                type="button"
+                className={index === activeScene ? "is-active" : ""}
+                aria-current={index === activeScene ? "step" : undefined}
+                aria-label={`Show ${item.label} scene ${index + 1} of ${scenes.length}`}
+                onClick={() => onSceneSelect(index)}
+              >
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </nav>
       </div>
 
-      <LearnerInteraction region={region} actions={actions} />
+      {scene ? (
+        <div
+          key={scene.id}
+          className={`region-scene region-scene--${scene.type}`}
+          data-lesson-scene={scene.type}
+        >
+          {scene.blocks.length ? (
+            <div className="region-content">
+              <TrustedContentRenderer blocks={scene.blocks} />
+            </div>
+          ) : null}
+          {scene.interaction ? <LearnerInteraction region={region} actions={actions} /> : null}
+        </div>
+      ) : null}
 
       {region.status === "updated" ? (
         <footer className="region-attribution">
           <span><i aria-hidden="true" /> Updated by Codex</span>
-          {region.updateRationale ? <span>{region.updateRationale}</span> : null}
+          {region.updateRationale ? (
+            <details>
+              <summary>Why this changed</summary>
+              <span>{region.updateRationale}</span>
+            </details>
+          ) : null}
           {latestUndo ? <button type="button" className="text-button" onClick={undo}>Undo</button> : null}
         </footer>
       ) : null}
@@ -678,44 +865,323 @@ function RegionSection({
   );
 }
 
+const PANEL_TOP_GAP = 12;
+const PANEL_BOTTOM_GAP = 14;
+
+function LessonSlot({
+  region,
+  focused,
+  actions,
+  chromeCollapsed,
+}: {
+  region: CanvasRegion;
+  focused: boolean;
+  actions: CanvasActions;
+  chromeCollapsed: boolean;
+}) {
+  const slotRef = useRef<HTMLDivElement>(null);
+  const scenes = useMemo(() => buildLessonScenes(region), [region]);
+  const [activeScene, setActiveScene] = useState(0);
+  const previousSceneCountRef = useRef(scenes.length);
+
+  useEffect(() => {
+    setActiveScene((current) => Math.min(current, Math.max(0, scenes.length - 1)));
+  }, [region.id, scenes.length]);
+
+  useEffect(() => {
+    const previousSceneCount = previousSceneCountRef.current;
+    previousSceneCountRef.current = scenes.length;
+    if (
+      scenes.length <= previousSceneCount ||
+      scenes.at(-1)?.type !== "sandbox_widget"
+    ) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => selectScene(scenes.length - 1));
+    return () => window.cancelAnimationFrame(frame);
+  }, [scenes.length]);
+
+  useEffect(() => {
+    const slot = slotRef.current;
+    if (!slot) return;
+
+    let frame = 0;
+    let mounted = true;
+    const measure = () => {
+      frame = 0;
+      if (!mounted) return;
+      const headerBottom = Math.max(
+        0,
+        document.querySelector<HTMLElement>(".app-header")?.getBoundingClientRect()
+          .bottom ?? 0,
+      );
+      const mapRect = document
+        .querySelector<HTMLElement>(".concept-map")
+        ?.getBoundingClientRect();
+      const chromeBottom =
+        mapRect && mapRect.height <= 120 ? mapRect.bottom : headerBottom;
+      const stickyTop = Math.max(0, Math.round(chromeBottom + PANEL_TOP_GAP));
+      const availableHeight = Math.max(
+        240,
+        Math.floor(window.innerHeight - stickyTop - PANEL_BOTTOM_GAP),
+      );
+      const sceneStep = availableHeight;
+
+      slot.style.setProperty("--lesson-sticky-top", `${stickyTop}px`);
+      slot.style.setProperty("--lesson-available-height", `${availableHeight}px`);
+      slot.style.setProperty("--lesson-scene-step", `${sceneStep}px`);
+      slot.style.setProperty("--lesson-scene-count", String(Math.max(1, scenes.length)));
+      slot.dataset.panelAvailableHeight = String(availableHeight);
+    };
+    const scheduleMeasure = () => {
+      if (!mounted) return;
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(measure);
+    };
+    let resizeTimer = 0;
+    const scheduleResizeMeasure = () => {
+      scheduleMeasure();
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(scheduleMeasure, 320);
+    };
+    window.addEventListener("resize", scheduleResizeMeasure, { passive: true });
+    scheduleMeasure();
+    const transitionTimer = window.setTimeout(scheduleMeasure, 320);
+    void document.fonts?.ready.then(scheduleMeasure);
+
+    return () => {
+      mounted = false;
+      if (frame) window.cancelAnimationFrame(frame);
+      window.clearTimeout(transitionTimer);
+      window.clearTimeout(resizeTimer);
+      window.removeEventListener("resize", scheduleResizeMeasure);
+    };
+  }, [chromeCollapsed, scenes.length]);
+
+  useEffect(() => {
+    const slot = slotRef.current;
+    if (!slot || !scenes.length) return;
+    let frame = 0;
+    const updateSceneFromScroll = () => {
+      frame = 0;
+      const markers = Array.from(
+        slot.querySelectorAll<HTMLElement>(".lesson-scene-marker"),
+      );
+      const computedStep =
+        markers.length > 1
+          ? markers[1]!.offsetTop - markers[0]!.offsetTop
+          : Number.parseFloat(getComputedStyle(slot).getPropertyValue("--lesson-scene-step"));
+      if (!Number.isFinite(computedStep) || computedStep <= 0) return;
+      const stickyTop = Number.parseFloat(
+        getComputedStyle(slot).getPropertyValue("--lesson-sticky-top"),
+      );
+      const travelled = Math.max(0, stickyTop - slot.getBoundingClientRect().top);
+      const nextScene = Math.min(
+        scenes.length - 1,
+        Math.max(0, Math.floor((travelled + computedStep * 0.3) / computedStep)),
+      );
+      setActiveScene((current) => (current === nextScene ? current : nextScene));
+    };
+    const scheduleSceneUpdate = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateSceneFromScroll);
+    };
+
+    updateSceneFromScroll();
+    window.addEventListener("scroll", scheduleSceneUpdate, { passive: true });
+    window.addEventListener("resize", scheduleSceneUpdate, { passive: true });
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", scheduleSceneUpdate);
+      window.removeEventListener("resize", scheduleSceneUpdate);
+    };
+  }, [scenes.length]);
+
+  function selectScene(index: number) {
+    const slot = slotRef.current;
+    const marker = slot?.querySelector<HTMLElement>(`[data-scene-marker="${index}"]`);
+    if (!slot || !marker) return;
+    setActiveScene(index);
+    const stickyTop = Number.parseFloat(
+      getComputedStyle(slot).getPropertyValue("--lesson-sticky-top"),
+    );
+    const top = window.scrollY + marker.getBoundingClientRect().top - stickyTop;
+    window.scrollTo({
+      top,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    });
+  }
+
+  return (
+    <div
+      ref={slotRef}
+      id={`region-${region.id}`}
+      className={`lesson-slot lesson-slot--screen ${focused ? "lesson-slot--focused" : ""}`}
+      data-canvas-region={region.id}
+      data-panel-mode="screen"
+      data-active-scene={activeScene}
+    >
+      {scenes.map((scene, index) => (
+        <span
+          key={scene.id}
+          className="lesson-scene-marker"
+          data-scene-marker={index}
+          style={{ "--scene-index": index } as CSSProperties}
+          aria-hidden="true"
+        />
+      ))}
+      <div className="lesson-panel">
+        <RegionSection
+          region={region}
+          focused={focused}
+          actions={actions}
+          scenes={scenes}
+          activeScene={activeScene}
+          onSceneSelect={selectScene}
+        />
+      </div>
+    </div>
+  );
+}
+
 function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; actions: CanvasActions }) {
   const notebookRef = useRef<HTMLDivElement>(null);
+  const conceptMapRef = useRef<HTMLElement>(null);
+  const lessonDeckRef = useRef<HTMLDivElement>(null);
+  const [chromeCollapsed, setChromeCollapsed] = useState(false);
   const answered = state.regions.filter((region) => region.response).length;
   const progress = state.regions.length ? Math.round((answered / state.regions.length) * 100) : 0;
 
   useEffect(() => {
-    if (typeof IntersectionObserver === "undefined") return;
-    const ratios = new Map<string, number>();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          const id = (entry.target as HTMLElement).dataset.canvasRegion;
-          if (id) ratios.set(id, entry.isIntersecting ? entry.intersectionRatio : 0);
-        });
-        const best = [...ratios.entries()].sort((left, right) => right[1] - left[1])[0];
-        if (best && best[1] >= 0.28 && best[0] !== actions.getState().focus.regionId) {
-          actions.focusRegion(best[0]);
-        }
-      },
-      { rootMargin: "-18% 0px -48% 0px", threshold: [0.28, 0.5, 0.75] },
+    document.documentElement.classList.add("has-lesson-deck");
+    return () => {
+      document.documentElement.classList.remove("has-lesson-deck", "lesson-chrome-collapsed");
+      const header = document.querySelector<HTMLElement>(".app-header");
+      header?.removeAttribute("inert");
+      header?.removeAttribute("aria-hidden");
+    };
+  }, []);
+
+  useEffect(() => {
+    let frame = 0;
+    const updateChrome = () => {
+      frame = 0;
+      const deck = lessonDeckRef.current;
+      const header = document.querySelector<HTMLElement>(".app-header");
+      if (!deck || !header) return;
+      const firstSlot = deck.querySelector<HTMLElement>(".lesson-slot");
+      const firstSlotTop =
+        window.scrollY + (firstSlot?.getBoundingClientRect().top ?? deck.getBoundingClientRect().top);
+      const mapRect = conceptMapRef.current?.getBoundingClientRect();
+      const compactMapHeight = mapRect && mapRect.height <= 120 ? mapRect.height : 0;
+      const collapseAt =
+        firstSlotTop - header.offsetHeight - compactMapHeight - PANEL_TOP_GAP;
+      const shouldCollapse = window.scrollY >= collapseAt;
+      const wasCollapsed = document.documentElement.classList.contains(
+        "lesson-chrome-collapsed",
+      );
+      document.documentElement.classList.toggle("lesson-chrome-collapsed", shouldCollapse);
+      header.toggleAttribute("inert", shouldCollapse);
+      if (shouldCollapse) header.setAttribute("aria-hidden", "true");
+      else header.removeAttribute("aria-hidden");
+      setChromeCollapsed((current) => (current === shouldCollapse ? current : shouldCollapse));
+      if (shouldCollapse && !wasCollapsed) {
+        window.scrollTo({ top: window.scrollY + header.offsetHeight, behavior: "auto" });
+      }
+    };
+    const scheduleChromeUpdate = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateChrome);
+    };
+
+    updateChrome();
+    window.addEventListener("scroll", scheduleChromeUpdate, { passive: true });
+    window.addEventListener("resize", scheduleChromeUpdate, { passive: true });
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", scheduleChromeUpdate);
+      window.removeEventListener("resize", scheduleChromeUpdate);
+    };
+  }, []);
+
+  useEffect(() => {
+    const regions = Array.from(
+      notebookRef.current?.querySelectorAll<HTMLElement>("[data-canvas-region]") ?? [],
     );
-    notebookRef.current
-      ?.querySelectorAll<HTMLElement>("[data-canvas-region]")
-      .forEach((element) => observer.observe(element));
-    return () => observer.disconnect();
-  }, [actions, state.regions.length]);
+    if (!regions.length) return;
+    let frame = 0;
+    const updateFocusFromReadingLine = () => {
+      frame = 0;
+      const headerBottom =
+        document.querySelector<HTMLElement>(".app-header")?.getBoundingClientRect()
+          .bottom ?? 0;
+      const mapRect = conceptMapRef.current?.getBoundingClientRect();
+      const chromeBottom =
+        mapRect && mapRect.height <= 120 ? mapRect.bottom : headerBottom;
+      const readingLine =
+        chromeBottom + Math.max(72, (window.innerHeight - chromeBottom) * 0.24);
+      const measurements = regions.map((region) => ({
+        region,
+        rect: region.getBoundingClientRect(),
+      }));
+      if (!measurements.some(({ rect }) => rect.height > 0)) return;
+      const active =
+        measurements.filter(({ rect }) => {
+          return rect.top <= readingLine && rect.bottom > readingLine;
+        }).at(-1)?.region ??
+        measurements.find(({ rect }) => rect.top > readingLine)?.region ??
+        measurements.at(-1)?.region;
+      const id = active?.dataset.canvasRegion;
+      if (id && id !== actions.getState().focus.regionId) {
+        actions.focusRegion(id);
+      }
+    };
+    const scheduleFocusUpdate = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateFocusFromReadingLine);
+    };
+    updateFocusFromReadingLine();
+    window.addEventListener("scroll", scheduleFocusUpdate, { passive: true });
+    window.addEventListener("resize", scheduleFocusUpdate, { passive: true });
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", scheduleFocusUpdate);
+      window.removeEventListener("resize", scheduleFocusUpdate);
+    };
+  }, [actions, chromeCollapsed, state.regions.length]);
+
+  useEffect(() => {
+    if (!state.focus.regionId) return;
+    const activeItem = Array.from(
+      conceptMapRef.current?.querySelectorAll<HTMLElement>("[data-map-region]") ?? [],
+    ).find((item) => item.dataset.mapRegion === state.focus.regionId);
+    const map = conceptMapRef.current;
+    if (!activeItem || !map || typeof map.scrollTo !== "function") return;
+    map.scrollTo({
+        left: activeItem.offsetLeft - (map.clientWidth - activeItem.offsetWidth) / 2,
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+    });
+  }, [state.focus.regionId]);
 
   const navigate = (regionId: string) => {
     actions.focusRegion(regionId);
-    document.getElementById(`region-${regionId}`)?.scrollIntoView({
+    const slot = document.getElementById(`region-${regionId}`);
+    if (!slot) return;
+    const mapRect = conceptMapRef.current?.getBoundingClientRect();
+    const compactMapHeight = mapRect && mapRect.height <= 120 ? mapRect.height : 0;
+    window.scrollTo({
+      top: window.scrollY + slot.getBoundingClientRect().top - compactMapHeight - PANEL_TOP_GAP,
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-      block: "start",
     });
   };
 
   return (
     <main id="main-canvas" className="learning-layout">
-      <aside className="concept-map" aria-label="Notebook concept map">
+      <aside ref={conceptMapRef} className="concept-map" aria-label="Notebook concept map">
         <div className="concept-map__topic">
           <span>Learning thread</span>
           <strong>{state.session.topic}</strong>
@@ -723,7 +1189,11 @@ function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; a
         <nav>
           <ol>
             {state.regions.map((region) => (
-              <li key={region.id} className={state.focus.regionId === region.id ? "is-active" : ""}>
+              <li
+                key={region.id}
+                data-map-region={region.id}
+                className={state.focus.regionId === region.id ? "is-active" : ""}
+              >
                 <button type="button" onClick={() => navigate(region.id)}>
                   <span>{String(region.order).padStart(2, "0")}</span>
                   <span>{region.title}</span>
@@ -750,14 +1220,17 @@ function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; a
             <span><i className="legend-you" /> Your answers remain yours</span>
           </div>
         </header>
-        {state.regions.map((region) => (
-          <RegionSection
-            key={region.id}
-            region={region}
-            focused={state.focus.regionId === region.id}
-            actions={actions}
-          />
-        ))}
+        <div className="lesson-deck" ref={lessonDeckRef}>
+          {state.regions.map((region) => (
+            <LessonSlot
+              key={region.id}
+              region={region}
+              focused={state.focus.regionId === region.id}
+              actions={actions}
+              chromeCollapsed={chromeCollapsed}
+            />
+          ))}
+        </div>
         <footer className="notebook-end">
           <span>End of notebook</span>
           <p>Keep the conversation open. A natural question can reshape any focused region without restarting your learning path.</p>
@@ -773,20 +1246,36 @@ export function LearningNotebook({
   registration,
   registrationError,
 }: LearningNotebookProps) {
-  const working = state.regions.some((region) => region.status === "agent_working");
+  const constructionProgress = state.lesson.construction
+    ? {
+        shaped: state.lesson.construction.regions.filter(
+          (region) => region.status === "ready",
+        ).length,
+        total: state.lesson.construction.regions.length,
+      }
+    : null;
+  const working =
+    Boolean(constructionProgress) ||
+    state.regions.some((region) => region.status === "agent_working");
   return (
-    <div className="app-shell">
-      <AppHeader state={state} registration={registration} actions={actions} />
-      <AgentBridge registration={registration} working={working} />
-      {state.session.stage === "ready" ? (
-        <ReadyCanvas registration={registration} registrationError={registrationError} />
-      ) : state.session.stage === "context_review" ? (
-        <ContextReview state={state} actions={actions} />
-      ) : state.session.stage === "lesson_review" ? (
-        <LessonReview state={state} actions={actions} />
-      ) : (
-        <LivingNotebook state={state} actions={actions} />
-      )}
-    </div>
+    <TrustedContentProvider>
+      <div className="app-shell">
+        <AppHeader state={state} registration={registration} actions={actions} />
+        <AgentBridge
+          registration={registration}
+          working={working}
+          constructionProgress={constructionProgress}
+        />
+        {state.session.stage === "ready" ? (
+          <ReadyCanvas registration={registration} registrationError={registrationError} />
+        ) : state.session.stage === "context_review" ? (
+          <ContextReview state={state} actions={actions} />
+        ) : state.session.stage === "lesson_review" ? (
+          <LessonReview state={state} actions={actions} />
+        ) : (
+          <LivingNotebook state={state} actions={actions} />
+        )}
+      </div>
+    </TrustedContentProvider>
   );
 }

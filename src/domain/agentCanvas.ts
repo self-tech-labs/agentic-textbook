@@ -12,8 +12,21 @@ export type ContextClaimKind =
   | "accessibility"
   | "business_constraint";
 
+export type ContextDiscoveryScope =
+  | "current_conversation"
+  | "codex_history"
+  | "project_history"
+  | "ogram_profile"
+  | "connected_sources";
+
 export interface ContextSource {
-  route: "learner" | "conversation" | "ogram" | "connected_mcp";
+  route:
+    | "learner"
+    | "conversation"
+    | "codex_history"
+    | "project_history"
+    | "ogram"
+    | "connected_mcp";
   providerId: string;
   providerLabel: string;
   resourceType: string;
@@ -37,6 +50,7 @@ export interface ContextConsentAttestation {
   obtainedAt: string;
   scope: string;
   providerIds: string[];
+  sourceScopes: ContextDiscoveryScope[];
 }
 
 export interface ResearchReference {
@@ -167,6 +181,11 @@ export interface CanvasRegion {
   updateRationale?: string;
 }
 
+export type LessonRegion = Omit<
+  CanvasRegion,
+  "revision" | "status" | "response" | "history" | "updatedAt" | "updateRationale"
+>;
+
 export interface LessonDocumentV3 {
   id: string;
   revision: number;
@@ -177,12 +196,13 @@ export interface LessonDocumentV3 {
   estimatedMinutes: number;
   objective: string;
   approvedClaimIds: string[];
-  regions: Array<
-    Omit<
-      CanvasRegion,
-      "revision" | "status" | "response" | "history" | "updatedAt" | "updateRationale"
-    >
-  >;
+  regions: LessonRegion[];
+}
+
+export interface LessonConstructionV3 {
+  document: Omit<LessonDocumentV3, "regions">;
+  regions: CanvasRegion[];
+  startedAt: string;
 }
 
 export interface LessonDiagnostic {
@@ -205,6 +225,8 @@ export interface AgentCanvasEvent {
     | "context.claim.proposed"
     | "context.claim.reviewed"
     | "context.personalization.skipped"
+    | "lesson.construction.started"
+    | "lesson.construction.region_shaped"
     | "lesson.draft.prepared"
     | "lesson.draft.approved"
     | "lesson.published"
@@ -243,6 +265,7 @@ export interface AgentLearningCanvasState {
   lesson: {
     status: "skeleton" | "awaiting_review" | "approved" | "published";
     draft: LessonDocumentV3 | null;
+    construction: LessonConstructionV3 | null;
     validation: LessonValidation | null;
     approvedDraftRevision: number | null;
     publishedRevision: number | null;

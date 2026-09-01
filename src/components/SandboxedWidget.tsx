@@ -23,9 +23,19 @@ function createSource(widget: WidgetContent): string {
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; media-src 'none'; font-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; form-action 'none'; navigate-to 'none'; base-uri 'none';" />
     <title>${escapeMarkup(widget.title)}</title>
     <style>
-      :root { color-scheme: light; font-family: ui-sans-serif, system-ui, sans-serif; }
+      :root {
+        color-scheme: light;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        --canvas-ink: #171914;
+        --canvas-muted: #6c6e65;
+        --canvas-paper: #fbfaf5;
+        --canvas-green: #174b38;
+        --canvas-lime: #b7f313;
+      }
       * { box-sizing: border-box; }
-      html, body { margin: 0; min-height: 100%; overflow-x: hidden; }
+      html, body { width: 100%; height: auto; min-height: 0; margin: 0; overflow: hidden; }
+      body { color: var(--canvas-ink); background: var(--canvas-paper); }
+      img, svg, canvas, video { display: block; max-width: 100%; }
       button, input, select { font: inherit; }
       :focus-visible { outline: 3px solid #28624d; outline-offset: 3px; }
       ${css}
@@ -50,8 +60,16 @@ function createSource(widget: WidgetContent): string {
           if (event.target instanceof Element && event.target.closest('a')) event.preventDefault();
         }, true);
         document.addEventListener('submit', (event) => event.preventDefault(), true);
+        const reportHeight = () => send('resize', {
+          height: Math.ceil(Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))
+        });
+        if ('ResizeObserver' in window) {
+          const resizeObserver = new ResizeObserver(reportHeight);
+          resizeObserver.observe(document.body);
+        }
         try {
           ${javascript}
+          requestAnimationFrame(reportHeight);
           send('ready');
         } catch (error) {
           send('error', { message: error instanceof Error ? error.message : 'Widget failed to start.' });
@@ -71,7 +89,7 @@ export function SandboxedWidget({ widget }: { widget: WidgetContent }) {
   );
   const [height, setHeight] = useState(widget.height);
   const [announcement, setAnnouncement] = useState("");
-  const source = useMemo(() => createSource(widget), [widget, reloadKey]);
+  const source = useMemo(() => createSource(widget), [widget]);
 
   useEffect(() => {
     if (status === "stopped") return;

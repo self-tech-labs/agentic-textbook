@@ -23,8 +23,8 @@ Say to Codex:
 Codex calls `learn_begin_session` with the topic and relays the returned guide:
 
 1. Tell me what you want to understand and why.
-2. Choose whether I may use conversation or connected-source context.
-3. Review the proposed context cards on the right.
+2. Choose whether I may use this chat, relevant past Codex/project history, Ogram, or connected-source context.
+3. Review each proposed context card on the right: Use this or Don’t use.
 4. Approve the notebook, then work through it at your pace.
 5. Ask me naturally whenever a focused region needs another explanation, interaction, or research.
 
@@ -41,15 +41,15 @@ For the demo, Codex should propose two claims resembling:
 - the learner writes JavaScript but is new to machine-learning mathematics;
 - the learner has a twenty-minute study window.
 
-Codex consults any installed connector agent-side. It passes only the two summaries, provenance, sensitivity, purposes, and opaque evidence references to `learn_propose_context`.
+Codex consults approved Codex history and any installed connector agent-side. It passes only the two summaries, provenance, sensitivity, purposes, source scopes, and opaque evidence references to `learn_propose_context`.
 
-On the canvas, accept both cards. Point out that proposal did not equal approval: the lesson could not use either claim until this visible review.
+On the canvas, choose **Use this** for both cards. Point out that proposal did not equal approval: the lesson could not use either claim until this visible review.
 
 If no connector is available, use a learner-provided second claim instead. The context mechanic remains real.
 
-## 3. Compile and approve the lesson
+## 3. Watch the lesson form, then approve it
 
-Ask Codex to prepare the transformer lesson. It calls `learn_prepare_lesson` using the bundled `transformer_technical_beginner` blueprint.
+Ask Codex to prepare the transformer lesson visibly. It calls `learn_prepare_lesson` with `phase: start` and the bundled `transformer_technical_beginner` template, then makes one `phase: region` call for each returned region id. A shaping orb and commit meter stay active while each row changes from a skeleton into a compact render from the real json-render catalog. A final `phase: finalize` call runs the compiler and opens review without changing the row geometry.
 
 The canvas shows:
 
@@ -85,7 +85,7 @@ Codex should:
 
 1. call `learn_get_canvas_snapshot`;
 2. resolve `self-attention` from focus rather than guessing from the whole lesson;
-3. call `learn_inject_widget` with a small three-token interaction.
+3. call `learn_inject_widget` directly with a small three-token interaction. Do not invoke a host visualization skill or create an inline conversation artifact first.
 
 The interaction appears inside the existing self-attention section. It does not replace the notebook or open a second assistant. Show:
 

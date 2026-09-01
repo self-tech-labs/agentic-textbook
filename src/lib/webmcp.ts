@@ -1,10 +1,12 @@
 import type {
   CanvasRegionStatus,
   ContextClaimKind,
+  ContextDiscoveryScope,
   ContextSource,
   LearnerContextClaim,
   LearnerInteraction,
   LessonDocumentV3,
+  LessonRegion,
   LearningSessionStage,
   RegionContent,
   ResearchReference,
@@ -13,6 +15,50 @@ import type {
 import { transformerLessonFixture } from "../domain/transformerFixture";
 import type { JsonSchema } from "../domain/experienceSchema";
 import type { CanvasActions } from "../hooks/useLearningCanvas";
+
+export const contextDiscoveryPolicy = {
+  retrievalOwner: "codex_host" as const,
+  guidance:
+    "A short current chat is not evidence that no useful context exists. After explicit learner consent, inspect relevant accessible past Codex tasks, conversations, and saved-project history before proposing minimized claims.",
+  scopes: [
+    {
+      id: "current_conversation",
+      label: "This conversation",
+      route: "conversation",
+    },
+    {
+      id: "codex_history",
+      label: "Past Codex tasks and conversations",
+      route: "codex_history",
+    },
+    {
+      id: "project_history",
+      label: "Saved-project task history",
+      route: "project_history",
+    },
+    {
+      id: "ogram_profile",
+      label: "Ogram learner context",
+      route: "ogram",
+    },
+    {
+      id: "connected_sources",
+      label: "Connected sources",
+      route: "connected_mcp",
+    },
+  ],
+  minimization:
+    "Only a short claim, provider label, resource type, purpose, sensitivity, and opaque evidence reference may enter the canvas.",
+} as const;
+
+export const canvasVisualOutputPolicy = {
+  destination: "webmcp_canvas_only" as const,
+  conversationOutput: "text_coordination_only" as const,
+  guidance:
+    "Do not create or render a separate inline visualization, widget, or host visualization artifact in the Codex conversation. Read the canvas snapshot and author the visual directly in its target region with trusted content or learn_inject_widget.",
+  widgetContract:
+    "Widget HTML is a responsive body fragment. The canvas already supplies the title, sandbox label, Reset, Stop, and text-alternative chrome; do not duplicate them inside the widget.",
+} as const;
 
 export interface WebMcpToolDefinition {
   name: string;
@@ -239,6 +285,20 @@ function stringArray(
   });
 }
 
+function enumArray<Value extends string>(
+  object: Record<string, unknown>,
+  key: string,
+  values: readonly Value[],
+  maximum = 20,
+): Value[] {
+  return stringArray(object, key, maximum).map((value, index) => {
+    if (!values.includes(value as Value)) {
+      throw new Error(`${key}[${index}] must be one of: ${values.join(", ")}.`);
+    }
+    return value as Value;
+  });
+}
+
 function enumValue<Value extends string>(
   object: Record<string, unknown>,
   key: string,
@@ -403,11 +463,10 @@ function parseInteraction(value: unknown): LearnerInteraction | undefined {
   };
 }
 
-function parseLessonDocument(value: unknown): LessonDocumentV3 {
-  const document = objectInput(value, "Lesson document");
-  if (!Array.isArray(document.regions)) throw new Error("Lesson regions must be an array.");
-  const approvedClaimIds = stringArray(document, "approvedClaimIds", 40);
-  const now = new Date().toISOString();
+function parseLessonMetadata(
+  value: unknown,
+): Omit<LessonDocumentV3, "regions"> {
+  const document = objectInput(value, "Lesson metadata");
   return {
     id: stringValue(document, "id", 3, 160),
     revision: integerValue(document, "revision", 1),
@@ -417,16 +476,64 @@ function parseLessonDocument(value: unknown): LessonDocumentV3 {
     audience: stringValue(document, "audience", 3, 400),
     estimatedMinutes: integerValue(document, "estimatedMinutes", 1, 120),
     objective: stringValue(document, "objective", 20, 700),
-    approvedClaimIds,
-    regions: document.regions.map((value, index) => {
-      const region = objectInput(value, `Region ${index + 1}`);
-      if (!Array.isArray(region.content) || !region.content.length) {
-        throw new Error(`Region ${index + 1} needs accessible content.`);
-      }
-      const sourceRefs = Array.isArray(region.sourceRefs)
-        ? stringArray(region, "sourceRefs", 20)
-        : [];
-      const interaction = parseInteraction(region.interaction);
+    approvedClaimIds: stringArray(document, "approvedClaimIds", 40),
+  };
+}
+
+function parseLessonRegion(value: unknown, label = "Lesson region"): LessonRegion {
+  const region = objectInput(value, label);
+  if (!Array.isArray(region.content) || !region.content.length) {
+    throw new Error(`${label} needs accessible content.`);
+  }
+  const sourceRefs = Array.isArray(region.sourceRefs)
+    ? stringArray(region, "sourceRefs", 20)
+    : [];
+  const interaction = parseInteraction(region.interaction);
+  const now = new Date().toISOString();
+  return {
+    id: stringValue(region, "id", 2, 120),
+    order: integerValue(region, "order", 1, 99),
+    label: stringValue(region, "label", 2, 120),
+    title: stringValue(region, "title", 3, 240),
+    objective: stringValue(region, "objective", 4, 500),
+    kind: enumValue(
+      region,
+      "kind",
+      ["orient", "explain", "model", "practice", "reflect"] as const,
+    ),
+    content: region.content.map(parseTrustedContent),
+    ...(interaction ? { interaction } : {}),
+    provenance: [
+      {
+        actor: "agent" as const,
+        label: "Prepared by Codex",
+        sourceRefs,
+        at: now,
+      },
+    ],
+  };
+}
+
+function parseLessonDocument(value: unknown): LessonDocumentV3 {
+  const document = objectInput(value, "Lesson document");
+  if (!Array.isArray(document.regions)) throw new Error("Lesson regions must be an array.");
+  return {
+    ...parseLessonMetadata(document),
+    regions: document.regions.map((region, index) =>
+      parseLessonRegion(region, `Region ${index + 1}`),
+    ),
+  };
+}
+
+function parseLessonOutline(value: unknown) {
+  const outline = objectInput(value, "Lesson outline");
+  if (!Array.isArray(outline.regions)) {
+    throw new Error("Lesson outline regions must be an array.");
+  }
+  return {
+    document: parseLessonMetadata(outline),
+    regions: outline.regions.map((value, index) => {
+      const region = objectInput(value, `Outline region ${index + 1}`);
       return {
         id: stringValue(region, "id", 2, 120),
         order: integerValue(region, "order", 1, 99),
@@ -438,16 +545,6 @@ function parseLessonDocument(value: unknown): LessonDocumentV3 {
           "kind",
           ["orient", "explain", "model", "practice", "reflect"] as const,
         ),
-        content: region.content.map(parseTrustedContent),
-        ...(interaction ? { interaction } : {}),
-        provenance: [
-          {
-            actor: "agent" as const,
-            label: "Prepared by Codex",
-            sourceRefs,
-            at: now,
-          },
-        ],
       };
     }),
   };
@@ -509,9 +606,10 @@ function nextActions(stage: LearningSessionStage, lessonStatus: string): string[
   if (stage === "ready") return ["Call learn_begin_session."];
   if (stage === "context_review") {
     return [
-      "Ask for consent before consulting conversation or connected-source context.",
+      "Ask for scoped consent before consulting this chat, past Codex tasks or conversations, saved-project history, Ogram, or connected sources.",
+      "If history is allowed, use the host's task-listing and task-reading capabilities; do not conclude there is no context merely because this chat is short.",
       "Propose only minimized context claims, or let the learner choose the generic path.",
-      "After every context choice is resolved, call learn_prepare_lesson.",
+      "After every context choice is resolved, shape the lesson with learn_prepare_lesson start, one region call per section, then finalize.",
     ];
   }
   if (stage === "lesson_review") {
@@ -521,7 +619,8 @@ function nextActions(stage: LearningSessionStage, lessonStatus: string): string[
   }
   return [
     "Read learn_get_canvas_snapshot before changing a region.",
-    "Patch the focused region, inject a bounded widget, or attach sourced research.",
+    "Patch the focused region, inject a bounded widget directly on this canvas, or attach sourced research.",
+    "Keep generated visuals out of the conversation; the WebMCP canvas is the only visual output surface for this learning session.",
   ];
 }
 
@@ -547,7 +646,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
   const begin: WebMcpToolDefinition = {
     name: "learn_begin_session",
     description:
-      "Required first call. Start or resume a learning session, create a progressive canvas skeleton, and return the short guide you must relay to the learner.",
+      "Required first call. Start or resume a learning session, create a progressive canvas skeleton, and return the guide plus context-discovery and canvas-only visual-output policies you must follow.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -560,17 +659,21 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
     annotations: writeAnnotations(),
     execute(input) {
       const object = objectInput(input);
-      return actions.beginSession({
+      return {
+        ...actions.beginSession({
         topic: stringValue(object, "topic", 3, 240),
         goal: optionalString(object, "goal", 500),
-      });
+        }),
+        contextDiscoveryPolicy,
+        visualOutputPolicy: canvasVisualOutputPolicy,
+      };
     },
   };
 
   const getContext: WebMcpToolDefinition = {
     name: "learn_get_context",
     description:
-      "Read minimized context claims, their provenance, consent coverage, and learner review status. Never infer approval from proposal alone.",
+      "Read minimized context claims, their provenance, scoped consent coverage, learner review status, and the available current-chat, history, project, Ogram, and connector discovery routes. Never infer approval from proposal alone.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -586,6 +689,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
         revision: state.revision,
         personalization: state.session.personalization,
         consent: state.session.contextConsent,
+        discoveryPolicy: contextDiscoveryPolicy,
         claims: state.contextClaims,
         acceptedClaimIds: state.contextClaims
           .filter((claim) => claim.review === "accepted" || claim.review === "corrected")
@@ -597,7 +701,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
   const proposeContext: WebMcpToolDefinition = {
     name: "learn_propose_context",
     description:
-      "After explicit conversation consent, add privacy-minimized learner context from conversation, Ogram, or connected MCP sources. Claims remain unusable until individually approved on the canvas.",
+      "After explicit scoped consent, add privacy-minimized learner context from this chat, past Codex tasks/conversations, saved-project history, Ogram, or connected MCP sources. Retrieve host history agent-side; claims remain unusable until individually approved on the canvas.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -609,7 +713,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
         consent: {
           type: "object",
           additionalProperties: false,
-          required: ["obtainedAt", "scope", "providerIds"],
+          required: ["obtainedAt", "scope", "providerIds", "sourceScopes"],
           properties: {
             obtainedAt: { type: "string", minLength: 8, maxLength: 80 },
             scope: { type: "string", minLength: 8, maxLength: 400 },
@@ -618,6 +722,23 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
               minItems: 1,
               maxItems: 20,
               items: { type: "string", minLength: 1, maxLength: 120 },
+            },
+            sourceScopes: {
+              type: "array",
+              minItems: 1,
+              maxItems: 5,
+              description:
+                "Exact source families the learner allowed Codex to inspect before minimizing claims.",
+              items: {
+                type: "string",
+                enum: [
+                  "current_conversation",
+                  "codex_history",
+                  "project_history",
+                  "ogram_profile",
+                  "connected_sources",
+                ],
+              },
             },
           },
         },
@@ -658,7 +779,14 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
                 properties: {
                   route: {
                     type: "string",
-                    enum: ["learner", "conversation", "ogram", "connected_mcp"],
+                    enum: [
+                      "learner",
+                      "conversation",
+                      "codex_history",
+                      "project_history",
+                      "ogram",
+                      "connected_mcp",
+                    ],
                   },
                   providerId: { type: "string", minLength: 1, maxLength: 120 },
                   providerLabel: { type: "string", minLength: 1, maxLength: 120 },
@@ -695,7 +823,14 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
           route: enumValue(
             sourceObject,
             "route",
-            ["learner", "conversation", "ogram", "connected_mcp"] as const,
+            [
+              "learner",
+              "conversation",
+              "codex_history",
+              "project_history",
+              "ogram",
+              "connected_mcp",
+            ] as const,
           ),
           providerId: stringValue(sourceObject, "providerId", 1, 120),
           providerLabel: stringValue(sourceObject, "providerLabel", 1, 120),
@@ -743,6 +878,18 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
           obtainedAt: stringValue(consentObject, "obtainedAt", 8, 80),
           scope: stringValue(consentObject, "scope", 8, 400),
           providerIds: stringArray(consentObject, "providerIds", 20),
+          sourceScopes: enumArray(
+            consentObject,
+            "sourceScopes",
+            [
+              "current_conversation",
+              "codex_history",
+              "project_history",
+              "ogram_profile",
+              "connected_sources",
+            ] as readonly ContextDiscoveryScope[],
+            5,
+          ),
         },
         claims,
       });
@@ -768,9 +915,24 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
         version: state.version,
         revision: state.revision,
         session: state.session,
+        contextDiscoveryPolicy,
+        visualOutputPolicy: canvasVisualOutputPolicy,
         lesson: {
           status: state.lesson.status,
           draftRevision: state.lesson.draft?.revision ?? null,
+          construction: state.lesson.construction
+            ? {
+                draftRevision: state.lesson.construction.document.revision,
+                title: state.lesson.construction.document.title,
+                shapedRegions: state.lesson.construction.regions.filter(
+                  (region) => region.status === "ready",
+                ).length,
+                totalRegions: state.lesson.construction.regions.length,
+                pendingRegionIds: state.lesson.construction.regions
+                  .filter((region) => region.status !== "ready")
+                  .map((region) => region.id),
+              }
+            : null,
           approvedDraftRevision: state.lesson.approvedDraftRevision,
           publishedRevision: state.lesson.publishedRevision,
           validation: state.lesson.validation,
@@ -788,7 +950,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
   const prepareLesson: WebMcpToolDefinition = {
     name: "learn_prepare_lesson",
     description:
-      "Compile a complete lesson draft for learner review. For the transformers demo, omit document to use the polished technical-beginner blueprint; otherwise provide a region-based document.",
+      "Shape and compile a lesson draft. Prefer the progressive start → region (one call per region) → finalize phases so the learner watches the canvas take shape. Use complete, or omit phase, only for a one-shot document or the bundled transformer blueprint.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -797,7 +959,31 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
         nonce: nonceSchema,
         baseRevision: { type: "integer", minimum: 0 },
         idempotencyKey: idempotencySchema,
+        phase: {
+          type: "string",
+          enum: ["start", "region", "finalize", "complete"],
+          description:
+            "Progressive authoring phase. Each call uses the latest canvas revision returned by the previous call.",
+        },
+        draftRevision: { type: "integer", minimum: 1 },
         template: { type: "string", enum: ["transformer_technical_beginner"] },
+        regionId: {
+          type: "string",
+          minLength: 2,
+          maxLength: 120,
+          description:
+            "For a progressive bundled template region call, the stable region id returned by phase=start.",
+        },
+        outline: {
+          type: "object",
+          description:
+            "For phase=start: lesson metadata plus 4–12 stable region stubs (id, order, label, title, objective, kind).",
+        },
+        region: {
+          type: "object",
+          description:
+            "For phase=region: one complete trusted-content region matching a stub from the active outline.",
+        },
         document: {
           type: "object",
           description:
@@ -809,6 +995,79 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
     execute(input) {
       const object = objectInput(input);
       requireNonce(object, actions);
+      const phase =
+        object.phase === undefined
+          ? "complete"
+          : enumValue(
+              object,
+              "phase",
+              ["start", "region", "finalize", "complete"] as const,
+            );
+      const common = {
+        baseRevision: integerValue(object, "baseRevision"),
+        idempotencyKey: stringValue(object, "idempotencyKey", 8, 160),
+      };
+      if (phase === "start") {
+        const parsed = object.outline
+          ? parseLessonOutline(object.outline)
+          : object.template === "transformer_technical_beginner"
+            ? (() => {
+                const document = defaultTransformerLesson(actions);
+                return {
+                  document: {
+                    id: document.id,
+                    revision: document.revision,
+                    topic: document.topic,
+                    title: document.title,
+                    subtitle: document.subtitle,
+                    audience: document.audience,
+                    estimatedMinutes: document.estimatedMinutes,
+                    objective: document.objective,
+                    approvedClaimIds: document.approvedClaimIds,
+                  },
+                  regions: document.regions.map((region) => ({
+                    id: region.id,
+                    order: region.order,
+                    label: region.label,
+                    title: region.title,
+                    objective: region.objective,
+                    kind: region.kind,
+                  })),
+                };
+              })()
+            : (() => {
+                throw new Error("phase=start requires an outline or the bundled transformer template.");
+              })();
+        return actions.startLessonConstruction({
+          ...common,
+          document: parsed.document,
+          outline: parsed.regions,
+        });
+      }
+      if (phase === "region") {
+        const region = object.region
+          ? parseLessonRegion(object.region)
+          : object.template === "transformer_technical_beginner"
+            ? defaultTransformerLesson(actions).regions.find(
+                (candidate) =>
+                  candidate.id === stringValue(object, "regionId", 2, 120),
+              )
+            : undefined;
+        if (!region) {
+          throw new Error("phase=region requires a complete region or a valid bundled template regionId.");
+        }
+        return actions.shapeLessonRegion({
+          ...common,
+          draftRevision: integerValue(object, "draftRevision", 1),
+          region,
+        });
+      }
+      if (phase === "finalize") {
+        return actions.finalizeLessonConstruction({
+          ...common,
+          draftRevision: integerValue(object, "draftRevision", 1),
+        });
+      }
       const current = actions.getState();
       const useTemplate =
         object.document === undefined &&
@@ -818,8 +1077,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
         throw new Error("A lesson document is required for topics without a bundled template.");
       }
       return actions.prepareLesson({
-        baseRevision: integerValue(object, "baseRevision"),
-        idempotencyKey: stringValue(object, "idempotencyKey", 8, 160),
+        ...common,
         document: useTemplate
           ? defaultTransformerLesson(actions)
           : parseLessonDocument(object.document),
@@ -869,6 +1127,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
       const object = objectInput(input);
       requireNonce(object, actions);
       const state = actions.getState();
+      const visibleRegions = state.lesson.construction?.regions ?? state.regions;
       return {
         canvasRevision: state.revision,
         topic: state.session.topic,
@@ -876,7 +1135,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
         focusedRegionId: state.focus.regionId,
         selectedText: state.focus.selectedText,
         viewport: currentViewport(),
-        regions: state.regions.map((region) => ({
+        regions: visibleRegions.map((region) => ({
           id: region.id,
           order: region.order,
           label: region.label,
@@ -915,6 +1174,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
             network: false,
           },
         },
+        visualOutputPolicy: canvasVisualOutputPolicy,
       };
     },
   };
@@ -998,7 +1258,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
   const injectWidget: WebMcpToolDefinition = {
     name: "learn_inject_widget",
     description:
-      "Append a bounded HTML/CSS/JS learning interaction to one region. It runs in a no-origin, no-network sandbox with an accessible fallback and remains undoable.",
+      "Author a bounded HTML/CSS/JS interaction directly inside one learning-canvas region. This is the only surface for generated widgets: never create an inline conversation visualization first. Supply a responsive body fragment only; canvas chrome provides the title, Reset, Stop, and text alternative. The widget runs in a no-origin, no-network sandbox and remains undoable.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1022,8 +1282,18 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
         idempotencyKey: idempotencySchema,
         widgetId: { type: "string", minLength: 2, maxLength: 120 },
         title: { type: "string", minLength: 3, maxLength: 160 },
-        html: { type: "string", maxLength: 12288 },
-        css: { type: "string", maxLength: 12288 },
+        html: {
+          type: "string",
+          maxLength: 12288,
+          description:
+            "Responsive body fragment only; omit html/head/body, a duplicate title, Reset/Stop controls, and wrapper chrome.",
+        },
+        css: {
+          type: "string",
+          maxLength: 12288,
+          description:
+            "Mobile-first CSS that remains usable at 320px without horizontal overflow.",
+        },
         javascript: { type: "string", maxLength: 24576 },
         accessibleSummary: { type: "string", minLength: 8, maxLength: 1200 },
         height: { type: "integer", minimum: 180, maximum: 720 },
