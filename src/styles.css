@@ -1632,9 +1632,8 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 .trusted-content--preview {
   display: grid;
   gap: 8px;
-  max-height: 68px;
   margin-top: 11px;
-  overflow: hidden;
+  overflow: visible;
   pointer-events: none;
   user-select: none;
 }
@@ -1652,32 +1651,26 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 }
 
 .trusted-content--preview .prose-block > p {
-  display: -webkit-box;
   margin: 0;
-  overflow: hidden;
   color: #5a5d55;
   font-size: 11px;
   line-height: 1.4;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .trusted-content--preview .key-points {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
   gap: 5px;
   width: 100%;
-  overflow: hidden;
+  overflow: visible;
   border: 0;
 }
 
 .trusted-content--preview .key-points li {
-  display: -webkit-box;
   width: auto;
   min-width: 0;
   min-height: 0;
   padding: 6px 8px;
-  overflow: hidden;
   color: var(--green);
   font-size: 8px;
   line-height: 1.25;
@@ -1685,12 +1678,10 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
   white-space: normal;
   background: var(--green-soft);
   border: 1px solid #c3d2c6;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .trusted-content--preview .key-points li:nth-child(n + 4) {
-  display: none;
+  display: block;
 }
 
 .trusted-content--preview .key-points li::before {
@@ -1698,12 +1689,16 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 }
 
 .trusted-content--preview .token-row {
+  display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 7px;
+  overflow: visible;
 }
 
 .trusted-content--preview .token-row > button {
-  min-width: 44px;
+  flex: 1 1 52px;
+  min-width: 0;
   padding: 7px 8px;
   font-size: 8px;
 }
@@ -1723,12 +1718,12 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 }
 
 .trusted-content--preview .stack-figure ol {
-  display: flex;
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  overflow: visible;
 }
 
 .trusted-content--preview .stack-figure li {
-  flex: 0 0 120px;
   border-right: 1px solid rgba(255, 255, 255, 0.18);
   border-bottom: 0;
 }
@@ -1755,7 +1750,8 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 }
 
 .trusted-content--preview .comparison-wrap {
-  max-height: 64px;
+  max-height: none;
+  overflow: visible;
 }
 
 .trusted-content--preview .comparison-wrap table {

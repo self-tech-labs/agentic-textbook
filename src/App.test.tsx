@@ -20,7 +20,7 @@ describe("learn.ogram v3", () => {
     });
   });
 
-  it("starts as a passive agent-native canvas with no in-page conversation", async () => {
+  it("starts as a passive personal canvas with no in-page conversation", async () => {
     render(<App />);
 
     expect(
@@ -33,11 +33,11 @@ describe("learn.ogram v3", () => {
     );
 
     await waitFor(() => expect(tool("learn_begin_session")).toBeDefined());
-    await waitFor(() => expect(screen.getByText(/local preview · v3/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/^preview$/i)).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: /choose context/i }));
     expect(screen.getByText(/context reviewed/i)).toBeInTheDocument();
-    expect(screen.getByText(/past Codex work, projects/i)).toBeInTheDocument();
+    expect(screen.getByText(/past work, projects/i)).toBeInTheDocument();
   });
 
   it("does not race native registration during React development remounts", async () => {
@@ -305,8 +305,9 @@ describe("learn.ogram v3", () => {
       firstRegionId = started.regionIds[0]!;
     });
 
-    expect(screen.getByText(/0\/6 sections shaped/i)).toBeInTheDocument();
-    expect(screen.getByText(/each json commit is validated/i)).toBeInTheDocument();
+    expect(screen.getByText(/0\/6 sections ready/i)).toBeInTheDocument();
+    expect(screen.getByText(/new sections will appear here one by one/i)).toBeInTheDocument();
+    expect(screen.queryByText(/json|catalog|region commits|governed components/i)).not.toBeInTheDocument();
 
     await act(async () => {
       tool("learn_prepare_lesson").execute({
@@ -320,9 +321,9 @@ describe("learn.ogram v3", () => {
       });
     });
 
-    expect(screen.getByText(/1\/6 sections shaped/i)).toBeInTheDocument();
+    expect(screen.getByText(/1\/6 sections ready/i)).toBeInTheDocument();
     expect(screen.getByText("The job in one sentence")).toBeInTheDocument();
     expect(document.querySelector('[data-json-render="ogram.learning.v1"]')).toBeInTheDocument();
-    expect(screen.getByLabelText("Shaped")).toBeInTheDocument();
+    expect(screen.getByLabelText("Ready")).toBeInTheDocument();
   });
 });

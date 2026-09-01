@@ -11,7 +11,6 @@ import type { CanvasActions } from "../hooks/useLearningCanvas";
 import {
   TrustedContentProvider,
   TrustedContentRenderer,
-  trustedContentComponentNames,
 } from "./TrustedContentRenderer";
 
 export interface NotebookRegistration {
@@ -38,16 +37,16 @@ function AgentBridge({
   constructionProgress: { shaped: number; total: number } | null;
 }) {
   const status = registration.registering
-    ? "Connecting"
+    ? "Preparing your lesson space"
     : registration.supported
       ? constructionProgress
         ? constructionProgress.shaped === constructionProgress.total
-          ? "Notebook ready to compile"
-          : `Shaping notebook · ${constructionProgress.shaped}/${constructionProgress.total}`
+          ? "Lesson ready to review"
+          : `Preparing sections · ${constructionProgress.shaped}/${constructionProgress.total}`
         : working
-          ? "Codex is shaping the focused region"
-          : "Canvas connected to Codex"
-      : "Open in Codex Desktop";
+          ? "Updating this section"
+          : "Ready"
+      : "Open the lesson workspace";
   return (
     <div className={`agent-bridge ${working ? "agent-bridge--working" : ""}`} aria-label={status}>
       <span className="agent-bridge__signal" aria-hidden="true">
@@ -64,7 +63,7 @@ function SessionControls({ actions }: { actions: CanvasActions }) {
     <details className="session-menu" ref={detailsRef}>
       <summary>Session</summary>
       <div className="session-menu__popover" role="dialog" aria-label="Start a new topic">
-        <span className="session-menu__eyebrow">Local notebook</span>
+        <span className="session-menu__eyebrow">Your lesson</span>
         <strong>Start a new topic?</strong>
         <p>This removes the current notebook and its saved answers from this browser.</p>
         <div className="session-menu__actions">
@@ -95,12 +94,12 @@ function AppHeader({
 }) {
   const stageLabel =
     state.session.stage === "ready"
-      ? "Agent-native learning canvas"
+      ? "Personal learning canvas"
       : state.session.stage === "context_review"
-        ? "Context handshake"
+        ? "Choose what shapes the lesson"
         : state.session.stage === "lesson_review"
-          ? "Lesson review"
-          : "Living notebook";
+          ? "Review your lesson"
+          : "Your lesson";
   return (
     <header className="app-header">
       <a className="wordmark" href="#main-canvas" aria-label="learn.ogram — skip to canvas">
@@ -114,10 +113,10 @@ function AppHeader({
       <div className="app-header__right">
         <span className="app-header__meta">
           {registration.registering
-            ? "Connecting…"
+            ? "Preparing…"
             : registration.supported
-              ? "Codex ready · v3"
-              : "Local preview · v3"}
+              ? "Ready"
+              : "Preview"}
         </span>
         {state.session.id ? <SessionControls actions={actions} /> : null}
       </div>
@@ -129,26 +128,26 @@ const readyLoopSteps = [
   {
     number: "01",
     label: "Name the goal",
-    description: "You set the topic and the finish line in the Codex conversation.",
+    description: "Name the topic and the finish line in the conversation beside this page.",
     canvasLabel: "Goal captured",
   },
   {
     number: "02",
     label: "Choose context",
-    description: "You can allow relevant context from this chat, past Codex work, projects, or connected sources—then review every claim here.",
+    description: "You can allow relevant context from this chat, past work, projects, or connected sources—then review every claim here.",
     canvasLabel: "Context reviewed",
   },
   {
     number: "03",
     label: "Watch it form",
-    description: "Sections arrive one by one while Codex constructs the learning path.",
+    description: "Sections arrive one by one while the learning path takes shape.",
     canvasLabel: "3 of 6 sections",
   },
   {
     number: "04",
-    label: "Focus + reshape",
-    description: "Select a region, ask naturally, and only that part changes.",
-    canvasLabel: "Region in focus",
+    label: "Focus + adjust",
+    description: "Select a section, ask naturally, and only that part changes.",
+    canvasLabel: "Section in focus",
   },
 ] as const;
 
@@ -159,13 +158,13 @@ function ReadyLoop() {
     <aside className="ready-specimen" aria-labelledby="learning-loop-title">
       <div className="ready-specimen__heading">
         <span>Click through the loop</span>
-        <strong id="learning-loop-title">One canvas, two roles</strong>
+        <strong id="learning-loop-title">One lesson, two roles</strong>
       </div>
       <div className={`loop-model loop-model--${activeStep + 1}`} aria-live="polite">
         <div className="loop-model__actors" aria-hidden="true">
           <span>You decide</span>
           <i>↔</i>
-          <span>Codex shapes</span>
+          <span>Lesson adapts</span>
         </div>
         <div className="loop-model__canvas">
           <header>
@@ -179,7 +178,7 @@ function ReadyLoop() {
             <i />
           </div>
           {activeStep === 1 ? <span className="loop-model__approval">✓ learner approved</span> : null}
-          {activeStep === 2 ? <span className="loop-model__building">shaping now</span> : null}
+          {activeStep === 2 ? <span className="loop-model__building">taking shape</span> : null}
           {activeStep === 3 ? <span className="loop-model__focus">focused</span> : null}
         </div>
         <p>{active.description}</p>
@@ -212,7 +211,7 @@ function ReadyCanvas({
 }) {
   const [copied, setCopied] = useState(false);
   const starter =
-    "Teach me how transformers work. Start by calling learn_begin_session on this page, relay its short guide, ask which current or past Codex context you may inspect, then shape the lesson live section by section. Keep every generated visual on the WebMCP canvas—do not create an inline visualization in our conversation.";
+    "Teach me how transformers work. Begin by calling learn_begin_session on this page, share its short guide, ask which current or past context you may inspect, then build the lesson here one section at a time. Keep every visual on the lesson canvas.";
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(starter);
@@ -230,20 +229,20 @@ function ReadyCanvas({
         <span>02</span>
         <span>context</span>
         <span>03</span>
-        <span>construct</span>
+        <span>build</span>
         <span>04</span>
         <span>learn + reshape</span>
       </div>
       <section className="ready-hero" aria-labelledby="ready-title">
-        <p className="eyebrow">A shared surface for human + agent learning</p>
+        <p className="eyebrow">A lesson that takes shape around you</p>
         <h1 id="ready-title">
           Learn a difficult idea.
           <br />
           <em>Shape it as you go.</em>
         </h1>
         <p className="ready-hero__lede">
-          This page is not a course player. It is a semantic notebook that Codex can read,
-          construct, and revise beside your conversation—without taking ownership of your work.
+          This is not a fixed course. It becomes a focused lesson around what you want to
+          understand, and you decide what may shape it.
         </p>
 
         {!registration.registering && !registration.supported ? (
@@ -256,7 +255,7 @@ function ReadyCanvas({
           </div>
         ) : null}
 
-        <div className="starter-prompt" aria-label="Starter prompt for the adjacent Codex conversation">
+        <div className="starter-prompt" aria-label="Starter prompt for the adjacent conversation">
           <div className="starter-prompt__topline">
             <span>Start in the conversation on the left</span>
             <button type="button" className="text-button" onClick={copy}>
@@ -352,14 +351,13 @@ function NotebookOutline({
   return (
     <ol
       className={`notebook-outline notebook-outline--${mode}`}
-      aria-label={mode === "shaping" ? "Lesson structure being prepared" : "Compiled lesson structure"}
+      aria-label={mode === "shaping" ? "Lesson outline in progress" : "Lesson structure"}
       aria-busy={mode === "shaping" && activelyShaping && !complete}
     >
       {regions.map((region, index) => {
         const status = "status" in region ? region.status : "ready";
         const shaped = status !== "skeleton";
         const active = mode === "shaping" && activelyShaping && !shaped && index === firstQueuedIndex;
-        const componentCount = region.content.length + (region.interaction ? 1 : 0);
         return (
         <li
           key={region.id}
@@ -372,13 +370,13 @@ function NotebookOutline({
           <span className="notebook-outline__label">{sectionLabel(region)}</span>
           <span className="notebook-outline__mark">
             {shaped ? (
-              <i aria-label={mode === "review" ? "Stable" : "Shaped"}>✓</i>
+              <i aria-label="Ready">✓</i>
             ) : active ? (
               <ThinkingOrb
                 state="shaping"
                 size={20}
                 theme="light"
-                aria-label={`Shaping ${region.title}`}
+                aria-label={`Preparing ${region.title}`}
               />
             ) : (
               <i className="is-queued" aria-label="Queued" />
@@ -398,10 +396,10 @@ function NotebookOutline({
             {mode === "review"
               ? region.kind
               : shaped
-                ? `${componentCount} component${componentCount === 1 ? "" : "s"}`
+                ? "Ready"
                 : active
-                  ? "rendering"
-                  : "queued"}
+                  ? "Next"
+                  : "Waiting"}
           </small>
         </li>
         );
@@ -423,19 +421,19 @@ function ConstructionActivity({
   const complete = shaped === regions.length && regions.length > 0;
   const activeRegion = regions.find((region) => region.status === "skeleton");
   const status = complete
-    ? "All region specs are ready"
+    ? "Your lesson is ready"
     : constructionStarted
-      ? `Composing ${activeRegion?.title ?? "the next region"}`
+      ? `Preparing ${activeRegion?.title ?? "the next section"}`
       : contextReady
-        ? "Ready for the first region spec"
-        : "Notebook scaffold ready";
+        ? "Ready to build your lesson"
+        : "Your lesson outline is ready";
   const description = complete
-    ? "The trusted document is ready for its compiler check."
+    ? "Review the sections, then approve the lesson when the path feels right."
     : constructionStarted
-      ? "Each JSON commit is validated, then rendered through the same catalog as the finished notebook."
+      ? "New sections will appear here one by one."
       : contextReady
-        ? "Codex can now commit one bounded JSON region at a time."
-        : "Choose what context may shape the lesson before rendering begins.";
+        ? "Keep this page open while your lesson takes shape."
+        : "Choose what context may shape your lesson.";
   return (
     <div className={`construction-activity ${constructionStarted ? "is-active" : ""}`} role="status" aria-live="polite">
       <ThinkingOrb
@@ -445,12 +443,11 @@ function ConstructionActivity({
         aria-label={status}
       />
       <div className="construction-activity__copy">
-        <span>JSON renderer · trusted catalog</span>
+        <span>Lesson progress</span>
         <strong>{status}</strong>
         <p>{description}</p>
         <div className="construction-activity__meta">
-          <span>{shaped}/{regions.length} region commits</span>
-          <span>{trustedContentComponentNames.length} governed components</span>
+          <span>{shaped} of {regions.length} sections ready</span>
         </div>
       </div>
       <div className="construction-activity__meter" aria-hidden="true">
@@ -481,8 +478,8 @@ function ContextReview({ state, actions }: { state: AgentLearningCanvasState; ac
         <p className="eyebrow">First: decide what may shape this lesson</p>
         <h1 id="context-title">Context stays proposed until you say yes.</h1>
         <p className="context-review__lede">
-          With your permission, Codex may look across this chat, relevant past tasks and project
-          conversations, Ogram, or a connected source. Only a short claim enters the canvas—never
+          With your permission, this lesson may draw on this chat, relevant past tasks and project
+          conversations, Ogram, or a connected source. Only brief summaries are used—never
           raw messages, files, calendar data, or credentials. Use it or leave it out.
         </p>
 
@@ -496,10 +493,10 @@ function ContextReview({ state, actions }: { state: AgentLearningCanvasState; ac
           <div className="consent-empty">
             <span className="consent-empty__glyph" aria-hidden="true">◎</span>
             <div>
-              <strong>No learner context has entered the canvas.</strong>
+              <strong>No personal context is being used.</strong>
               <p>
-                Tell Codex whether it may inspect relevant current or past work and propose a few
-                minimized claims, or continue with the generic technical-beginner path.
+                Choose whether relevant current or past work may shape this lesson, or continue
+                with the generic technical-beginner path.
               </p>
             </div>
           </div>
@@ -512,7 +509,7 @@ function ContextReview({ state, actions }: { state: AgentLearningCanvasState; ac
               <strong>Context choice complete.</strong>{" "}
               {construction
                 ? "Keep this canvas open—the lesson is taking shape section by section."
-                : "Codex can now shape the notebook live for your review."}
+                : "Your lesson can now take shape section by section."}
             </p>
           </div>
         ) : null}
@@ -529,7 +526,7 @@ function ContextReview({ state, actions }: { state: AgentLearningCanvasState; ac
           <span>{construction?.document.title ?? "Notebook preview"}</span>
           <span>
             {construction
-              ? `${shapedRegions}/${previewRegions.length} sections shaped`
+              ? `${shapedRegions}/${previewRegions.length} sections ready`
               : state.session.topic}
           </span>
         </div>
@@ -564,19 +561,19 @@ function LessonReview({ state, actions }: { state: AgentLearningCanvasState; act
   return (
     <main id="main-canvas" className="lesson-review">
       <section className="lesson-review__intro">
-        <p className="eyebrow">Compiled lesson · revision {draft.revision}</p>
+        <p className="eyebrow">Lesson ready for review</p>
         <h1>{draft.title}</h1>
         <p>{draft.subtitle}</p>
         <dl className="lesson-facts">
           <div><dt>Goal</dt><dd>{draft.objective}</dd></div>
-          <div><dt>Baseline</dt><dd>{draft.audience}</dd></div>
+          <div><dt>Designed for</dt><dd>{draft.audience}</dd></div>
           <div><dt>Working time</dt><dd>about {draft.estimatedMinutes} minutes</dd></div>
           <div>
-            <dt>Personalization</dt>
+            <dt>Shaped with</dt>
             <dd>
               {draft.approvedClaimIds.length
-                ? `${draft.approvedClaimIds.length} learner-approved context signal${draft.approvedClaimIds.length === 1 ? "" : "s"}`
-                : "Generic path · no personal context"}
+                ? `${draft.approvedClaimIds.length} context choice${draft.approvedClaimIds.length === 1 ? "" : "s"} you approved`
+                : "No personal context"}
             </dd>
           </div>
         </dl>
@@ -584,8 +581,8 @@ function LessonReview({ state, actions }: { state: AgentLearningCanvasState; act
           <div className="approval-complete" role="status">
             <span aria-hidden="true">✓</span>
             <div>
-              <strong>Exact revision approved</strong>
-              <p>Codex can now publish this compiled notebook. Later explanatory edits remain reversible.</p>
+              <strong>Lesson approved</strong>
+              <p>Your lesson is approved and ready to begin. Explanations can still be changed later.</p>
             </div>
           </div>
         ) : (
@@ -597,8 +594,8 @@ function LessonReview({ state, actions }: { state: AgentLearningCanvasState; act
       </section>
       <section className="lesson-review__map" aria-labelledby="outline-title">
         <div className="preview-heading">
-          <span id="outline-title">Notebook structure</span>
-          <span>{draft.regions.length} stable regions</span>
+          <span id="outline-title">Lesson structure</span>
+          <span>{draft.regions.length} sections</span>
         </div>
         <NotebookOutline regions={draft.regions} mode="review" />
       </section>
@@ -803,9 +800,9 @@ function RegionSection({
               state="working"
               size={20}
               theme="light"
-              aria-label={`Codex is working in ${region.title}`}
+              aria-label={`Updating ${region.title}`}
             />
-            <p><strong>Codex is working in this region.</strong> The rest of the notebook stays usable.</p>
+            <p><strong>This section is being updated.</strong> The rest of the lesson stays usable.</p>
           </div>
         ) : null}
 
@@ -850,7 +847,7 @@ function RegionSection({
 
       {region.status === "updated" ? (
         <footer className="region-attribution">
-          <span><i aria-hidden="true" /> Updated by Codex</span>
+          <span><i aria-hidden="true" /> Updated</span>
           {region.updateRationale ? (
             <details>
               <summary>Why this changed</summary>
@@ -1211,12 +1208,12 @@ function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; a
 
       <div className="notebook" ref={notebookRef}>
         <header className="notebook-cover">
-          <p className="eyebrow">Living notebook · {state.lesson.draft?.estimatedMinutes ?? 14} min path</p>
+          <p className="eyebrow">Your lesson · {state.lesson.draft?.estimatedMinutes ?? 14} min path</p>
           <h1>{state.lesson.draft?.title ?? state.session.topic}</h1>
           <p>{state.lesson.draft?.subtitle}</p>
           <div className="notebook-cover__legend">
-            <span><i className="legend-focus" /> Focus tells Codex where you are</span>
-            <span><i className="legend-agent" /> Agent edits are scoped + undoable</span>
+            <span><i className="legend-focus" /> This is your current section</span>
+            <span><i className="legend-agent" /> Changes can be undone</span>
             <span><i className="legend-you" /> Your answers remain yours</span>
           </div>
         </header>

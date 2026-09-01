@@ -289,7 +289,7 @@ const { registry: learningContentRegistry } = defineRegistry(learningContentCata
     ),
     SourceCards: ({ props }) => (
       <aside className="research-block">
-        <div className="research-block__heading"><span aria-hidden="true">↗</span><strong>Research attached by Codex</strong></div>
+        <div className="research-block__heading"><span aria-hidden="true">↗</span><strong>Research for this section</strong></div>
         <p>{props.summary}</p>
         <ul>
           {props.sources.map((source) => (
@@ -342,14 +342,10 @@ function contentSpec(blocks: RegionContent[], mode: "full" | "preview"): Spec {
   const spec: Spec = { root: "root", elements };
   const validated = learningContentCatalog.validate(spec);
   if (!validated.success || !validated.data) {
-    throw new Error("Trusted learning content did not match the json-render catalog.");
+    throw new Error("This lesson section could not be displayed.");
   }
   return validated.data as Spec;
 }
-
-export const trustedContentComponentNames = learningContentCatalog.componentNames.filter(
-  (name) => name !== "ContentStack",
-);
 
 export function TrustedContentProvider({ children }: { children: ReactNode }) {
   return (

@@ -137,7 +137,7 @@ export function SandboxedWidget({ widget }: { widget: WidgetContent }) {
     <section className="sandbox-card" aria-labelledby={`${widget.widgetId}-title`}>
       <header className="sandbox-card__header">
         <div>
-          <span className="eyebrow">Interactive model · sandboxed</span>
+          <span className="eyebrow">Try it yourself</span>
           <h4 id={`${widget.widgetId}-title`}>{widget.title}</h4>
         </div>
         <div className="sandbox-card__controls">

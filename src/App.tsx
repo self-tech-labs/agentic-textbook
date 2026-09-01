@@ -59,7 +59,7 @@ export default function App() {
   useEffect(() => {
     document.title = state.session.topic
       ? `${state.session.topic} · learn.ogram`
-      : "learn.ogram · Agent-native learning canvas";
+      : "learn.ogram · Personal learning canvas";
   }, [state.session.topic]);
 
   useEffect(() => {
