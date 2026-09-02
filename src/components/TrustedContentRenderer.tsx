@@ -202,6 +202,7 @@ export const learningContentCatalog = defineCatalog(schema, {
           status: z.enum(["pending", "ready", "failed", "expired"]),
           caption: z.string(),
           attribution: z.string(),
+          rightsBasis: z.string(),
           alt: z.string().optional(),
           transcript: z.string().optional(),
           captionsVtt: z.string().optional(),

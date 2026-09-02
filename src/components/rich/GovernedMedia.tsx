@@ -15,7 +15,7 @@ export default function GovernedMedia({ block }: { block: MediaBlock }) {
             ? asset.alt
             : asset.transcript || "This governed media asset is unavailable."}
         </p>
-        <small>{asset.attribution}</small>
+        <small>{asset.attribution} · Rights: {asset.rightsBasis}</small>
       </aside>
     );
   }
@@ -63,6 +63,7 @@ export default function GovernedMedia({ block }: { block: MediaBlock }) {
       <figcaption>
         <strong>{asset.caption}</strong>
         <span>{asset.attribution}</span>
+        <span>Rights: {asset.rightsBasis}</span>
       </figcaption>
       {asset.transcript ? (
         <details className="media-transcript">

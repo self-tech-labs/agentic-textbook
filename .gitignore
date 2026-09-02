@@ -13,3 +13,4 @@ test-results/
 .wrangler/
 output/playwright/
 .evals/
+.devpost-hackathon-state.json

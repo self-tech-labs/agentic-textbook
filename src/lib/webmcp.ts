@@ -509,7 +509,7 @@ const trustedContentSchema = {
         asset: {
           type: "object",
           description:
-            "Immutable asset reference returned by learn_register_asset, including caption, attribution, and accessibility metadata.",
+            "Immutable asset reference returned by learn_register_asset, including caption, attribution, rights basis, and accessibility metadata.",
         },
       },
     },
@@ -821,6 +821,7 @@ function parseTrustedContent(value: unknown): TrustedPatchContent {
         ),
         caption: stringValue(asset, "caption", 3, 800),
         attribution: stringValue(asset, "attribution", 2, 800),
+        rightsBasis: stringValue(asset, "rightsBasis", 3, 800),
       },
     };
     const optionalKeys = [
@@ -2040,17 +2041,42 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
   const registerAsset: WebMcpToolDefinition = {
     name: "learn_register_asset",
     description:
-      "Validate and import one governed HTTPS image, audio, or video asset. The service rejects private destinations, spoofed MIME types, SVG, HTML, oversized files, and unsafe redirects.",
+      "Import one governed HTTPS media asset only after confirming permission to copy and display it. Records the rights basis and rejects unsafe destinations, spoofed types, SVG, HTML, and oversized files.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      required: ["nonce", "url", "kind", "caption", "attribution"],
+      required: [
+        "nonce",
+        "url",
+        "kind",
+        "caption",
+        "attribution",
+        "rightsConfirmed",
+        "rightsBasis",
+      ],
       properties: {
         nonce: nonceSchema,
         url: { type: "string", minLength: 10, maxLength: 2000 },
         kind: { type: "string", enum: ["image", "audio", "video"] },
         caption: { type: "string", minLength: 3, maxLength: 800 },
-        attribution: { type: "string", minLength: 2, maxLength: 800 },
+        attribution: {
+          type: "string",
+          minLength: 2,
+          maxLength: 800,
+          description: "Creator and source attribution shown beside the media.",
+        },
+        rightsConfirmed: {
+          const: true,
+          description:
+            "Must be true only when the media may lawfully be copied and displayed.",
+        },
+        rightsBasis: {
+          type: "string",
+          minLength: 3,
+          maxLength: 800,
+          description:
+            "License, permission, public-domain status, or owner-created basis.",
+        },
         alt: { type: "string", minLength: 3, maxLength: 1200 },
         transcript: { type: "string", minLength: 3, maxLength: 20000 },
         captionsVtt: { type: "string", minLength: 3, maxLength: 4000 },
@@ -2060,6 +2086,11 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
     async execute(input) {
       const object = objectInput(input);
       requireNonce(object, actions);
+      if (object.rightsConfirmed !== true) {
+        throw new Error(
+          "Asset import requires explicit confirmation that copying and display are authorized.",
+        );
+      }
       const kind = enumValue(object, "kind", ["image", "audio", "video"] as const);
       const alt = optionalString(object, "alt", 1200);
       const transcript = optionalString(object, "transcript", 20000);
@@ -2077,6 +2108,8 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
         kind,
         caption: stringValue(object, "caption", 3, 800),
         attribution: stringValue(object, "attribution", 2, 800),
+        rightsConfirmed: true,
+        rightsBasis: stringValue(object, "rightsBasis", 3, 800),
         ...(alt ? { alt } : {}),
         ...(transcript ? { transcript } : {}),
         ...(captionsVtt ? { captionsVtt } : {}),

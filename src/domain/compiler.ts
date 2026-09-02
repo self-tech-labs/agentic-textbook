@@ -283,6 +283,17 @@ function assetDiagnostics(
         ),
       );
     }
+    if (asset.rightsBasis.trim().length < 3) {
+      diagnostics.push(
+        diagnostic(
+          "rights.asset-basis",
+          "error",
+          `${path}.rightsBasis`,
+          "Media needs a recorded license, permission, public-domain, or owner-created basis.",
+          "Record why this project is authorized to copy and display the asset.",
+        ),
+      );
+    }
     if ((asset.kind === "audio" || asset.kind === "video") && !asset.transcript?.trim()) {
       diagnostics.push(
         diagnostic(

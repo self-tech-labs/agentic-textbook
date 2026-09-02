@@ -1,10 +1,22 @@
-# learn.ogram v4 — Flexible, personalized learning canvas
+# Agentic Textbook
 
-learn.ogram turns the page beside a Codex conversation into a governed lesson canvas. A learner prepares a topic-neutral brief; Codex can then author a 3–20-region lesson using registered prose, formulas, Mermaid diagrams, code, governed media, and exercises. Subject matter and pedagogy are data in a validated `LessonDocumentV4`, not React routes.
+Agentic Textbook is a WebMCP learning platform built around a productive division of labour: the learner brings their preferred agent, and the application brings the conditions in which good learning can happen.
 
-The learner still owns the important decisions: context claims are reviewed before use, the exact structural revision is approved before publication, and submitted evidence and its selected branch are immutable.
+WebMCP turns the textbook from a static artifact into a meeting point between complementary systems:
 
-## What V4 demonstrates
+- **The learner's agent brings context and generative capacity.** In a bring-your-own-agent (BYOA) model, the learner can use the agent they already trust. With explicit permission, that agent can bring relevant, learner-approved context—interests, prior knowledge, goals, professional background, or the current conversation—and use its model capabilities to create, explain, and adapt material on demand.
+- **Agentic Textbook brings the pedagogical runtime.** The app supplies a governed canvas, lesson structure, sequencing, remediation paths, exercises, evidence, accessibility rules, and learning-science-backed primitives. The subject can change; the contract for a coherent learning experience remains stable.
+- **The service layer makes the experience operable.** Local-first learner state, minimized operational metadata, content-addressed media, quotas, provenance, and isolated code execution provide a privacy-conscious foundation for running a real learning platform. That boundary also creates room for efficient caching and reuse without handing raw learner history to the service.
+
+In the middle is the lesson itself. The learner can ask the agent to slow down, explain a difficult point in more detail, rephrase it, approach it from another angle, add a formula or diagram, create or attach an illustration, generate an exercise, or revise one focused part of the canvas. The same contract can grow toward generated video and more immersive learning experiences without giving up pedagogical or learner control.
+
+For company-provided learning through Ogram Learn, the same consent-scoped context lane can also carry organization-authored curricula, terminology, policies, role expectations, or internal knowledge into an experience. The current repository establishes that governed extension point; it does not claim a complete enterprise administration layer.
+
+Learner authority is part of the design: proposed context is reviewed before use, the exact structural revision is approved before publication, and submitted evidence and its selected branch are immutable.
+
+Under the hood, a topic-neutral brief becomes a validated 3–20-region `LessonDocumentV4` composed from registered prose, formulas, Mermaid diagrams, code, governed media, and exercises. Subject matter and pedagogy are data, not hard-coded React routes.
+
+## What is implemented today
 
 - A generic landing brief with topic, outcome, level, time, learning modes, accessibility notes, and visible recent-task personalization control.
 - Registry-driven starters for a current personalized Codex workflow, algebra and functions, and JavaScript/TypeScript/Python debugging.
@@ -137,13 +149,17 @@ worker/                            guest security, R2 import, D1 metadata, Sandb
 migrations/0001_v4_runtime.sql     operational D1 schema
 contracts/                         transport-facing JSON Schemas
 docs/architecture.md               runtime and trust-boundary design
-docs/demo-script.md                Sep 3 vertical-slice walkthrough
 docs/deployment.md                 Cloudflare setup and release checks
-docs/hackathon-links.md            canonical source, production, and release-PR URLs
-docs/jury-readiness.md             latest verified matrix, evidence, and blockers
-docs/video-production-readiness.md full-surface capture and reusable demo methodology
+docs/rights-and-licensing-audit.md rights, provenance, trademark, and dependency review
+THIRD_PARTY_NOTICES.md             dependency notices and deployable license references
 ```
 
-## Deployment status
+## Live app
 
-Workers Paid/Containers, isolated staging, and the production Cloudflare stack were verified on September 2, 2026. The public release is available at [ogram-learning-canvas.ervaucher.workers.dev](https://ogram-learning-canvas.ervaucher.workers.dev), where health, CSRF, governed media, JavaScript/TypeScript/Python cold-and-warm Sandbox runs, and all 13 adversarial checks pass. This technical promotion does not claim challenge eligibility or submit anything to Devpost. See [docs/hackathon-links.md](docs/hackathon-links.md), [docs/challenge-preflight.md](docs/challenge-preflight.md), and [docs/deployment.md](docs/deployment.md).
+The current production build is available at [ogram-learning-canvas.ervaucher.workers.dev](https://ogram-learning-canvas.ervaucher.workers.dev). It runs the Vite app and API on Cloudflare Workers with D1 operational metadata, content-addressed R2 media, and isolated Sandbox execution. On September 2, 2026, production checks covered health, CSRF, governed media, cold-and-warm JavaScript/TypeScript/Python runs, and all 13 adversarial isolation cases. See [docs/deployment.md](docs/deployment.md) for the deployment and verification runbook.
+
+## Rights and licensing
+
+Project code is MIT-licensed. Third-party packages retain their own licenses; notices and the complete deployable production dependency license corpus are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The documented provenance review is in [docs/rights-and-licensing-audit.md](docs/rights-and-licensing-audit.md).
+
+Media import is fail-closed on rights: callers must explicitly confirm authorization and record a license, permission, public-domain, or owner-created basis before the Worker copies an asset. Platform and product names are used descriptively; their trademarks remain with their respective owners.

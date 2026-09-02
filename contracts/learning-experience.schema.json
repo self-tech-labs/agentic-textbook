@@ -188,7 +188,7 @@
     "asset": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind", "uri", "alt", "digest"],
+      "required": ["id", "kind", "uri", "alt", "digest", "rightsBasis"],
       "properties": {
         "id": { "type": "string", "minLength": 4, "maxLength": 120 },
         "kind": { "enum": ["image", "audio", "video"] },
@@ -197,6 +197,7 @@
         "caption": { "type": "string", "maxLength": 400 },
         "transcript": { "type": "string", "maxLength": 8000 },
         "digest": { "type": "string", "minLength": 8, "maxLength": 180 },
+        "rightsBasis": { "type": "string", "minLength": 3, "maxLength": 800 },
         "generatedBy": { "type": "string", "maxLength": 120 }
       }
     },

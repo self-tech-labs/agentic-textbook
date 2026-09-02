@@ -106,7 +106,7 @@ V4 keeps all V3 blocks and adds:
 | `code_example` | Escaped semantic code with language, caption, and optional highlighted lines. |
 | `media` | Ready governed asset reference with caption, attribution, and kind-specific accessibility data. |
 
-Images require alt text. Audio requires a transcript. Video requires both a transcript and VTT captions. Native audio/video controls are shown, autoplay is absent, and preload is metadata-only. A malformed or unavailable rich block renders an accessible textual fallback instead of failing its region.
+Images require alt text. Audio requires a transcript. Video requires both a transcript and VTT captions. Every imported asset also requires explicit confirmation that copying and display are authorized, plus a recorded license or permission basis that remains visible beside the media. Native audio/video controls are shown, autoplay is absent, and preload is metadata-only. A malformed or unavailable rich block renders an accessible textual fallback instead of failing its region.
 
 Exercises are `choice`, `reflection`, `numeric`, and `code_lab`. Numeric evaluation uses an authored absolute tolerance and optional unit. Code tests are registered server-side; the lesson receives only the immutable exercise ID, visible test descriptions, starter source, and fallback prompt.
 

@@ -80,7 +80,7 @@
     "asset": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind", "status", "caption", "attribution"],
+      "required": ["id", "kind", "status", "caption", "attribution", "rightsBasis"],
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 200 },
         "kind": { "enum": ["image", "audio", "video"] },
@@ -89,6 +89,7 @@
         "status": { "enum": ["pending", "ready", "failed", "expired"] },
         "caption": { "type": "string", "minLength": 1, "maxLength": 800 },
         "attribution": { "type": "string", "minLength": 1, "maxLength": 800 },
+        "rightsBasis": { "type": "string", "minLength": 3, "maxLength": 800 },
         "alt": { "type": "string", "maxLength": 1200 },
         "transcript": { "type": "string", "maxLength": 20000 },
         "captionsVtt": { "type": "string", "maxLength": 2000 },

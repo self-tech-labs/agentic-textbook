@@ -121,6 +121,7 @@ export interface LessonAssetRef {
   status: "pending" | "ready" | "failed" | "expired";
   caption: string;
   attribution: string;
+  rightsBasis: string;
   alt?: string;
   transcript?: string;
   captionsVtt?: string;
@@ -541,8 +542,12 @@ function validateContent(
     if (asset.status !== "ready") {
       diagnostic(diagnostics, path + ".asset.status", "Media must be ready before the lesson is published.");
     }
-    if (!asset.caption.trim() || !asset.attribution.trim()) {
-      diagnostic(diagnostics, path + ".asset", "Media needs a caption and attribution.");
+    if (!asset.caption.trim() || !asset.attribution.trim() || !asset.rightsBasis.trim()) {
+      diagnostic(
+        diagnostics,
+        path + ".asset",
+        "Media needs a caption, attribution, and recorded rights basis.",
+      );
     }
     if (asset.kind === "image" && !asset.alt?.trim()) {
       diagnostic(diagnostics, path + ".asset.alt", "Images require alternative text.");

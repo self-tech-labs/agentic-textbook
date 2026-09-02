@@ -231,6 +231,17 @@ export function validateDeclaredMime(response: Response, kind: string) {
   }
 }
 
+export function requireRightsAttestation(body: Record<string, unknown>): string {
+  if (body.rightsConfirmed !== true) {
+    throw new HttpError(
+      400,
+      "Asset import requires confirmation that copying and display are authorized.",
+      "asset_rights_required",
+    );
+  }
+  return requiredString(body, "rightsBasis", 3, 800);
+}
+
 export async function importAsset(
   request: Request,
   env: Env,
@@ -241,6 +252,7 @@ export async function importAsset(
   const lessonId = requiredString(body, "lessonId", 3, 200);
   const caption = requiredString(body, "caption", 3, 800);
   const attribution = requiredString(body, "attribution", 2, 800);
+  const rightsBasis = requireRightsAttestation(body);
   const alt = optionalString(body, "alt", 1200);
   const transcript = optionalString(body, "transcript", 20_000);
   const captionsSource = optionalString(body, "captionsVtt", 4_000);
@@ -339,6 +351,7 @@ export async function importAsset(
         status: "ready",
         caption,
         attribution,
+        rightsBasis,
         ...(alt ? { alt } : {}),
         ...(transcript ? { transcript } : {}),
         ...(captionsSource

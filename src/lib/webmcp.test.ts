@@ -121,6 +121,34 @@ describe("learn.ogram v4 WebMCP surface", () => {
     expect(byName.learn_propose_context?.annotations?.readOnlyHint).toBe(false);
   });
 
+  it("requires explicit media rights before an asset can be imported", async () => {
+    const { result } = renderHook(() => useLearningCanvas());
+    const actions = result.current.actions;
+    const started = findTool(actions, "learn_begin_session").execute({
+      topic: "Rights-aware media",
+    }) as { nonce: string };
+    const registerAsset = findTool(actions, "learn_register_asset");
+    expect(registerAsset.inputSchema.required).toEqual(
+      expect.arrayContaining(["rightsConfirmed", "rightsBasis"]),
+    );
+    expect(
+      (registerAsset.inputSchema.properties as Record<string, { const?: unknown }>)[
+        "rightsConfirmed"
+      ]?.const,
+    ).toBe(true);
+    await expect(
+      registerAsset.execute({
+        nonce: started.nonce,
+        url: "https://media.example/lesson.png",
+        kind: "image",
+        caption: "A rights-aware fixture",
+        attribution: "Fixture author",
+        rightsBasis: "Owner-created fixture",
+        alt: "A paper lesson path",
+      }),
+    ).rejects.toThrow(/explicit confirmation/i);
+  });
+
   it("describes every bootstrap argument within the model-facing budget", () => {
     const { result } = renderHook(() => useLearningCanvas());
     const begin = findTool(result.current.actions, "learn_begin_session");

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   detectedMime,
+  requireRightsAttestation,
   validateDeclaredMime,
   validateRemoteUrl,
 } from "./assets";
@@ -46,6 +47,21 @@ describe("V4 Worker security boundaries", () => {
     expect(validateRemoteUrl("https://cdn.example.com/asset.png#fragment").toString()).toBe(
       "https://cdn.example.com/asset.png",
     );
+  });
+
+  it("requires an explicit media-rights attestation and records its basis", () => {
+    expect(() =>
+      requireRightsAttestation({ rightsBasis: "CC BY 4.0" }),
+    ).toThrow(/confirmation/i);
+    expect(() =>
+      requireRightsAttestation({ rightsConfirmed: true, rightsBasis: "" }),
+    ).toThrow(/rightsBasis/i);
+    expect(
+      requireRightsAttestation({
+        rightsConfirmed: true,
+        rightsBasis: "Owner-created photograph",
+      }),
+    ).toBe("Owner-created photograph");
   });
 
   it("requires declared media type and verified magic bytes", () => {

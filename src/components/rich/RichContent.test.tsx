@@ -94,6 +94,7 @@ describe("V4 rich learning content", () => {
             url: "/media/audio-fixture",
             caption: "A narrated explanation",
             attribution: "Ogram fixture",
+            rightsBasis: "Owner-created test fixture",
             transcript: "The narrated explanation in text.",
           },
         }}
@@ -116,6 +117,7 @@ describe("V4 rich learning content", () => {
             url: "/media/video-fixture",
             caption: "A captioned demonstration",
             attribution: "Ogram fixture",
+            rightsBasis: "Owner-created test fixture",
             transcript: "The full demonstration transcript.",
             captionsVtt: "/media/video-fixture/captions",
           },

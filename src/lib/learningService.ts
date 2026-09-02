@@ -76,6 +76,8 @@ export function registerAsset(input: {
   kind: LessonAssetRef["kind"];
   caption: string;
   attribution: string;
+  rightsConfirmed: true;
+  rightsBasis: string;
   alt?: string;
   transcript?: string;
   captionsVtt?: string;

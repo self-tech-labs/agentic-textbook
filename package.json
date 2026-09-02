@@ -10,6 +10,8 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build && node scripts/check-bundle.mjs",
     "check:bundle": "node scripts/check-bundle.mjs",
+    "licenses:generate": "node scripts/generate-third-party-licenses.mjs",
+    "licenses:check": "node scripts/generate-third-party-licenses.mjs --check",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest",
     "test:run": "vitest run",

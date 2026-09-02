@@ -9,7 +9,7 @@ Implementation status updated: September 2, 2026. Rules last checked against Dev
 - [x] JavaScript, TypeScript, and Python pass their server-side fixture tests in fresh local containers.
 - [x] Governed HTTPS media passes MIME/magic-byte validation, immutable R2 storage, authenticated readback, and publish-reference validation locally.
 - [x] Local adversarial smoke passes for CSRF/origin, network and secret isolation, package installation, filesystem escape, reset, shell metacharacters, source/output/time limits, concurrency, and rolling quota.
-- [x] TypeScript, 64 automated tests, production build, 109.31 KB initial-JavaScript budget, and both production and isolated-staging Cloudflare dry runs pass.
+- [x] TypeScript, 66 automated tests, production build, 109.53 KB initial-JavaScript budget, and both production and isolated-staging Cloudflare dry runs pass.
 - [x] GoogleChromeLabs `webmcp-evals` deterministic smoke passes 3/3 cases in WebMCP-enabled Chrome.
 - [x] Local nekuda Workbench tool discovery, read-only execution, saved unit test, and 100/100 audit pass.
 - [ ] Submitting owner confirms personal/entity eligibility and acknowledges the official rules.
@@ -20,6 +20,8 @@ Implementation status updated: September 2, 2026. Rules last checked against Dev
 - [x] The same three-language Sandbox smoke test passes against staging.
 - [ ] Production/incognito run passes in ChatGPT’s in-app browser and a WebMCP-capable Chrome build.
 - [x] Gemini 3.5 Flash agent-trajectory suite passes 21/21 expected tool steps across three fresh-page samples through GoogleChromeLabs `webmcp-evals`, including dynamic bootstrap-to-session tool rotation.
+- [x] Repository-wide rights and license audit passes; direct notices, canonical license texts, and the complete 162-package production license corpus ship with the deployment.
+- [x] Governed media import requires an explicit rights confirmation and a recorded license or permission basis.
 
 The owner eligibility item is a legal/personal attestation and must not be checked by
 an agent. On September 2, the owner enabled Workers Paid and R2; the live Containers

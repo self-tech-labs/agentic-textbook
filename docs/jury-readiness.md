@@ -14,8 +14,8 @@ or Devpost submission is claimed.
 | Surface | Evidence | Status |
 |---|---|---|
 | Repository | Fresh `npm ci`; MIT license; public origin readable; `npm audit --omit=dev` reports zero vulnerabilities | Pass |
-| App | TypeScript passes; 11 test files and 64 tests pass | Pass |
-| Bundle | Production build passes; initial JavaScript is 109.31 KB gzip against the 145 KB budget | Pass |
+| App | TypeScript passes; 11 test files and 66 tests pass | Pass |
+| Bundle | Production build passes; initial JavaScript is 109.53 KB gzip against the 145 KB budget | Pass |
 | Worker packaging | Default production and explicit `staging` Wrangler dry runs expose Assets, D1, R2, Durable Object, Container, and non-secret log-level bindings | Pass |
 | Deterministic WebMCP | GoogleChromeLabs `webmcp-evals@0.0.4` live-browser smoke passes 3/3 calls on fresh pages | Pass |
 | Gemini WebMCP | Gemini 3.5 Flash passes 21/21 expected steps across nine fresh-page executions; the JSON report records `backend: vercel`, `model: gemini-3.5-flash`, 0 failures, and 0 errors | Pass |

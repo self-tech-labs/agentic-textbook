@@ -235,6 +235,7 @@ export interface AssetReference {
   caption?: string;
   transcript?: string;
   digest: string;
+  rightsBasis: string;
   generatedBy?: string;
 }
 
