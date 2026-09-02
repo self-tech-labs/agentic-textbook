@@ -4,19 +4,27 @@ import type {
   AgentLearningCanvasState,
   CanvasRegion,
   CanvasRegionStatus,
+  CodeExecutionEvidence,
   ContextConsentAttestation,
   LearnerContextClaim,
+  LessonContextPackV1,
   LessonDocumentV3,
   LessonRegion,
   LearningSessionStage,
+  PedagogicalMode,
   RegionContent,
   RegionHistoryEntry,
   RegionResponse,
   ResearchReference,
   TrustedPatchContent,
 } from "../domain/agentCanvas";
-import { validateLessonDocument } from "../domain/agentCanvas";
+import {
+  conditionMatches,
+  validateLessonDocument,
+} from "../domain/agentCanvas";
+import { createSkeletonForBrief } from "../domain/lessonCatalog";
 import { createTransformerSkeleton } from "../domain/transformerFixture";
+import { LESSON_LIMITS } from "../domain/lessonRegistry";
 import {
   clearCanvasState,
   loadCanvasState,
@@ -35,35 +43,15 @@ function makeId(prefix: string): string {
   return `${prefix}-${suffix}`;
 }
 
-function createGenericSkeleton(topic: string): CanvasRegion[] {
-  const regions = [
-    ["learning-goal", "01 · orientation", `A useful model of ${topic}`, "Set the learning goal.", "orient"],
-    ["foundations", "02 · foundations", "Build the foundations", "Establish the minimum prerequisites.", "explain"],
-    ["core-mechanism", "03 · mechanism", "See the core mechanism", "Trace how the central idea works.", "model"],
-    ["worked-example", "04 · example", "Work through an example", "Apply the mechanism to one case.", "explain"],
-    ["practice", "05 · practice", "Try it yourself", "Check understanding with a bounded task.", "practice"],
-    ["teach-back", "06 · retrieval", "Explain it back", "Consolidate the idea in your own words.", "reflect"],
-  ] as const;
-
-  return regions.map(([id, label, title, objective, kind], index) => ({
-    id,
-    order: index + 1,
-    label,
-    title,
-    objective,
-    kind,
-    revision: 0,
-    status: "skeleton",
-    content: [],
-    provenance: [],
-    history: [],
-  }));
-}
-
-function skeletonForTopic(topic: string): CanvasRegion[] {
-  return /transformer/i.test(topic)
+function skeletonForTopic(
+  topic: string,
+  mode: PedagogicalMode = "mixed",
+  blueprintId?: string,
+): CanvasRegion[] {
+  return /transformer/i.test(topic) ||
+    blueprintId === "transformer_technical_beginner"
     ? createTransformerSkeleton()
-    : createGenericSkeleton(topic);
+    : createSkeletonForBrief(topic, mode);
 }
 
 function appendEvent(
@@ -188,18 +176,22 @@ function acceptedClaimIds(state: AgentLearningCanvasState): string[] {
 
 export function createInitialCanvasState(): AgentLearningCanvasState {
   return {
-    version: 3,
+    version: 4,
     revision: 0,
     session: {
       id: null,
+      briefId: null,
+      blueprintId: null,
       topic: null,
       goal: null,
       stage: "ready",
       startedAt: null,
       contextConsent: null,
       personalization: "undecided",
+      hostCapabilities: [],
     },
     contextClaims: [],
+    topicRadar: [],
     lesson: {
       status: "skeleton",
       draft: null,
@@ -226,7 +218,16 @@ export const firstToolGuide = [
 export interface CanvasActions {
   getState: () => AgentLearningCanvasState;
   getNonce: () => string | null;
-  beginSession: (input: { topic: string; goal?: string }) => {
+  beginSession: (input: {
+    topic: string;
+    goal?: string;
+    briefId?: string;
+    blueprintId?: string;
+    pedagogicalMode?: PedagogicalMode;
+    personalizeFromRecentTasks?: boolean;
+    contextPack?: LessonContextPackV1;
+    hostCapabilities?: string[];
+  }) => {
     sessionId: string;
     nonce: string;
     stage: LearningSessionStage;
@@ -369,7 +370,11 @@ export interface CanvasActions {
     regionRevision: number;
     canvasRevision: number;
   };
-  submitLearnerResponse: (regionId: string, value: string) => {
+  submitLearnerResponse: (
+    regionId: string,
+    value: string,
+    execution?: CodeExecutionEvidence,
+  ) => {
     eventId: string;
     correct?: boolean;
     revision: number;
@@ -415,9 +420,32 @@ export function useLearningCanvas(): {
     const getState = () => stateRef.current;
     const getNonce = () => nonceRef.current;
 
-    const beginSession: CanvasActions["beginSession"] = ({ topic, goal }) => {
+    const beginSession: CanvasActions["beginSession"] = ({
+      topic,
+      goal,
+      briefId,
+      blueprintId,
+      pedagogicalMode = "mixed",
+      personalizeFromRecentTasks,
+      contextPack,
+      hostCapabilities = [],
+    }) => {
       const cleanTopic = topic.trim();
       if (!cleanTopic) throw new Error("A learning topic is required.");
+      if (contextPack) {
+        if (contextPack.lookbackDays < 1 || contextPack.lookbackDays > 30) {
+          throw new Error("Recent-task context is limited to the previous 30 days.");
+        }
+        if (contextPack.inspectedTaskCount > 10) {
+          throw new Error("At most ten recent task summaries may be inspected.");
+        }
+        if (contextPack.signals.length > 8) {
+          throw new Error("A context pack may contain at most eight derived learning signals.");
+        }
+        if (contextPack.signals.some((signal) => signal.summary.trim().length > 280)) {
+          throw new Error("Derived learning signals must be 280 characters or shorter.");
+        }
+      }
 
       const current = stateRef.current;
       const resumed =
@@ -440,26 +468,64 @@ export function useLearningCanvas(): {
           resumed: true,
           guide: firstToolGuide,
           suggestedPrompts: [
-            "Use no personal context; prepare the technical-beginner lesson.",
-            "I consent to you checking relevant past Codex tasks and project conversations, then proposing only minimized context for my review.",
+            "Use the saved lesson brief and no personal context.",
+            "Propose only minimized learning signals for my review before personalizing.",
             "Read the canvas and help me with the region I am focused on.",
           ],
           revision: current.revision,
         };
       }
 
+      const contextClaims: LearnerContextClaim[] = (contextPack?.signals ?? []).map(
+        (signal, index) => ({
+          id: "context-signal-" + (index + 1),
+          kind: signal.kind,
+          summary: signal.summary.trim(),
+          source: {
+            route: "codex_history",
+            providerId: "codex-history",
+            providerLabel: signal.sourceLabel || "Recent Codex task summaries",
+            resourceType: "derived_learning_signal",
+          },
+          confidence: signal.confidence,
+          sensitivity: "personal",
+          allowedPurposes: ["lesson_personalization"],
+          evidenceRef: "derived-task-summary:" + (index + 1),
+          review: "pending",
+          observedAt: signal.observedAt,
+        }),
+      );
+      const contextConsent: ContextConsentAttestation | null = contextClaims.length
+        ? {
+            obtainedAt: new Date().toISOString(),
+            scope:
+              "Use minimized learning signals derived from recent Codex task summaries for this lesson only.",
+            providerIds: ["codex-history"],
+            sourceScopes: ["codex_history"],
+          }
+        : null;
+      const personalization = contextClaims.length
+        ? ("reviewing" as const)
+        : personalizeFromRecentTasks === undefined
+          ? ("undecided" as const)
+          : ("skipped" as const);
       const base: AgentLearningCanvasState = {
         ...createInitialCanvasState(),
         session: {
           id: makeId("learning-session"),
+          briefId: briefId?.trim() || null,
+          blueprintId: blueprintId?.trim() || "open_topic_v1",
           topic: cleanTopic,
           goal: goal?.trim() || null,
           stage: "context_review",
           startedAt: new Date().toISOString(),
-          contextConsent: null,
-          personalization: "undecided",
+          contextConsent,
+          personalization,
+          hostCapabilities: [...new Set(hostCapabilities)].slice(0, 32),
         },
-        regions: skeletonForTopic(cleanTopic),
+        contextClaims,
+        topicRadar: clone(contextPack?.topicRadar ?? []).slice(0, 12),
+        regions: skeletonForTopic(cleanTopic, pedagogicalMode, blueprintId),
       };
       const evolved = appendEvent(
         base,
@@ -477,8 +543,8 @@ export function useLearningCanvas(): {
         resumed: false,
         guide: firstToolGuide,
         suggestedPrompts: [
-          "Use no personal context; prepare the technical-beginner lesson.",
-          "I consent to you checking relevant past Codex tasks and project conversations, then proposing only minimized context for my review.",
+          "Use the lesson brief I prepared on this page.",
+          "Propose only minimized learning signals for my review before personalizing.",
           "Once the notebook is published, read my focused region before changing it.",
         ],
         revision: evolved.state.revision,
@@ -514,8 +580,8 @@ export function useLearningCanvas(): {
         if (claim.review !== "pending") {
           throw new Error("New context claims must await learner review.");
         }
-        if (claim.summary.trim().length > 240) {
-          throw new Error(`Context claim ${claim.id} is not privacy-minimized (240 character maximum).`);
+        if (claim.summary.trim().length > 280) {
+          throw new Error(`Context claim ${claim.id} is not privacy-minimized (280 character maximum).`);
         }
         if (
           claim.source.route !== "learner" &&
@@ -588,9 +654,9 @@ export function useLearningCanvas(): {
       }
       if (
         input.decision === "corrected" &&
-        input.correctedSummary!.trim().length > 240
+        input.correctedSummary!.trim().length > 280
       ) {
-        throw new Error("A corrected context claim must stay under 240 characters.");
+        throw new Error("A corrected context claim must stay under 280 characters.");
       }
 
       const contextClaims: LearnerContextClaim[] = current.contextClaims.map((item) =>
@@ -670,8 +736,11 @@ export function useLearningCanvas(): {
           "Progressive construction is available while preparing the first lesson. Use a complete draft for a published notebook revision.",
         );
       }
-      if (input.outline.length < 4 || input.outline.length > 12) {
-        throw new Error("A lesson outline must contain four to twelve regions.");
+      if (
+        input.outline.length < LESSON_LIMITS.minimumRegions ||
+        input.outline.length > LESSON_LIMITS.maximumRegions
+      ) {
+        throw new Error("A lesson outline must contain three to twenty regions.");
       }
       if (input.document.title.trim().length < 6) {
         throw new Error("The lesson title must contain at least six characters.");
@@ -847,6 +916,18 @@ export function useLearningCanvas(): {
       ensureLessonAuthoringReady(current);
 
       const validation = validateLessonDocument(input.document, acceptedClaimIds(current));
+      if (
+        current.lesson.publishedRevision !== null &&
+        input.document.revision <= current.lesson.publishedRevision
+      ) {
+        validation.valid = false;
+        validation.diagnostics.push({
+          path: "revision",
+          severity: "error",
+          explanation:
+            "Structural changes after publication require a new draft revision.",
+        });
+      }
       const protectedResponses = current.regions.filter((region) => region.response);
       for (const protectedRegion of protectedResponses) {
         const replacement = input.document.regions.find(
@@ -863,6 +944,30 @@ export function useLearningCanvas(): {
             severity: "error",
             explanation:
               "Published learner evidence is immutable; keep this region and its interaction unchanged.",
+          });
+        }
+        const selectedEdge = current.lesson.draft?.flow.edges
+          .filter((edge) => edge.from === protectedRegion.id)
+          .sort((left, right) => left.priority - right.priority)
+          .find((edge) => conditionMatches(edge.condition, protectedRegion.response));
+        const replacementEdge = input.document.flow.edges
+          .filter((edge) => edge.from === protectedRegion.id)
+          .sort((left, right) => left.priority - right.priority)
+          .find((edge) => conditionMatches(edge.condition, protectedRegion.response));
+        if (
+          selectedEdge &&
+          (!replacementEdge ||
+            replacementEdge.id !== selectedEdge.id ||
+            replacementEdge.to !== selectedEdge.to ||
+            JSON.stringify(replacementEdge.condition) !==
+              JSON.stringify(selectedEdge.condition))
+        ) {
+          validation.valid = false;
+          validation.diagnostics.push({
+            path: `flow.${protectedRegion.id}`,
+            severity: "error",
+            explanation:
+              "The selected branch for submitted learner evidence is immutable.",
           });
         }
       }
@@ -1021,7 +1126,10 @@ export function useLearningCanvas(): {
         {
           ...current,
           regions,
-          focus: { regionId: regions[0]?.id ?? null, selectedText: null },
+          focus: {
+            regionId: draft.flow.entryRegionId || regions[0]?.id || null,
+            selectedText: null,
+          },
           lesson: {
             ...current.lesson,
             status: "published",
@@ -1217,9 +1325,6 @@ export function useLearningCanvas(): {
         input.idempotencyKey,
       );
       if (previous) return previous;
-      ensureAgentWritable(current);
-      const region = requireRegion(current, input.regionId);
-      requireRegionRevision(region, input.baseRegionRevision);
       if (!input.sources.length || input.sources.length > 8) {
         throw new Error("Research needs one to eight bounded references.");
       }
@@ -1231,6 +1336,75 @@ export function useLearningCanvas(): {
           );
         }
       }
+
+      const constructionRegion = current.lesson.construction?.regions.find(
+        (candidate) => candidate.id === input.regionId,
+      );
+      if (constructionRegion && current.session.stage === "context_review") {
+        requireRegionRevision(constructionRegion, input.baseRegionRevision);
+        const undoToken = makeId("undo");
+        const at = new Date().toISOString();
+        const nextRegion: CanvasRegion = {
+          ...constructionRegion,
+          revision: constructionRegion.revision + 1,
+          status: "ready",
+          content: [
+            ...constructionRegion.content,
+            {
+              type: "source_cards",
+              summary: input.summary.trim(),
+              sources: clone(input.sources),
+            },
+          ],
+          provenance: [
+            ...constructionRegion.provenance,
+            {
+              actor: "agent",
+              label: "Research attached during authoring",
+              sourceRefs: input.sources.map((source) => source.url),
+              at,
+            },
+          ],
+          history: nextUndoHistory(constructionRegion, undoToken),
+          updatedAt: at,
+          updateRationale: "Attached bounded, sourced context during lesson authoring.",
+        };
+        const construction = current.lesson.construction!;
+        const evolved = appendEvent(
+          {
+            ...current,
+            lesson: {
+              ...current.lesson,
+              construction: {
+                ...construction,
+                regions: construction.regions.map((region) =>
+                  region.id === nextRegion.id ? nextRegion : region,
+                ),
+              },
+            },
+          },
+          "agent",
+          "canvas.research.attached",
+          `Attached ${input.sources.length} research source${input.sources.length === 1 ? "" : "s"} while authoring “${constructionRegion.title}”.`,
+          {
+            regionId: constructionRegion.id,
+            sourceIds: input.sources.map((source) => source.id),
+          },
+        );
+        const result = {
+          eventId: evolved.event.id,
+          regionId: constructionRegion.id,
+          regionRevision: nextRegion.revision,
+          canvasRevision: evolved.state.revision,
+          undoToken,
+        };
+        commit(withReceipt(evolved.state, input.idempotencyKey, result));
+        return result;
+      }
+
+      ensureAgentWritable(current);
+      const region = requireRegion(current, input.regionId);
+      requireRegionRevision(region, input.baseRegionRevision);
 
       const undoToken = makeId("undo");
       const at = new Date().toISOString();
@@ -1322,6 +1496,7 @@ export function useLearningCanvas(): {
     const submitLearnerResponse: CanvasActions["submitLearnerResponse"] = (
       regionId,
       value,
+      execution,
     ) => {
       const current = stateRef.current;
       const region = requireRegion(current, regionId);
@@ -1339,13 +1514,39 @@ export function useLearningCanvas(): {
           correct: option.correct,
           submittedAt: new Date().toISOString(),
         };
-      } else {
+      } else if (region.interaction.type === "reflection") {
         if (cleanValue.length < region.interaction.minimumCharacters) {
           throw new Error(
             `Write at least ${region.interaction.minimumCharacters} characters before saving your teach-back.`,
           );
         }
         response = { value: cleanValue, submittedAt: new Date().toISOString() };
+      } else if (region.interaction.type === "numeric") {
+        const numericValue = Number(cleanValue);
+        if (!cleanValue || !Number.isFinite(numericValue)) {
+          throw new Error("Enter a finite numeric answer.");
+        }
+        const correct =
+          Math.abs(numericValue - region.interaction.correctAnswer) <=
+          region.interaction.tolerance;
+        response = {
+          value: cleanValue,
+          correct,
+          submittedAt: new Date().toISOString(),
+        };
+      } else {
+        if (!execution || !execution.sourceHash.trim()) {
+          throw new Error("Run the code against the registered tests before submitting evidence.");
+        }
+        if (new TextEncoder().encode(value).byteLength > LESSON_LIMITS.codeBytes) {
+          throw new Error("Submitted code cannot exceed 32 KB.");
+        }
+        response = {
+          value,
+          correct: execution.status === "passed",
+          submittedAt: new Date().toISOString(),
+          execution: clone(execution),
+        };
       }
       const nextRegion = { ...region, revision: region.revision + 1, response };
       const evolved = appendEvent(

@@ -1,0 +1,537 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://learn.ogram.ch/contracts/v4/lesson-document-v4.schema.json",
+  "title": "learn.ogram LessonDocumentV4",
+  "description": "A schema-driven, reviewable learning document. DAG, evidence-path, byte-size, source-policy, and immutable-evidence rules require the semantic validator in src/domain/agentCanvas.ts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "revision",
+    "blueprintId",
+    "pedagogicalMode",
+    "sourcePolicy",
+    "topic",
+    "title",
+    "subtitle",
+    "audience",
+    "estimatedMinutes",
+    "objective",
+    "approvedClaimIds",
+    "regions",
+    "flow",
+    "assetRefs"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 4 },
+    "id": { "type": "string", "minLength": 3, "maxLength": 200 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "blueprintId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "pedagogicalMode": {
+      "enum": ["conceptual", "quantitative", "code", "scenario", "mixed"]
+    },
+    "sourcePolicy": { "enum": ["evergreen", "current"] },
+    "topic": { "type": "string", "minLength": 1, "maxLength": 300 },
+    "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "subtitle": { "type": "string", "maxLength": 500 },
+    "audience": { "type": "string", "minLength": 1, "maxLength": 300 },
+    "estimatedMinutes": { "type": "integer", "minimum": 1, "maximum": 90 },
+    "objective": { "type": "string", "minLength": 1, "maxLength": 600 },
+    "approvedClaimIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 8,
+      "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+    },
+    "regions": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/region" }
+    },
+    "flow": { "$ref": "#/$defs/flow" },
+    "assetRefs": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 8,
+      "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+    }
+  },
+  "$defs": {
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "url", "publisher", "claim"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "url": { "type": "string", "format": "uri", "maxLength": 2000 },
+        "publisher": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "publishedAt": { "type": "string", "format": "date-time" },
+        "retrievedAt": { "type": "string", "format": "date-time" },
+        "claim": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "sourceType": {
+          "enum": ["official", "community", "primary", "secondary"]
+        },
+        "availability": { "type": "string", "maxLength": 400 }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "status", "caption", "attribution"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "kind": { "enum": ["image", "audio", "video"] },
+        "url": { "type": "string", "maxLength": 2000 },
+        "mimeType": { "type": "string", "maxLength": 120 },
+        "status": { "enum": ["pending", "ready", "failed", "expired"] },
+        "caption": { "type": "string", "minLength": 1, "maxLength": 800 },
+        "attribution": { "type": "string", "minLength": 1, "maxLength": 800 },
+        "alt": { "type": "string", "maxLength": 1200 },
+        "transcript": { "type": "string", "maxLength": 20000 },
+        "captionsVtt": { "type": "string", "maxLength": 2000 },
+        "byteLength": { "type": "integer", "minimum": 0, "maximum": 41943040 },
+        "contentHash": { "type": "string", "maxLength": 128 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "image" } } },
+          "then": { "required": ["alt"], "properties": { "alt": { "minLength": 1 } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "audio" } } },
+          "then": {
+            "required": ["transcript"],
+            "properties": { "transcript": { "minLength": 1 } }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "video" } } },
+          "then": {
+            "required": ["transcript", "captionsVtt"],
+            "properties": {
+              "transcript": { "minLength": 1 },
+              "captionsVtt": { "minLength": 1 }
+            }
+          }
+        }
+      ]
+    },
+    "prose": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "const": "prose" },
+        "heading": { "type": "string", "maxLength": 240 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 12000 },
+        "emphasis": { "type": "string", "maxLength": 1000 }
+      }
+    },
+    "keyPoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "items"],
+      "properties": {
+        "type": { "const": "key_points" },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": { "type": "string", "minLength": 1, "maxLength": 1000 }
+        }
+      }
+    },
+    "tokenSequence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "tokens", "caption"],
+      "properties": {
+        "type": { "const": "token_sequence" },
+        "tokens": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "items": { "type": "string", "maxLength": 100 }
+        },
+        "caption": { "type": "string", "minLength": 1, "maxLength": 800 },
+        "highlightedIndex": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "attentionMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "tokens", "focusIndex", "weights", "explanation"],
+      "properties": {
+        "type": { "const": "attention_map" },
+        "tokens": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "items": { "type": "string", "maxLength": 100 }
+        },
+        "focusIndex": { "type": "integer", "minimum": 0 },
+        "weights": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "items": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "explanation": { "type": "string", "minLength": 1, "maxLength": 1200 }
+      }
+    },
+    "transformerStack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "stages", "caption"],
+      "properties": {
+        "type": { "const": "transformer_stack" },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "detail"],
+            "properties": {
+              "label": { "type": "string", "minLength": 1, "maxLength": 200 },
+              "detail": { "type": "string", "minLength": 1, "maxLength": 1000 }
+            }
+          }
+        },
+        "caption": { "type": "string", "minLength": 1, "maxLength": 800 }
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "leftLabel", "rightLabel", "rows"],
+      "properties": {
+        "type": { "const": "comparison" },
+        "leftLabel": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "rightLabel": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "left", "right"],
+            "properties": {
+              "label": { "type": "string", "minLength": 1, "maxLength": 200 },
+              "left": { "type": "string", "maxLength": 1000 },
+              "right": { "type": "string", "maxLength": 1000 }
+            }
+          }
+        }
+      }
+    },
+    "sourceCards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "summary", "sources"],
+      "properties": {
+        "type": { "const": "source_cards" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "$ref": "#/$defs/reference" }
+        }
+      }
+    },
+    "sandboxWidget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "widgetId",
+        "title",
+        "html",
+        "css",
+        "javascript",
+        "accessibleSummary",
+        "height"
+      ],
+      "properties": {
+        "type": { "const": "sandbox_widget" },
+        "widgetId": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "html": { "type": "string", "maxLength": 12288 },
+        "css": { "type": "string", "maxLength": 12288 },
+        "javascript": { "type": "string", "maxLength": 24576 },
+        "accessibleSummary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "height": { "type": "integer", "minimum": 180, "maximum": 720 }
+      }
+    },
+    "formula": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "latex", "accessibleLabel"],
+      "properties": {
+        "type": { "const": "formula" },
+        "latex": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "display": { "type": "boolean" },
+        "accessibleLabel": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "explanation": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "diagram": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "syntax", "source", "title", "description"],
+      "properties": {
+        "type": { "const": "diagram" },
+        "syntax": { "const": "mermaid" },
+        "source": { "type": "string", "minLength": 1, "maxLength": 16384 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 2000 }
+      }
+    },
+    "codeExample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "language", "code", "caption"],
+      "properties": {
+        "type": { "const": "code_example" },
+        "language": {
+          "enum": ["javascript", "typescript", "python", "json", "text"]
+        },
+        "code": { "type": "string", "maxLength": 32768 },
+        "caption": { "type": "string", "minLength": 1, "maxLength": 800 },
+        "highlightedLines": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 100,
+          "items": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "media": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "asset"],
+      "properties": {
+        "type": { "const": "media" },
+        "asset": { "$ref": "#/$defs/asset" }
+      }
+    },
+    "content": {
+      "oneOf": [
+        { "$ref": "#/$defs/prose" },
+        { "$ref": "#/$defs/keyPoints" },
+        { "$ref": "#/$defs/tokenSequence" },
+        { "$ref": "#/$defs/attentionMap" },
+        { "$ref": "#/$defs/transformerStack" },
+        { "$ref": "#/$defs/comparison" },
+        { "$ref": "#/$defs/sourceCards" },
+        { "$ref": "#/$defs/sandboxWidget" },
+        { "$ref": "#/$defs/formula" },
+        { "$ref": "#/$defs/diagram" },
+        { "$ref": "#/$defs/codeExample" },
+        { "$ref": "#/$defs/media" }
+      ]
+    },
+    "choiceExercise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "prompt", "options"],
+      "properties": {
+        "type": { "const": "choice" },
+        "prompt": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label", "correct", "feedback"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1, "maxLength": 100 },
+              "label": { "type": "string", "minLength": 1, "maxLength": 500 },
+              "correct": { "type": "boolean" },
+              "feedback": { "type": "string", "minLength": 1, "maxLength": 1000 }
+            }
+          }
+        }
+      }
+    },
+    "reflectionExercise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "prompt", "placeholder", "minimumCharacters", "feedback"],
+      "properties": {
+        "type": { "const": "reflection" },
+        "prompt": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "placeholder": { "type": "string", "maxLength": 1000 },
+        "minimumCharacters": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "feedback": { "type": "string", "minLength": 1, "maxLength": 1000 }
+      }
+    },
+    "numericExercise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "prompt",
+        "correctAnswer",
+        "tolerance",
+        "correctFeedback",
+        "incorrectFeedback"
+      ],
+      "properties": {
+        "type": { "const": "numeric" },
+        "prompt": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "correctAnswer": { "type": "number" },
+        "tolerance": { "type": "number", "minimum": 0 },
+        "unit": { "type": "string", "maxLength": 100 },
+        "placeholder": { "type": "string", "maxLength": 300 },
+        "correctFeedback": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "incorrectFeedback": { "type": "string", "minLength": 1, "maxLength": 1000 }
+      }
+    },
+    "codeLabExercise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "exerciseId",
+        "prompt",
+        "language",
+        "starterCode",
+        "visibleTests",
+        "fallbackPrompt"
+      ],
+      "properties": {
+        "type": { "const": "code_lab" },
+        "exerciseId": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "prompt": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "language": { "enum": ["javascript", "typescript", "python"] },
+        "starterCode": { "type": "string", "maxLength": 32768 },
+        "visibleTests": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+        },
+        "fallbackPrompt": { "type": "string", "minLength": 1, "maxLength": 1000 }
+      }
+    },
+    "exercise": {
+      "oneOf": [
+        { "$ref": "#/$defs/choiceExercise" },
+        { "$ref": "#/$defs/reflectionExercise" },
+        { "$ref": "#/$defs/numericExercise" },
+        { "$ref": "#/$defs/codeLabExercise" }
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "label", "sourceRefs", "at"],
+      "properties": {
+        "actor": { "enum": ["ogram", "agent"] },
+        "label": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "sourceRefs": {
+          "type": "array",
+          "maxItems": 30,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2000 }
+        },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "order",
+        "label",
+        "title",
+        "objective",
+        "kind",
+        "content",
+        "provenance"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "order": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "objective": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "kind": { "enum": ["orient", "explain", "model", "practice", "reflect"] },
+        "content": {
+          "type": "array",
+          "maxItems": 40,
+          "items": { "$ref": "#/$defs/content" }
+        },
+        "interaction": { "$ref": "#/$defs/exercise" },
+        "provenance": {
+          "type": "array",
+          "maxItems": 30,
+          "items": { "$ref": "#/$defs/provenance" }
+        }
+      }
+    },
+    "condition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": { "type": { "const": "always" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "value"],
+          "properties": {
+            "type": { "const": "answer_equals" },
+            "value": { "type": "string", "maxLength": 500 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "value"],
+          "properties": {
+            "type": { "const": "response_correct" },
+            "value": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "from", "to", "priority", "condition"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "from": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "to": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "priority": { "type": "integer", "minimum": 0 },
+        "condition": { "$ref": "#/$defs/condition" },
+        "label": { "type": "string", "maxLength": 300 }
+      }
+    },
+    "flow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entryRegionId", "edges"],
+      "properties": {
+        "entryRegionId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "edges": {
+          "type": "array",
+          "maxItems": 60,
+          "items": { "$ref": "#/$defs/edge" }
+        }
+      }
+    }
+  }
+}

@@ -10,7 +10,7 @@ function tool(name: string): WebMcpToolDefinition {
   return match;
 }
 
-describe("learn.ogram v3", () => {
+describe("learn.ogram v4", () => {
   beforeEach(() => {
     window.localStorage.clear();
     delete window.__OGRAM_WEBMCP_TOOLS__;
@@ -24,10 +24,12 @@ describe("learn.ogram v3", () => {
     render(<App />);
 
     expect(
-      screen.getByRole("heading", { name: /learn a difficult idea/i }),
+      screen.getByRole("heading", { name: /bring any question/i }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /ask codex/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/start in the conversation on the left/i)).toBeInTheDocument();
+    expect(screen.getByText(/use the lesson brief i prepared/i)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /topic or question/i })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /personalize from recent codex tasks/i })).toBeChecked();
     await waitFor(() =>
       expect(screen.getByText(/open this page in codex desktop/i)).toBeInTheDocument(),
     );
@@ -41,7 +43,12 @@ describe("learn.ogram v3", () => {
   });
 
   it("does not race native registration during React development remounts", async () => {
-    const registerTool = vi.fn(async () => undefined);
+    const registerTool = vi.fn(
+      async (
+        _definition: WebMcpToolDefinition,
+        _options?: { signal?: AbortSignal },
+      ) => undefined,
+    );
     Object.defineProperty(document, "modelContext", {
       value: { registerTool },
       configurable: true,
@@ -53,7 +60,12 @@ describe("learn.ogram v3", () => {
       </StrictMode>,
     );
 
-    await waitFor(() => expect(registerTool).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(registerTool).toHaveBeenCalledTimes(3));
+    expect(registerTool.mock.calls.map(([definition]) => definition.name)).toEqual([
+      "learn_get_start_brief",
+      "learn_get_authoring_capabilities",
+      "learn_begin_session",
+    ]);
     expect(screen.queryByText(/site-tool registration failed/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/open this page in codex desktop/i)).not.toBeInTheDocument();
   });
@@ -129,7 +141,9 @@ describe("learn.ogram v3", () => {
     expect(lessonSlots?.[0]).toHaveAttribute("data-panel-mode", "screen");
     expect(lessonSlots?.[0]?.querySelectorAll(".lesson-scene-marker")).toHaveLength(2);
     expect(lessonSlots?.[0]?.querySelector(".lesson-panel > section")).toBeInTheDocument();
-    expect(screen.getByText(/query–key scores are normalized with softmax/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/query–key scores are normalized with softmax/i),
+    ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /what is the training target/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /show tokens scene 2 of 2/i }));
     fireEvent.click(screen.getByRole("button", { name: /inspect token model/i }));
@@ -252,10 +266,28 @@ describe("learn.ogram v3", () => {
     expect(screen.getByText(/twenty-minute study window/i)).toBeInTheDocument();
     const useButtons = screen.getAllByRole("button", { name: /use this/i });
     expect(useButtons).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: /^correct$/i })).not.toBeInTheDocument();
+    const correctButtons = screen.getAllByRole("button", {
+      name: /correct before using/i,
+    });
+    expect(correctButtons).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: /don’t use/i })).toHaveLength(2);
-    fireEvent.click(useButtons[0]!);
+    fireEvent.click(correctButtons[0]!);
+    fireEvent.change(
+      screen.getByRole("textbox", { name: /correct this learning signal/i }),
+      {
+        target: {
+          value:
+            "The learner writes TypeScript and wants a concise introduction to machine-learning math.",
+        },
+      },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /save correction \+ use/i }),
+    );
     fireEvent.click(useButtons[1]!);
+
+    expect(screen.getByText(/writes typescript and wants a concise/i)).toBeInTheDocument();
+    expect(screen.getByText(/corrected \+ approved/i)).toBeInTheDocument();
 
     const context = tool("learn_get_context").execute({ nonce }) as {
       acceptedClaimIds: string[];
@@ -322,8 +354,12 @@ describe("learn.ogram v3", () => {
     });
 
     expect(screen.getByText(/1\/6 sections ready/i)).toBeInTheDocument();
-    expect(screen.getByText("The job in one sentence")).toBeInTheDocument();
-    expect(document.querySelector('[data-json-render="ogram.learning.v1"]')).toBeInTheDocument();
+    expect(await screen.findByText("The job in one sentence")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-json-render="ogram.learning.v1"]'),
+      ).toBeInTheDocument(),
+    );
     expect(screen.getByLabelText("Ready")).toBeInTheDocument();
   });
 });

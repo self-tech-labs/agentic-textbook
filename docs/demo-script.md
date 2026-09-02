@@ -1,116 +1,103 @@
-# Acceptance demo — learn transformers with Codex
+# Sep 3 acceptance demo — flexible learning canvas
 
-This walkthrough exercises the real WebMCP flow in one uninterrupted Codex Desktop session. Keep the Codex conversation on the left and the built-in browser on the right.
+This is the release walkthrough for a fresh profile in Codex Desktop’s built-in browser. It leads with the personalized Codex lesson, then uses the compact fixture matrix to verify algebra, all three code languages, branching, and the transformer regression.
 
-## Before the demo
+## Before recording
 
-Run the app:
+Use the deployed Worker URL, not the frontend-only Vite server. In a fresh profile confirm:
 
-```bash
-npm run dev
-```
+- `GET /api/health` reports schema 4 and all four services;
+- JavaScript, TypeScript, and Python fixture submissions each execute in the no-network Sandbox;
+- the console has no rich-renderer or WebMCP registration errors;
+- the repository and live URL are public and require no login;
+- the recording stays below three minutes and includes audio.
 
-For a completely fresh run, clear the `learn-ogram-canvas:v3` local-storage entry or use a fresh browser profile. Do not delete the v2 key; the v3 loader deliberately ignores it.
+Do not use real customer context or expose private task titles. Synthetic recent-task summaries are sufficient to demonstrate the review boundary.
 
-## 1. Start through the conversation
+## 1. Start from a topic-neutral brief
 
-Open the page in Codex Desktop’s built-in browser. The ready view should show the scientific cream/green notebook cover, one available tool, and no embedded chat control.
+Open the landing page. Point out that there is no transformer headline or fixed six-part path. The form asks for:
 
-Say to Codex:
+- topic/question and desired outcome;
+- current level and available time;
+- visual, quantitative, code, scenario, and reading preferences;
+- accessibility notes;
+- a visible, enabled-by-default recent-task personalization toggle.
 
-> Teach me how transformers work. Use the learn.ogram site tools on the page. Start with the required bootstrap call and guide me through the choices.
+Select **Build a better Codex workflow**, save the brief, and say in the adjacent conversation:
 
-Codex calls `learn_begin_session` with the topic and relays the returned guide:
+> Use the lesson brief I prepared on this page. Personalize only from recent task summaries I am allowed to use, show me every derived claim before authoring, and use official sources for current Codex behavior.
 
-1. Tell me what you want to understand and why.
-2. Choose whether I may use this chat, relevant past Codex/project history, Ogram, or connected-source context.
-3. Review each proposed context card on the right: Use this or Don’t use.
-4. Approve the notebook, then work through it at your pace.
-5. Ask me naturally whenever a focused region needs another explanation, interaction, or research.
+Codex first calls `learn_get_start_brief` and `learn_get_authoring_capabilities`, then `learn_begin_session` with the brief ID and declared host capabilities.
 
-The page immediately becomes the six-region transformer skeleton.
+## 2. Review minimized context
 
-## 2. Demonstrate two-stage context consent
+Demonstrate at most two synthetic derived claims, each short enough to inspect in full—for example, that the learner repeats repository setup work and wants stronger verification habits. The context pack reports its 30-day lookback and inspected-summary count but contains no task ID, prompt, transcript, or code.
 
-Tell Codex:
+On the canvas:
 
-> You may use relevant information from this conversation and my calendar availability, but only for this lesson. Show me the minimized claims before using them.
+1. accept one claim;
+2. correct or reject the second;
+3. show that Codex cannot mark either decision itself.
 
-For the demo, Codex should propose two claims resembling:
+If task history is unavailable, say so and continue from the brief/current conversation. This is a supported fallback, not an error.
 
-- the learner writes JavaScript but is new to machine-learning mathematics;
-- the learner has a twenty-minute study window.
+## 3. Compose and approve a current Codex lesson
 
-Codex consults approved Codex history and any installed connector agent-side. It passes only the two summaries, provenance, sensitivity, purposes, source scopes, and opaque evidence references to `learn_propose_context`.
+Ask Codex to create a short foundation plus the one to three modules most relevant to the reviewed signals. It should use the stable desktop loop—choose a workspace, state an outcome with context, inspect results, test, and refine—and attach official source records for product behavior.
 
-On the canvas, choose **Use this** for both cards. Point out that proposal did not equal approval: the lesson could not use either claim until this visible review.
+The progressive `learn_prepare_lesson` path can start a mixed-mode skeleton, fill individual regions, and finalize the graph. The review view exposes:
 
-If no connector is available, use a learner-provided second claim instead. The context mechanic remains real.
+- blueprint, pedagogical mode, source policy, and duration;
+- the exact revision/digest;
+- source availability, platform/plan/preview notes, and retrieval dates;
+- a concept-map preview of the authored graph.
 
-## 3. Watch the lesson form, then approve it
+Approve that exact revision, then let Codex call `learn_publish_lesson`. A changed, unapproved, or unresolved revision must fail.
 
-Ask Codex to prepare the transformer lesson visibly. It calls `learn_prepare_lesson` with `phase: start` and the bundled `transformer_technical_beginner` template, then makes one `phase: region` call for each returned region id. A shaping orb and commit meter stay active while each row changes from a skeleton into a compact render from the real json-render catalog. A final `phase: finalize` call runs the compiler and opens review without changing the row geometry.
+## 4. Show rich blocks and one branch
 
-The canvas shows:
+In the published lesson, show the lazy Mermaid workflow diagram and a code example. Answer the scenario choice that selects a remediation route. The concept map should mark completed and current regions, lock future regions, and omit the unselected branch body.
 
-- the objective and technical-beginner baseline;
-- the working time;
-- the number of learner-approved context signals;
-- six stable notebook regions.
+Submit the remediation evidence. Explain that the answer and selected edge are now immutable; a structural rewrite would create a new draft requiring approval.
 
-Click **Approve this lesson**. Codex then calls `learn_publish_lesson` with the exact approved revision. A different or unapproved revision fails.
+## 5. Run the vertical-slice fixture matrix
 
-## 4. Learn in the living notebook
+Use fresh local state between fixtures. This can be a short QA segment outside the final three-minute recording.
 
-Scroll through the published page and briefly identify:
+### Algebra
 
-1. learning goal;
-2. tokens and embeddings;
-3. query, key, value, softmax, and self-attention;
-4. multi-head attention, residual paths, normalization, and feed-forward layers;
-5. next-token prediction practice;
-6. teach-back.
+Choose **Algebra and functions**. Verify:
 
-The sticky concept map tracks the focused region. Select a short phrase inside self-attention to show that selected text also enters the semantic snapshot.
+- slope renders through KaTeX as HTML+MathML;
+- the lesson includes a Mermaid relationship diagram;
+- an incorrect numeric answer follows the remediation edge;
+- a correct answer follows the direct transfer edge;
+- malformed formula/diagram test inputs retain readable fallback text.
 
-Answer the next-token choice and save it. This creates learner-owned evidence that later agent writes cannot change.
+### JavaScript, TypeScript, and Python
 
-## 5. Inject the softmax playground
+Choose **Debug JavaScript, TypeScript, or Python** and exercise each registered fixture. For every language:
 
-Focus the self-attention region, then say in the Codex conversation:
+1. inspect the escaped starter example;
+2. edit in the lazily loaded CodeMirror lab;
+3. run the server-side tests;
+4. submit source plus hash/result/timestamp as local immutable evidence.
 
-> I don’t understand softmax. Show it with three tokens and let me change one score.
+Verify one concurrent-run rejection, the rolling quota response, output truncation, and timeout behavior separately from the happy-path recording.
 
-Codex should:
+### Governed media
 
-1. call `learn_get_canvas_snapshot`;
-2. resolve `self-attention` from focus rather than guessing from the whole lesson;
-3. call `learn_inject_widget` directly with a small three-token interaction. Do not invoke a host visualization skill or create an inline conversation artifact first.
+Register a small HTTPS raster image with caption, attribution, and alt text. Verify the R2-backed reference renders. Also verify rejection of HTTP, credentialed/private/local URLs, HTML/SVG, spoofed MIME, excess redirects, and over-budget assets. Audio additionally needs a transcript; video needs transcript and inline WEBVTT captions.
 
-The interaction appears inside the existing self-attention section. It does not replace the notebook or open a second assistant. Show:
+### Transformer regression
 
-- the **Interactive model · sandboxed** label;
-- reset, stop, and text-alternative controls;
-- **Updated by Codex · Undo** attribution;
-- the unchanged learner answer in the practice region.
-
-Click **Undo** if time permits, then ask Codex to add the interaction again with a fresh snapshot/revision. This makes reversibility and concurrency visible.
-
-## 6. Attach research without blocking progress
-
-Say:
-
-> Research the original scaled dot-product attention formulation and attach one authoritative source here. Keep the rest of the notebook usable.
-
-Codex can first mark the self-attention region `agent_working`. The learner can continue elsewhere. After agent-side research, Codex calls `learn_attach_research` with a short synthesis and canonical reference, for example the original *Attention Is All You Need* paper.
-
-The source card appears in the requested region with publisher, date, URL, claim, and agent attribution. No raw search response or connector credential enters the page.
+Open the deprecated `transformer_technical_beginner` fixture and complete its choice and reflection. Load a saved V3 session and confirm content, provenance, responses, undo history, and revisions survive while sequential `always` edges are added. The V3 storage record must remain present.
 
 ## What the demo proves
 
-- WebMCP makes the website and Codex conversation one shared working surface.
-- Context can arrive from arbitrary agent-accessible sources without surrendering learner consent.
-- Codex authors the lesson and later changes only the region that needs help.
-- Trusted visual specifications and a strict widget sandbox support different explanatory forms.
-- The learner retains structural approval, answer ownership, evidence history, and undo.
-- The architecture is generic even though transformers is the polished demonstration.
+- One generic brief can initiate a lesson about an arbitrary topic.
+- Registries, not topic-specific React flows, define available content, exercises, blueprints, and constraints.
+- Current product education combines learner relevance with authoritative recency while labeling community exploration.
+- Rich explanations degrade accessibly, heavy engines do not inflate the initial bundle, and executable code is isolated behind operational-only backend state.
+- Context, structural publication, branch selection, and evidence all retain explicit learner authority.

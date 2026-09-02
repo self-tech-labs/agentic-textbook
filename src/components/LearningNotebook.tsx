@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { ThinkingOrb } from "thinking-orbs";
 import type {
   AgentLearningCanvasState,
@@ -7,11 +15,39 @@ import type {
   LessonRegion,
   RegionContent,
 } from "../domain/agentCanvas";
+import { resolveLessonPath } from "../domain/agentCanvas";
+import {
+  LESSON_STARTERS,
+  briefFromStarter,
+  type LessonBriefV1,
+  type PreferredLearningMode,
+} from "../domain/lessonCatalog";
 import type { CanvasActions } from "../hooks/useLearningCanvas";
 import {
-  TrustedContentProvider,
-  TrustedContentRenderer,
-} from "./TrustedContentRenderer";
+  loadLessonBrief,
+  saveLessonBrief,
+} from "../lib/lessonBriefPersistence";
+
+const LazyCodeLab = lazy(() => import("./rich/CodeLab"));
+const LazyTrustedContentRenderer = lazy(() =>
+  import("./TrustedContentRenderer").then((module) => ({
+    default: module.TrustedContentSurface,
+  })),
+);
+
+function DeferredTrustedContent({
+  blocks,
+  mode = "full",
+}: {
+  blocks: RegionContent[];
+  mode?: "full" | "preview";
+}) {
+  return (
+    <Suspense fallback={<div className="rich-placeholder">Preparing content…</div>}>
+      <LazyTrustedContentRenderer blocks={blocks} mode={mode} />
+    </Suspense>
+  );
+}
 
 export interface NotebookRegistration {
   supported: boolean;
@@ -141,7 +177,7 @@ const readyLoopSteps = [
     number: "03",
     label: "Watch it form",
     description: "Sections arrive one by one while the learning path takes shape.",
-    canvasLabel: "3 of 6 sections",
+    canvasLabel: "Flexible sections",
   },
   {
     number: "04",
@@ -210,8 +246,35 @@ function ReadyCanvas({
   registrationError: string | null;
 }) {
   const [copied, setCopied] = useState(false);
-  const starter =
-    "Teach me how transformers work. Begin by calling learn_begin_session on this page, share its short guide, ask which current or past context you may inspect, then build the lesson here one section at a time. Keep every visual on the lesson canvas.";
+  const [brief, setBrief] = useState<LessonBriefV1>(() => loadLessonBrief());
+  const starter = "Use the lesson brief I prepared on this page.";
+
+  useEffect(() => {
+    saveLessonBrief(brief);
+  }, [brief]);
+
+  const updateBrief = (patch: Partial<LessonBriefV1>) => {
+    setBrief((current) => ({
+      ...current,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    }));
+  };
+
+  const toggleMode = (mode: PreferredLearningMode) => {
+    setBrief((current) => {
+      const selected = current.preferredModes.includes(mode);
+      const preferredModes = selected
+        ? current.preferredModes.filter((candidate) => candidate !== mode)
+        : [...current.preferredModes, mode];
+      return {
+        ...current,
+        preferredModes: preferredModes.length ? preferredModes : [mode],
+        updatedAt: new Date().toISOString(),
+      };
+    });
+  };
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(starter);
@@ -234,15 +297,16 @@ function ReadyCanvas({
         <span>learn + reshape</span>
       </div>
       <section className="ready-hero" aria-labelledby="ready-title">
-        <p className="eyebrow">A lesson that takes shape around you</p>
+        <p className="eyebrow">A flexible, learner-owned canvas</p>
         <h1 id="ready-title">
-          Learn a difficult idea.
+          Bring any question.
           <br />
-          <em>Shape it as you go.</em>
+          <em>Shape how you learn it.</em>
         </h1>
         <p className="ready-hero__lede">
-          This is not a fixed course. It becomes a focused lesson around what you want to
-          understand, and you decide what may shape it.
+          Build a short brief for a conceptual explanation, quantitative walkthrough,
+          executable code lab, or branching scenario. You approve the exact path before
+          learning begins.
         </p>
 
         {!registration.registering && !registration.supported ? (
@@ -255,14 +319,170 @@ function ReadyCanvas({
           </div>
         ) : null}
 
-        <div className="starter-prompt" aria-label="Starter prompt for the adjacent conversation">
+        <form className="lesson-brief" onSubmit={(event) => event.preventDefault()}>
+          <div className="lesson-brief__heading">
+            <div>
+              <span>Lesson brief · saved locally</span>
+              <strong>What should this lesson help you do?</strong>
+            </div>
+            <span>V1</span>
+          </div>
+
+          <div className="starter-registry" aria-label="Lesson starters">
+            {LESSON_STARTERS.map((lessonStarter) => {
+              const selected = brief.starterId === lessonStarter.id;
+              return (
+                <button
+                  key={lessonStarter.id}
+                  type="button"
+                  className={selected ? "starter-card is-selected" : "starter-card"}
+                  aria-pressed={selected}
+                  onClick={() => setBrief(briefFromStarter(lessonStarter))}
+                >
+                  <span>{lessonStarter.eyebrow}</span>
+                  <strong>{lessonStarter.title}</strong>
+                  <p>{lessonStarter.description}</p>
+                  <i aria-hidden="true">{selected ? "✓" : "↗"}</i>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="lesson-brief__grid">
+            <label className="lesson-brief__wide">
+              <span>Topic or question</span>
+              <input
+                value={brief.topic}
+                placeholder="What would you like to understand?"
+                onChange={(event) =>
+                  updateBrief({
+                    topic: event.target.value,
+                    starterId: null,
+                    blueprintId: "open_topic_v1",
+                  })
+                }
+              />
+            </label>
+            <label className="lesson-brief__wide">
+              <span>Desired outcome</span>
+              <textarea
+                rows={2}
+                value={brief.desiredOutcome}
+                placeholder="By the end, I want to be able to…"
+                onChange={(event) =>
+                  updateBrief({ desiredOutcome: event.target.value })
+                }
+              />
+            </label>
+            <label>
+              <span>Current level</span>
+              <select
+                value={brief.currentLevel}
+                onChange={(event) =>
+                  updateBrief({
+                    currentLevel: event.target.value as LessonBriefV1["currentLevel"],
+                  })
+                }
+              >
+                <option value="beginner">Beginner</option>
+                <option value="intermediate">Intermediate</option>
+                <option value="advanced">Advanced</option>
+              </select>
+            </label>
+            <label>
+              <span>Available time</span>
+              <div className="lesson-time-field">
+                <input
+                  type="number"
+                  min={5}
+                  max={90}
+                  step={1}
+                  value={brief.availableMinutes}
+                  onChange={(event) =>
+                    updateBrief({
+                      availableMinutes: Math.min(
+                        90,
+                        Math.max(5, Number(event.target.value) || 5),
+                      ),
+                    })
+                  }
+                />
+                <span>minutes</span>
+              </div>
+            </label>
+            <fieldset className="lesson-brief__wide mode-picker">
+              <legend>Preferred modes</legend>
+              <div>
+                {(
+                  [
+                    ["visual", "Visual"],
+                    ["quantitative", "Quantitative"],
+                    ["code", "Code"],
+                    ["scenario", "Scenario"],
+                    ["reading", "Reading"],
+                  ] as const
+                ).map(([mode, label]) => (
+                  <label key={mode}>
+                    <input
+                      type="checkbox"
+                      checked={brief.preferredModes.includes(mode)}
+                      onChange={() => toggleMode(mode)}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <label className="lesson-brief__wide">
+              <span>Accessibility notes <small>optional</small></span>
+              <input
+                value={brief.accessibilityNotes}
+                placeholder="For example: avoid colour-only cues or include transcripts"
+                onChange={(event) =>
+                  updateBrief({ accessibilityNotes: event.target.value })
+                }
+              />
+            </label>
+          </div>
+
+          <label className="personalization-switch">
+            <input
+              type="checkbox"
+              checked={brief.personalizeFromRecentTasks}
+              onChange={(event) =>
+                updateBrief({
+                  personalizeFromRecentTasks: event.target.checked,
+                })
+              }
+            />
+            <span aria-hidden="true"><i /></span>
+            <div>
+              <strong>Personalize from recent Codex tasks</strong>
+              <small>
+                On by default. Codex may derive up to eight short signals from at most ten
+                task summaries from the last 30 days. You review every claim; transcripts,
+                prompts, code, and task IDs are never added to the lesson.
+              </small>
+            </div>
+          </label>
+        </form>
+
+        <div className="starter-prompt" aria-label="Instruction for the adjacent conversation">
           <div className="starter-prompt__topline">
-            <span>Start in the conversation on the left</span>
+            <span>Continue in the conversation</span>
             <button type="button" className="text-button" onClick={copy}>
               {copied ? "Copied" : "Copy prompt"}
             </button>
           </div>
           <p>{starter}</p>
+          {!brief.topic.trim() || !brief.desiredOutcome.trim() ? (
+            <small>Add a topic and outcome before asking Codex to begin.</small>
+          ) : (
+            <small>
+              Codex can read this brief through the page tool; the prompt does not need to
+              repeat your details.
+            </small>
+          )}
         </div>
 
         {registrationError ? <p className="inline-error">{registrationError}</p> : null}
@@ -280,13 +500,19 @@ function ContextCard({
   actions: CanvasActions;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [correcting, setCorrecting] = useState(false);
+  const [correction, setCorrection] = useState(claim.summary);
 
-  const review = (decision: "accepted" | "rejected") => {
+  const review = (
+    decision: "accepted" | "corrected" | "rejected",
+    correctedSummary?: string,
+  ) => {
     try {
       setError(null);
       actions.reviewContextClaim({
         claimId: claim.id,
         decision,
+        ...(correctedSummary ? { correctedSummary } : {}),
       });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The claim could not be reviewed.");
@@ -306,14 +532,57 @@ function ContextCard({
         <span>for {claim.allowedPurposes.join(", ")}</span>
       </div>
       {claim.review === "pending" ? (
-        <div className="context-card__actions" aria-label="Choose whether this context may shape the lesson">
-          <button type="button" className="primary-button" onClick={() => review("accepted")}>
-            Use this
-          </button>
-          <button type="button" className="secondary-button" onClick={() => review("rejected")}>
-            Don’t use
-          </button>
-        </div>
+        correcting ? (
+          <div className="context-card__correction">
+            <label>
+              <span>Correct this learning signal</span>
+              <textarea
+                rows={3}
+                maxLength={280}
+                value={correction}
+                onChange={(event) => setCorrection(event.target.value)}
+              />
+              <small>{correction.trim().length} / 280 characters</small>
+            </label>
+            <div className="context-card__correction-actions">
+              <button
+                type="button"
+                className="primary-button"
+                disabled={correction.trim().length < 3}
+                onClick={() => review("corrected", correction)}
+              >
+                Save correction + use
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  setCorrection(claim.summary);
+                  setCorrecting(false);
+                  setError(null);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="context-card__actions" aria-label="Choose whether this context may shape the lesson">
+            <button type="button" className="primary-button" onClick={() => review("accepted")}>
+              Use this
+            </button>
+            <button type="button" className="secondary-button" onClick={() => review("rejected")}>
+              Don’t use
+            </button>
+            <button
+              type="button"
+              className="text-button context-card__correct"
+              onClick={() => setCorrecting(true)}
+            >
+              Correct before using
+            </button>
+          </div>
+        )
       ) : (
         <span className="review-stamp">
           {claim.review === "accepted"
@@ -387,7 +656,7 @@ function NotebookOutline({
             {mode === "review" ? (
               <p className="notebook-outline__objective">{region.objective}</p>
             ) : shaped ? (
-              <TrustedContentRenderer blocks={region.content} mode="preview" />
+              <DeferredTrustedContent blocks={region.content} mode="preview" />
             ) : (
               <div className="skeleton-lines" aria-hidden="true"><i /><i /></div>
             )}
@@ -496,7 +765,7 @@ function ContextReview({ state, actions }: { state: AgentLearningCanvasState; ac
               <strong>No personal context is being used.</strong>
               <p>
                 Choose whether relevant current or past work may shape this lesson, or continue
-                with the generic technical-beginner path.
+                with the brief-only path.
               </p>
             </div>
           </div>
@@ -629,13 +898,55 @@ function LearnerInteraction({
       interaction.type === "choice"
         ? interaction.options.find((option) => option.id === region.response?.value)
         : null;
+    const feedback =
+      interaction.type === "choice"
+        ? selected?.feedback
+        : interaction.type === "reflection"
+          ? interaction.feedback
+          : interaction.type === "numeric"
+            ? region.response.correct
+              ? interaction.correctFeedback
+              : interaction.incorrectFeedback
+            : region.response.execution
+              ? String(region.response.execution.passedTests) +
+                " of " +
+                String(region.response.execution.totalTests) +
+                " tests passed."
+              : "Code evidence saved.";
     return (
       <div className="saved-evidence">
         <span className="saved-evidence__label">Your evidence · saved</span>
         <p>{interaction.type === "choice" ? selected?.label : region.response.value}</p>
         <div className={region.response.correct === false ? "feedback feedback--retry" : "feedback"}>
-          {interaction.type === "choice" ? selected?.feedback : interaction.feedback}
+          {feedback}
         </div>
+      </div>
+    );
+  }
+
+  if (interaction.type === "code_lab") {
+    return (
+      <div className="learner-interaction learner-interaction--code">
+        <span className="eyebrow">Executable lab</span>
+        <h3>{interaction.prompt}</h3>
+        <Suspense fallback={<div className="rich-placeholder">Loading code editor…</div>}>
+          <LazyCodeLab
+            interaction={interaction}
+            onSubmit={(source, evidence) => {
+              try {
+                setError(null);
+                actions.submitLearnerResponse(region.id, source, evidence);
+              } catch (caught) {
+                setError(
+                  caught instanceof Error
+                    ? caught.message
+                    : "Your code evidence could not be saved.",
+                );
+              }
+            }}
+          />
+        </Suspense>
+        {error ? <p className="inline-error">{error}</p> : null}
       </div>
     );
   }
@@ -659,6 +970,24 @@ function LearnerInteraction({
             </label>
           ))}
         </div>
+      ) : interaction.type === "numeric" ? (
+        <label className="numeric-field">
+          <span>Your numeric answer{interaction.unit ? ` (${interaction.unit})` : ""}</span>
+          <div>
+            <input
+              type="number"
+              step="any"
+              inputMode="decimal"
+              placeholder={interaction.placeholder ?? "Enter a number"}
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+            />
+            {interaction.unit ? <span>{interaction.unit}</span> : null}
+          </div>
+          <small>
+            Answers within ±{interaction.tolerance} are accepted.
+          </small>
+        </label>
       ) : (
         <label className="reflection-field">
           <span className="sr-only">Your explanation</span>
@@ -698,6 +1027,10 @@ const lessonSceneLabels: Record<LessonSceneType, string> = {
   comparison: "Compare",
   source_cards: "Sources",
   sandbox_widget: "Lab",
+  formula: "Formula",
+  diagram: "Diagram",
+  code_example: "Code",
+  media: "Media",
   interaction: "Practice",
 };
 
@@ -727,7 +1060,12 @@ function buildLessonScenes(region: CanvasRegion): LessonScene[] {
     ? [
         {
           id: `${region.id}-interaction`,
-          label: region.interaction.type === "reflection" ? "Reflect" : "Practice",
+          label:
+            region.interaction.type === "reflection"
+              ? "Reflect"
+              : region.interaction.type === "code_lab"
+                ? "Code lab"
+                : "Practice",
           type: "interaction",
           blocks: [],
           interaction: true,
@@ -838,7 +1176,7 @@ function RegionSection({
         >
           {scene.blocks.length ? (
             <div className="region-content">
-              <TrustedContentRenderer blocks={scene.blocks} />
+              <DeferredTrustedContent blocks={scene.blocks} />
             </div>
           ) : null}
           {scene.interaction ? <LearnerInteraction region={region} actions={actions} /> : null}
@@ -879,10 +1217,18 @@ function LessonSlot({
   const slotRef = useRef<HTMLDivElement>(null);
   const scenes = useMemo(() => buildLessonScenes(region), [region]);
   const [activeScene, setActiveScene] = useState(0);
+  const safeActiveScene =
+    Number.isInteger(activeScene) && activeScene >= 0 && activeScene < scenes.length
+      ? activeScene
+      : 0;
   const previousSceneCountRef = useRef(scenes.length);
 
   useEffect(() => {
-    setActiveScene((current) => Math.min(current, Math.max(0, scenes.length - 1)));
+    setActiveScene((current) =>
+      Number.isInteger(current) && current >= 0
+        ? Math.min(current, Math.max(0, scenes.length - 1))
+        : 0,
+    );
   }, [region.id, scenes.length]);
 
   useEffect(() => {
@@ -894,7 +1240,10 @@ function LessonSlot({
     ) {
       return;
     }
-    const frame = window.requestAnimationFrame(() => selectScene(scenes.length - 1));
+    const widgetScene = scenes.length - 1;
+    // Reveal newly injected work immediately; scrolling can wait for layout.
+    setActiveScene(widgetScene);
+    const frame = window.requestAnimationFrame(() => selectScene(widgetScene));
     return () => window.cancelAnimationFrame(frame);
   }, [scenes.length]);
 
@@ -969,9 +1318,10 @@ function LessonSlot({
           ? markers[1]!.offsetTop - markers[0]!.offsetTop
           : Number.parseFloat(getComputedStyle(slot).getPropertyValue("--lesson-scene-step"));
       if (!Number.isFinite(computedStep) || computedStep <= 0) return;
-      const stickyTop = Number.parseFloat(
+      const parsedStickyTop = Number.parseFloat(
         getComputedStyle(slot).getPropertyValue("--lesson-sticky-top"),
       );
+      const stickyTop = Number.isFinite(parsedStickyTop) ? parsedStickyTop : 0;
       const travelled = Math.max(0, stickyTop - slot.getBoundingClientRect().top);
       const nextScene = Math.min(
         scenes.length - 1,
@@ -999,9 +1349,10 @@ function LessonSlot({
     const marker = slot?.querySelector<HTMLElement>(`[data-scene-marker="${index}"]`);
     if (!slot || !marker) return;
     setActiveScene(index);
-    const stickyTop = Number.parseFloat(
+    const parsedStickyTop = Number.parseFloat(
       getComputedStyle(slot).getPropertyValue("--lesson-sticky-top"),
     );
+    const stickyTop = Number.isFinite(parsedStickyTop) ? parsedStickyTop : 0;
     const top = window.scrollY + marker.getBoundingClientRect().top - stickyTop;
     window.scrollTo({
       top,
@@ -1018,7 +1369,7 @@ function LessonSlot({
       className={`lesson-slot lesson-slot--screen ${focused ? "lesson-slot--focused" : ""}`}
       data-canvas-region={region.id}
       data-panel-mode="screen"
-      data-active-scene={activeScene}
+      data-active-scene={safeActiveScene}
     >
       {scenes.map((scene, index) => (
         <span
@@ -1035,7 +1386,7 @@ function LessonSlot({
           focused={focused}
           actions={actions}
           scenes={scenes}
-          activeScene={activeScene}
+          activeScene={safeActiveScene}
           onSceneSelect={selectScene}
         />
       </div>
@@ -1048,8 +1399,54 @@ function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; a
   const conceptMapRef = useRef<HTMLElement>(null);
   const lessonDeckRef = useRef<HTMLDivElement>(null);
   const [chromeCollapsed, setChromeCollapsed] = useState(false);
-  const answered = state.regions.filter((region) => region.response).length;
-  const progress = state.regions.length ? Math.round((answered / state.regions.length) * 100) : 0;
+  const resolvedPath = useMemo(
+    () =>
+      state.lesson.draft
+        ? resolveLessonPath(state.lesson.draft, state.regions)
+        : {
+            visibleRegionIds: state.regions.map((region) => region.id),
+            lockedRegionIds: [],
+            hiddenRegionIds: [],
+            selectedEdgeIds: [],
+            currentRegionId: state.regions[0]?.id ?? null,
+          },
+    [state.lesson.draft, state.regions],
+  );
+  const visibleRegionSet = useMemo(
+    () => new Set(resolvedPath.visibleRegionIds),
+    [resolvedPath.visibleRegionIds],
+  );
+  const lockedRegionSet = useMemo(
+    () => new Set(resolvedPath.lockedRegionIds),
+    [resolvedPath.lockedRegionIds],
+  );
+  const hiddenRegionSet = useMemo(
+    () => new Set(resolvedPath.hiddenRegionIds),
+    [resolvedPath.hiddenRegionIds],
+  );
+  const visibleRegions = state.regions.filter((region) =>
+    visibleRegionSet.has(region.id),
+  );
+  const evidenceRegions = visibleRegions.filter((region) => region.interaction);
+  const answered = evidenceRegions.filter((region) => region.response).length;
+  const progress = evidenceRegions.length
+    ? Math.round((answered / evidenceRegions.length) * 100)
+    : 0;
+
+  useEffect(() => {
+    if (
+      state.focus.regionId &&
+      lockedRegionSet.has(state.focus.regionId) &&
+      resolvedPath.currentRegionId
+    ) {
+      actions.focusRegion(resolvedPath.currentRegionId);
+    }
+  }, [
+    actions,
+    lockedRegionSet,
+    resolvedPath.currentRegionId,
+    state.focus.regionId,
+  ]);
 
   useEffect(() => {
     document.documentElement.classList.add("has-lesson-deck");
@@ -1185,23 +1582,46 @@ function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; a
         </div>
         <nav>
           <ol>
-            {state.regions.map((region) => (
+            {state.regions
+              .filter((region) => !hiddenRegionSet.has(region.id))
+              .map((region) => (
               <li
                 key={region.id}
                 data-map-region={region.id}
-                className={state.focus.regionId === region.id ? "is-active" : ""}
+                className={
+                  lockedRegionSet.has(region.id)
+                    ? "is-locked"
+                    : state.focus.regionId === region.id
+                      ? "is-active"
+                      : region.response
+                        ? "is-complete"
+                        : ""
+                }
               >
-                <button type="button" onClick={() => navigate(region.id)}>
+                <button
+                  type="button"
+                  onClick={() => navigate(region.id)}
+                  disabled={lockedRegionSet.has(region.id)}
+                  aria-label={
+                    lockedRegionSet.has(region.id)
+                      ? region.title + " · locked until you complete the current decision"
+                      : undefined
+                  }
+                >
                   <span>{String(region.order).padStart(2, "0")}</span>
                   <span>{region.title}</span>
-                  {region.response ? <i aria-label="Completed">✓</i> : null}
+                  {region.response ? (
+                    <i aria-label="Completed">✓</i>
+                  ) : lockedRegionSet.has(region.id) ? (
+                    <i aria-label="Locked">◇</i>
+                  ) : null}
                 </button>
               </li>
             ))}
           </ol>
         </nav>
         <div className="concept-map__progress">
-          <div><span>Evidence saved</span><strong>{answered}/{state.regions.length}</strong></div>
+          <div><span>Evidence saved</span><strong>{answered}/{evidenceRegions.length}</strong></div>
           <progress value={progress} max="100">{progress}%</progress>
         </div>
       </aside>
@@ -1218,7 +1638,7 @@ function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; a
           </div>
         </header>
         <div className="lesson-deck" ref={lessonDeckRef}>
-          {state.regions.map((region) => (
+          {visibleRegions.map((region) => (
             <LessonSlot
               key={region.id}
               region={region}
@@ -1255,24 +1675,22 @@ export function LearningNotebook({
     Boolean(constructionProgress) ||
     state.regions.some((region) => region.status === "agent_working");
   return (
-    <TrustedContentProvider>
-      <div className="app-shell">
-        <AppHeader state={state} registration={registration} actions={actions} />
-        <AgentBridge
-          registration={registration}
-          working={working}
-          constructionProgress={constructionProgress}
-        />
-        {state.session.stage === "ready" ? (
-          <ReadyCanvas registration={registration} registrationError={registrationError} />
-        ) : state.session.stage === "context_review" ? (
-          <ContextReview state={state} actions={actions} />
-        ) : state.session.stage === "lesson_review" ? (
-          <LessonReview state={state} actions={actions} />
-        ) : (
-          <LivingNotebook state={state} actions={actions} />
-        )}
-      </div>
-    </TrustedContentProvider>
+    <div className="app-shell">
+      <AppHeader state={state} registration={registration} actions={actions} />
+      <AgentBridge
+        registration={registration}
+        working={working}
+        constructionProgress={constructionProgress}
+      />
+      {state.session.stage === "ready" ? (
+        <ReadyCanvas registration={registration} registrationError={registrationError} />
+      ) : state.session.stage === "context_review" ? (
+        <ContextReview state={state} actions={actions} />
+      ) : state.session.stage === "lesson_review" ? (
+        <LessonReview state={state} actions={actions} />
+      ) : (
+        <LivingNotebook state={state} actions={actions} />
+      )}
+    </div>
   );
 }

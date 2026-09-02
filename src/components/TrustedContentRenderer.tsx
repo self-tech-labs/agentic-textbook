@@ -1,4 +1,13 @@
-import { useId, useMemo, useState, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { defineCatalog, type Spec } from "@json-render/core";
 import {
   defineRegistry,
@@ -8,6 +17,10 @@ import {
 } from "@json-render/react";
 import { z } from "zod";
 import type { RegionContent } from "../domain/agentCanvas";
+import {
+  CONTENT_REGISTRY,
+  LESSON_LIMITS,
+} from "../domain/lessonRegistry";
 import { SandboxedWidget } from "./SandboxedWidget";
 
 const sourceSchema = z.object({
@@ -16,8 +29,60 @@ const sourceSchema = z.object({
   url: z.string(),
   publisher: z.string(),
   publishedAt: z.string().optional(),
+  retrievedAt: z.string().optional(),
   claim: z.string(),
+  sourceType: z
+    .enum(["official", "community", "primary", "secondary"])
+    .optional(),
+  availability: z.string().optional(),
 });
+
+const LazyFormulaBlock = lazy(() => import("./rich/FormulaBlock"));
+const LazyMermaidDiagram = lazy(() => import("./rich/MermaidDiagram"));
+const LazyGovernedMedia = lazy(() => import("./rich/GovernedMedia"));
+
+function RichLoading({ label }: { label: string }) {
+  return (
+    <div className="rich-placeholder" role="status">
+      Loading {label}…
+    </div>
+  );
+}
+
+function VisibleEngine({
+  label,
+  children,
+}: {
+  label: string;
+  children: () => ReactNode;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || visible) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "320px 0px" },
+    );
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [visible]);
+  return (
+    <div ref={hostRef} className="visible-engine">
+      {visible ? children() : <RichLoading label={label} />}
+    </div>
+  );
+}
 
 /**
  * The bounded vocabulary Codex is allowed to turn into visible lesson UI.
@@ -99,6 +164,52 @@ export const learningContentCatalog = defineCatalog(schema, {
         height: z.number(),
       }),
       description: "A bounded no-origin, no-network interactive widget.",
+    },
+    Formula: {
+      props: z.object({
+        latex: z.string().max(LESSON_LIMITS.formulaBytes),
+        display: z.boolean().optional(),
+        accessibleLabel: z.string().min(1),
+        explanation: z.string().optional(),
+      }),
+      description: "A KaTeX formula with HTML, MathML, and an accessible explanation.",
+    },
+    Diagram: {
+      props: z.object({
+        syntax: z.literal("mermaid"),
+        source: z.string().max(LESSON_LIMITS.diagramBytes),
+        title: z.string().min(1),
+        description: z.string().min(1),
+      }),
+      description: "A strict Mermaid diagram with a title and long description.",
+    },
+    CodeExample: {
+      props: z.object({
+        language: z.enum(["javascript", "typescript", "python", "json", "text"]),
+        code: z.string().max(LESSON_LIMITS.codeBytes),
+        caption: z.string().min(1),
+        highlightedLines: z.array(z.number().int().positive()).optional(),
+      }),
+      description: "Escaped semantic code with a caption and optional line highlights.",
+    },
+    Media: {
+      props: z.object({
+        asset: z.object({
+          id: z.string(),
+          kind: z.enum(["image", "audio", "video"]),
+          url: z.string().optional(),
+          mimeType: z.string().optional(),
+          status: z.enum(["pending", "ready", "failed", "expired"]),
+          caption: z.string(),
+          attribution: z.string(),
+          alt: z.string().optional(),
+          transcript: z.string().optional(),
+          captionsVtt: z.string().optional(),
+          byteLength: z.number().optional(),
+          contentHash: z.string().optional(),
+        }),
+      }),
+      description: "Governed image, audio, or video with accessibility metadata.",
     },
   },
   actions: {},
@@ -256,6 +367,36 @@ function TransformerStack({
   );
 }
 
+function CodeExample({
+  block,
+}: {
+  block: Extract<RegionContent, { type: "code_example" }>;
+}) {
+  const highlights = new Set(block.highlightedLines ?? []);
+  return (
+    <figure className="code-example">
+      <pre aria-label={block.caption}>
+        <code data-language={block.language}>
+          {block.code.split("\n").map((line, index) => (
+            <span
+              key={String(index) + line}
+              className={highlights.has(index + 1) ? "is-highlighted" : undefined}
+            >
+              <i aria-hidden="true">{String(index + 1).padStart(2, "0")}</i>
+              {line || " "}
+              {"\n"}
+            </span>
+          ))}
+        </code>
+      </pre>
+      <figcaption>
+        <span>{block.language}</span>
+        {block.caption}
+      </figcaption>
+    </figure>
+  );
+}
+
 const { registry: learningContentRegistry } = defineRegistry(learningContentCatalog, {
   components: {
     ContentStack: ({ props, children }) => (
@@ -295,8 +436,14 @@ const { registry: learningContentRegistry } = defineRegistry(learningContentCata
           {props.sources.map((source) => (
             <li key={source.id}>
               <a href={source.url} target="_blank" rel="noreferrer">{source.title}</a>
-              <span>{source.publisher}{source.publishedAt ? ` · ${source.publishedAt}` : ""}</span>
+              <span>
+                {source.publisher}
+                {source.sourceType ? ` · ${source.sourceType}` : ""}
+                {source.publishedAt ? ` · published ${source.publishedAt}` : ""}
+                {source.retrievedAt ? ` · retrieved ${source.retrievedAt.slice(0, 10)}` : ""}
+              </span>
               <p>{source.claim}</p>
+              {source.availability ? <small>{source.availability}</small> : null}
             </li>
           ))}
         </ul>
@@ -305,19 +452,45 @@ const { registry: learningContentRegistry } = defineRegistry(learningContentCata
     SandboxedWidget: ({ props }) => (
       <SandboxedWidget widget={{ type: "sandbox_widget", ...props }} />
     ),
+    Formula: ({ props }) => (
+      <VisibleEngine label="formula">
+        {() => (
+          <Suspense fallback={<RichLoading label="formula" />}>
+            <LazyFormulaBlock block={{ type: "formula", ...props }} />
+          </Suspense>
+        )}
+      </VisibleEngine>
+    ),
+    Diagram: ({ props }) => (
+      <VisibleEngine label="diagram">
+        {() => (
+          <Suspense fallback={<RichLoading label="diagram" />}>
+            <LazyMermaidDiagram block={{ type: "diagram", ...props }} />
+          </Suspense>
+        )}
+      </VisibleEngine>
+    ),
+    CodeExample: ({ props }) => (
+      <CodeExample block={{ type: "code_example", ...props }} />
+    ),
+    Media: ({ props }) => (
+      <VisibleEngine label="media">
+        {() => (
+          <Suspense fallback={<RichLoading label="media" />}>
+            <LazyGovernedMedia block={{ type: "media", ...props }} />
+          </Suspense>
+        )}
+      </VisibleEngine>
+    ),
   },
 });
 
-const componentNameByType: Record<RegionContent["type"], string> = {
-  prose: "Prose",
-  key_points: "KeyPoints",
-  token_sequence: "TokenSequence",
-  attention_map: "AttentionMap",
-  transformer_stack: "TransformerStack",
-  comparison: "Comparison",
-  source_cards: "SourceCards",
-  sandbox_widget: "SandboxedWidget",
-};
+export const contentRendererNameByType = Object.fromEntries(
+  Object.entries(CONTENT_REGISTRY).map(([type, definition]) => [
+    type,
+    definition.renderer,
+  ]),
+) as Record<RegionContent["type"], string>;
 
 function contentSpec(blocks: RegionContent[], mode: "full" | "preview"): Spec {
   const visibleBlocks = mode === "preview" ? blocks.slice(0, 2) : blocks;
@@ -333,7 +506,7 @@ function contentSpec(blocks: RegionContent[], mode: "full" | "preview"): Spec {
   visibleBlocks.forEach((block, index) => {
     const { type, ...props } = block;
     elements[childKeys[index]!] = {
-      type: componentNameByType[type],
+      type: contentRendererNameByType[type],
       props,
       children: [],
     };
@@ -362,6 +535,35 @@ export function TrustedContentRenderer({
   blocks: RegionContent[];
   mode?: "full" | "preview";
 }) {
-  const spec = useMemo(() => contentSpec(blocks, mode), [blocks, mode]);
+  const spec = useMemo(() => {
+    try {
+      return contentSpec(blocks, mode);
+    } catch {
+      return null;
+    }
+  }, [blocks, mode]);
+  if (!spec) {
+    return (
+      <aside className="rich-fallback" role="note">
+        <strong>This section could not use its rich renderer.</strong>
+        <p>The accessible source content is still available below.</p>
+        <pre>{JSON.stringify(blocks, null, 2)}</pre>
+      </aside>
+    );
+  }
   return <Renderer spec={spec} registry={learningContentRegistry} />;
+}
+
+export function TrustedContentSurface({
+  blocks,
+  mode = "full",
+}: {
+  blocks: RegionContent[];
+  mode?: "full" | "preview";
+}) {
+  return (
+    <TrustedContentProvider>
+      <TrustedContentRenderer blocks={blocks} mode={mode} />
+    </TrustedContentProvider>
+  );
 }
