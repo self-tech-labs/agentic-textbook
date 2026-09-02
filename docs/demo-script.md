@@ -46,12 +46,14 @@ If task history is unavailable, say so and continue from the brief/current conve
 
 Ask Codex to create a short foundation plus the one to three modules most relevant to the reviewed signals. It should use the stable desktop loop—choose a workspace, state an outcome with context, inspect results, test, and refine—and attach official source records for product behavior.
 
-The progressive `learn_prepare_lesson` path can start a mixed-mode skeleton, fill individual regions, and finalize the graph. The review view exposes:
+The progressive `learn_prepare_lesson` path can start a mixed-mode skeleton, fill individual regions, and finalize the graph. The visible review view exposes:
 
-- blueprint, pedagogical mode, source policy, and duration;
-- the exact revision/digest;
-- source availability, platform/plan/preview notes, and retrieval dates;
-- a concept-map preview of the authored graph.
+- the learner's saved goal, audience, and available time;
+- the number of approved context claims;
+- every authored section, one page at a time;
+- the explicit **Approve lesson** action.
+
+The tool result carries the exact revision, digest, validation state, source records, and graph metadata. If those details are narrated, show the tool trace alongside the page rather than implying that the current review UI displays them.
 
 Approve that exact revision, then let Codex call `learn_publish_lesson`. A changed, unapproved, or unresolved revision must fail.
 

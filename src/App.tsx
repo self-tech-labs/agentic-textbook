@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LearningNotebook,
   type NotebookRegistration,
 } from "./components/LearningNotebook";
 import { useLearningCanvas } from "./hooks/useLearningCanvas";
-import { registerLearnTools, type WebMcpRegistration } from "./lib/webmcp";
+import {
+  createWebMcpRegistrationCoordinator,
+  registerLearnTools,
+  type WebMcpRegistration,
+} from "./lib/webmcp";
 import "./styles.css";
 
 export default function App() {
@@ -17,6 +21,9 @@ export default function App() {
   });
   const [registrationError, setRegistrationError] = useState<string | null>(null);
   const hasNonce = Boolean(actions.getNonce());
+  const registrationCoordinator = useRef(
+    createWebMcpRegistrationCoordinator(),
+  ).current;
 
   useEffect(() => {
     let active = true;
@@ -26,7 +33,12 @@ export default function App() {
     setRegistrationError(null);
 
     registrationTimer = window.setTimeout(() => {
-      registerLearnTools(actions, state.session.stage, hasNonce)
+      registerLearnTools(
+        actions,
+        state.session.stage,
+        hasNonce,
+        registrationCoordinator,
+      )
         .then((result) => {
           if (!active) {
             result.cleanup();
@@ -54,7 +66,7 @@ export default function App() {
       window.clearTimeout(registrationTimer);
       cleanup();
     };
-  }, [actions, hasNonce, state.session.stage]);
+  }, [actions, hasNonce, registrationCoordinator, state.session.stage]);
 
   useEffect(() => {
     document.title = state.session.topic

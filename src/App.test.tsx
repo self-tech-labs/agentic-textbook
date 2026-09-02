@@ -70,6 +70,99 @@ describe("learn.ogram v4", () => {
     expect(screen.queryByText(/open this page in codex desktop/i)).not.toBeInTheDocument();
   });
 
+  it("settles native stage tools before a begin call resolves", async () => {
+    const nativeTools = new Map<string, WebMcpToolDefinition>();
+    const registerTool = vi.fn(
+      async (
+        definition: WebMcpToolDefinition,
+        options?: { signal?: AbortSignal },
+      ) => {
+        nativeTools.set(definition.name, definition);
+        options?.signal?.addEventListener(
+          "abort",
+          () => {
+            if (nativeTools.get(definition.name) === definition) {
+              nativeTools.delete(definition.name);
+            }
+          },
+          { once: true },
+        );
+      },
+    );
+    Object.defineProperty(document, "modelContext", {
+      value: { registerTool },
+      configurable: true,
+    });
+
+    render(<App />);
+    await waitFor(() =>
+      expect(nativeTools.has("learn_begin_session")).toBe(true),
+    );
+
+    let startedPromise!: Promise<{ nonce: string; stage: string }>;
+    act(() => {
+      startedPromise = nativeTools.get("learn_begin_session")!.execute({
+        topic: "Linear functions and slope",
+        blueprintId: "algebra_functions_v1",
+        pedagogicalMode: "quantitative",
+        personalizeFromRecentTasks: false,
+      }) as Promise<{ nonce: string; stage: string }>;
+    });
+    const started = await startedPromise;
+
+    expect(started.nonce).toMatch(/^session-nonce-/);
+    expect(started.stage).toBe("context_review");
+    expect(nativeTools.has("learn_get_session")).toBe(true);
+    expect(nativeTools.has("learn_get_canvas_snapshot")).toBe(true);
+    expect(nativeTools.has("learn_prepare_lesson")).toBe(true);
+    expect(nativeTools.has("learn_patch_region")).toBe(false);
+  });
+
+  it("rejects a stage-changing tool when its next native tool set fails", async () => {
+    const nativeTools = new Map<string, WebMcpToolDefinition>();
+    const registerTool = vi.fn(
+      async (
+        definition: WebMcpToolDefinition,
+        options?: { signal?: AbortSignal },
+      ) => {
+        if (definition.name === "learn_get_session") {
+          throw new Error("Forced context tool registration failure.");
+        }
+        nativeTools.set(definition.name, definition);
+        options?.signal?.addEventListener(
+          "abort",
+          () => {
+            if (nativeTools.get(definition.name) === definition) {
+              nativeTools.delete(definition.name);
+            }
+          },
+          { once: true },
+        );
+      },
+    );
+    Object.defineProperty(document, "modelContext", {
+      value: { registerTool },
+      configurable: true,
+    });
+
+    render(<App />);
+    await waitFor(() =>
+      expect(nativeTools.has("learn_begin_session")).toBe(true),
+    );
+
+    let startedPromise!: Promise<unknown>;
+    act(() => {
+      startedPromise = nativeTools.get("learn_begin_session")!.execute({
+        topic: "Linear functions and slope",
+        personalizeFromRecentTasks: false,
+      }) as Promise<unknown>;
+    });
+
+    await expect(startedPromise).rejects.toThrow(
+      /forced context tool registration failure/i,
+    );
+  });
+
   it("runs the generic transformers path, focuses a region, and accepts a reversible widget", async () => {
     render(<App />);
     await waitFor(() => expect(window.__OGRAM_WEBMCP_TOOLS__).toBeDefined());

@@ -98,6 +98,23 @@ npm run build
 npm run cf:dry-run
 ```
 
+With `npm run dev` already running on `127.0.0.1:5173`, exercise the live
+WebMCP registrations in Chrome with Google's experimental eval CLI:
+
+```bash
+npm run eval:webmcp:smoke
+```
+
+The agent-journey suite in `evals/webmcp-agent-journeys.json` also checks tool
+selection, fresh-page starting states, and the bootstrap-to-session tool
+rotation. Run three samples before release with
+`npm run eval:webmcp:agent -- --runs 3`. The default runner needs
+`GOOGLE_GENERATIVE_AI_API_KEY`; alternatively, select another backend/model
+supported by `webmcp-evals` with arguments such as
+`npm run eval:webmcp:agent -- --backend ollama --model <model>`. The wrapper
+loads an ignored local `.env` when present and fails the command when the CLI
+report contains failed or errored trajectories.
+
 `npm run build` also fails if initial JavaScript exceeds 145 KB gzip. KaTeX, Mermaid, CodeMirror, and language support are visibility-triggered chunks and are excluded from the initial bundle.
 
 ## Project map

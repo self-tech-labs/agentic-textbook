@@ -87,6 +87,7 @@ export interface WebMcpToolDefinition {
   inputSchema: JsonSchema;
   annotations?: {
     readOnlyHint?: boolean;
+    untrustedContentHint?: boolean;
     destructiveHint?: boolean;
     idempotentHint?: boolean;
     openWorldHint?: boolean;
@@ -99,6 +100,102 @@ export interface WebMcpRegistration {
   toolCount: number;
   toolNames: string[];
   cleanup: () => void;
+}
+
+interface WebMcpRegistrationWaiter {
+  targetKey: string;
+  afterGeneration: number;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timeout: number;
+}
+
+export interface WebMcpRegistrationCoordinator {
+  currentGeneration(): number;
+  waitFor(
+    stage: LearningSessionStage,
+    hasNonce: boolean,
+    afterGeneration: number,
+  ): Promise<void>;
+  complete(stage: LearningSessionStage, hasNonce: boolean): void;
+  fail(stage: LearningSessionStage, hasNonce: boolean, error: unknown): void;
+}
+
+function registrationTargetKey(
+  stage: LearningSessionStage,
+  hasNonce: boolean,
+) {
+  return `${stage}:${hasNonce ? "nonce" : "no-nonce"}`;
+}
+
+export function createWebMcpRegistrationCoordinator(
+  timeoutMs = 2_000,
+): WebMcpRegistrationCoordinator {
+  let generation = 0;
+  const completedGenerations = new Map<string, number>();
+  const waiters = new Set<WebMcpRegistrationWaiter>();
+
+  const removeWaiter = (waiter: WebMcpRegistrationWaiter) => {
+    window.clearTimeout(waiter.timeout);
+    waiters.delete(waiter);
+  };
+
+  return {
+    currentGeneration() {
+      return generation;
+    },
+    waitFor(stage, hasNonce, afterGeneration) {
+      const targetKey = registrationTargetKey(stage, hasNonce);
+      if ((completedGenerations.get(targetKey) ?? 0) > afterGeneration) {
+        return Promise.resolve();
+      }
+      return new Promise<void>((resolve, reject) => {
+        const waiter: WebMcpRegistrationWaiter = {
+          targetKey,
+          afterGeneration,
+          resolve,
+          reject,
+          timeout: 0,
+        };
+        waiter.timeout = window.setTimeout(() => {
+          removeWaiter(waiter);
+          reject(
+            new Error(
+              `Timed out waiting for the ${stage} WebMCP tool set to register.`,
+            ),
+          );
+        }, timeoutMs);
+        waiters.add(waiter);
+      });
+    },
+    complete(stage, hasNonce) {
+      generation += 1;
+      const targetKey = registrationTargetKey(stage, hasNonce);
+      completedGenerations.set(targetKey, generation);
+      for (const waiter of [...waiters]) {
+        if (
+          waiter.targetKey === targetKey &&
+          generation > waiter.afterGeneration
+        ) {
+          removeWaiter(waiter);
+          waiter.resolve();
+        }
+      }
+    },
+    fail(stage, hasNonce, error) {
+      const targetKey = registrationTargetKey(stage, hasNonce);
+      const registrationError =
+        error instanceof Error
+          ? error
+          : new Error("The WebMCP tool set failed to register.");
+      for (const waiter of [...waiters]) {
+        if (waiter.targetKey === targetKey) {
+          removeWaiter(waiter);
+          waiter.reject(registrationError);
+        }
+      }
+    },
+  };
 }
 
 const registeredAssetIds = new Set<string>();
@@ -1322,21 +1419,23 @@ function nextActions(stage: LearningSessionStage, lessonStatus: string): string[
   ];
 }
 
-function readOnlyAnnotations() {
+function readOnlyAnnotations(untrustedContentHint = false) {
   return {
     readOnlyHint: true,
+    untrustedContentHint,
     destructiveHint: false,
     idempotentHint: true,
     openWorldHint: false,
   };
 }
 
-function writeAnnotations(openWorldHint = false) {
+function writeAnnotations(untrustedContentHint = false) {
   return {
     readOnlyHint: false,
+    untrustedContentHint,
     destructiveHint: false,
     idempotentHint: true,
-    openWorldHint,
+    openWorldHint: untrustedContentHint,
   };
 }
 
@@ -1350,7 +1449,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
       additionalProperties: false,
       properties: {},
     },
-    annotations: readOnlyAnnotations(),
+    annotations: readOnlyAnnotations(true),
     execute() {
       const brief = loadLessonBrief();
       return {
@@ -1385,24 +1484,61 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
       type: "object",
       additionalProperties: false,
       properties: {
-        topic: { type: "string", minLength: 3, maxLength: 240 },
-        goal: { type: "string", minLength: 3, maxLength: 500 },
-        briefId: { type: "string", minLength: 3, maxLength: 200 },
-        blueprintId: { type: "string", minLength: 3, maxLength: 160 },
+        topic: {
+          type: "string",
+          minLength: 3,
+          maxLength: 240,
+          description:
+            "Lesson topic or question. Omit when briefId selects the current saved brief.",
+        },
+        goal: {
+          type: "string",
+          minLength: 3,
+          maxLength: 500,
+          description:
+            "Concrete learning outcome. Omit to use the desired outcome from the saved brief.",
+        },
+        briefId: {
+          type: "string",
+          minLength: 3,
+          maxLength: 200,
+          description:
+            "ID returned by learn_get_start_brief. When present, use that saved brief.",
+        },
+        blueprintId: {
+          type: "string",
+          minLength: 3,
+          maxLength: 160,
+          description:
+            "Registered lesson blueprint ID. Defaults to the saved brief or open_topic_v1.",
+        },
         pedagogicalMode: {
           type: "string",
           enum: ["conceptual", "quantitative", "code", "scenario", "mixed"],
+          description:
+            "Teaching mode for the lesson. Defaults from the selected saved brief.",
         },
-        personalizeFromRecentTasks: { type: "boolean" },
+        personalizeFromRecentTasks: {
+          type: "boolean",
+          description:
+            "Allow the host to derive minimized signals from recent task summaries for learner review.",
+        },
         hostCapabilities: {
           type: "array",
           maxItems: 32,
-          items: { type: "string", minLength: 1, maxLength: 160 },
+          description:
+            "Capabilities available in the WebMCP host, such as webmcp or rich visual output.",
+          items: {
+            type: "string",
+            minLength: 1,
+            maxLength: 160,
+            description: "One capability identifier exposed by the host.",
+          },
         },
         contextPack: {
           ...contextPackSchema,
           description:
-            "Optional LessonContextPackV1 with at most eight derived signals from at most ten task summaries in the previous 30 days. Never include raw prompts, code, transcripts, or task ids.",
+            "Optional minimized context pack: up to eight signals from ten summaries over 30 days. Never include prompts, code, transcripts, or task IDs.",
         },
       },
     },
@@ -1481,7 +1617,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
       required: ["nonce"],
       properties: { nonce: nonceSchema },
     },
-    annotations: readOnlyAnnotations(),
+    annotations: readOnlyAnnotations(true),
     execute(input) {
       const object = objectInput(input);
       requireNonce(object, actions);
@@ -1707,7 +1843,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
       required: ["nonce"],
       properties: { nonce: nonceSchema },
     },
-    annotations: readOnlyAnnotations(),
+    annotations: readOnlyAnnotations(true),
     execute(input) {
       const object = objectInput(input);
       requireNonce(object, actions);
@@ -2072,7 +2208,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
       required: ["nonce"],
       properties: { nonce: nonceSchema },
     },
-    annotations: readOnlyAnnotations(),
+    annotations: readOnlyAnnotations(true),
     execute(input) {
       const object = objectInput(input);
       requireNonce(object, actions);
@@ -2431,6 +2567,7 @@ export async function registerLearnTools(
   actions: CanvasActions,
   stage: LearningSessionStage,
   hasNonce: boolean,
+  coordinator?: WebMcpRegistrationCoordinator,
 ): Promise<WebMcpRegistration> {
   const allTools = createLearnTools(actions);
   const allRegistry = Object.fromEntries(allTools.map((tool) => [tool.name, tool]));
@@ -2443,10 +2580,38 @@ export async function registerLearnTools(
   if (supported) {
     try {
       for (const tool of active) {
-        await document.modelContext!.registerTool(tool, { signal: controller.signal });
+        const registeredTool = coordinator
+          ? {
+              ...tool,
+              async execute(input: unknown) {
+                const previousStage = actions.getState().session.stage;
+                const previousHasNonce = Boolean(actions.getNonce());
+                const registrationGeneration = coordinator.currentGeneration();
+                const result = await tool.execute(input);
+                const nextStage = actions.getState().session.stage;
+                const nextHasNonce = Boolean(actions.getNonce());
+                if (
+                  nextStage !== previousStage ||
+                  nextHasNonce !== previousHasNonce
+                ) {
+                  await coordinator.waitFor(
+                    nextStage,
+                    nextHasNonce,
+                    registrationGeneration,
+                  );
+                }
+                return result;
+              },
+            }
+          : tool;
+        await document.modelContext!.registerTool(registeredTool, {
+          signal: controller.signal,
+        });
       }
+      coordinator?.complete(stage, hasNonce);
     } catch (error) {
       controller.abort();
+      coordinator?.fail(stage, hasNonce, error);
       throw error;
     }
   }

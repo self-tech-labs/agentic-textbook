@@ -97,6 +97,44 @@ describe("learn.ogram v4 WebMCP surface", () => {
     expect(window.__OGRAM_WEBMCP_TOOLS__).toBeUndefined();
   });
 
+  it("labels learner-authored and externally sourced outputs as untrusted", () => {
+    const { result } = renderHook(() => useLearningCanvas());
+    const tools = createLearnTools(result.current.actions);
+    const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
+
+    for (const name of [
+      "learn_get_start_brief",
+      "learn_get_context",
+      "learn_get_session",
+      "learn_get_canvas_snapshot",
+      "learn_propose_context",
+      "learn_register_asset",
+      "learn_attach_research",
+    ]) {
+      expect(byName[name]?.annotations?.untrustedContentHint, name).toBe(true);
+    }
+
+    expect(
+      byName.learn_get_authoring_capabilities?.annotations?.untrustedContentHint,
+    ).toBe(false);
+    expect(byName.learn_get_start_brief?.annotations?.readOnlyHint).toBe(true);
+    expect(byName.learn_propose_context?.annotations?.readOnlyHint).toBe(false);
+  });
+
+  it("describes every bootstrap argument within the model-facing budget", () => {
+    const { result } = renderHook(() => useLearningCanvas());
+    const begin = findTool(result.current.actions, "learn_begin_session");
+    const properties = begin.inputSchema.properties as Record<
+      string,
+      { description?: unknown }
+    >;
+
+    for (const [name, property] of Object.entries(properties)) {
+      expect(property.description, name).toEqual(expect.any(String));
+      expect((property.description as string).length, name).toBeLessThanOrEqual(150);
+    }
+  });
+
   it("reads a generic saved brief and the registry before a session exists", () => {
     const brief = createLessonBrief({
       topic: "How plate tectonics reshape continents",
