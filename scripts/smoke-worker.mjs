@@ -132,13 +132,20 @@ const mediaResponse = await fetch(baseUrl + "/api/assets/import", {
     url: mediaSource,
     kind: "image",
     caption: "A governed image imported during the Worker smoke test.",
-    attribution: "httpbin image fixture",
+    attribution: "postmanlabs/httpbin contributors",
+    rightsConfirmed: true,
+    rightsBasis:
+      "ISC-licensed httpbin pig_icon.png test fixture from postmanlabs/httpbin",
     alt: "A small multicoloured PNG used to verify the governed media path.",
   }),
 });
 const media = await readJson(mediaResponse);
 assert(media.asset?.status === "ready", "Governed media did not become ready.");
 assert(media.asset?.mimeType === "image/png", "Governed media MIME was not verified.");
+assert(
+  media.asset?.rightsBasis?.startsWith("ISC-licensed httpbin"),
+  "Governed media did not preserve its recorded rights basis.",
+);
 assert(
   typeof media.asset?.contentHash === "string" &&
     media.asset.contentHash.length === 64,
