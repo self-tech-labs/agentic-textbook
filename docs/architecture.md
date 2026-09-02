@@ -1,144 +1,159 @@
-# Architecture
+# Architecture — learn.ogram V4
 
-## Decision
+## Product boundary
 
-The Ogram web canvas is the canonical product and system of record. Codex Visualize is an optional companion micro-lab, never the main transport or persistence layer.
-
-### Why the canvas is canonical
-
-WebMCP is designed for a human, an agent, and a live web application to share state. Practice Desk uses that property directly:
-
-1. Ogram exposes narrow site tools from the visible page.
-2. Codex reviews only user-authorized task history through its own capabilities.
-3. Codex submits privacy-minimized observations.
-4. Each tool call visibly changes the shared canvas.
-5. The learner answers and explicitly commits.
-6. Ogram persists the journey and lets the desktop companion look for later proof.
-
-A tool that merely returns “please invoke Visualize” would be a prompt trampoline: it is host-dependent, loses longitudinal state, weakens WebMCP leverage, and cannot guarantee Ogram’s visual or privacy system. A future tool may return a sanitized visualization recipe; Codex still decides whether to use it.
-
-## Four planes
+The Codex conversation is the coordination surface. The adjacent page owns a local-first lesson brief, reviewed learner context, a validated lesson document, a semantic canvas, and immutable learner evidence. The Cloudflare service owns only operational resources needed for governed media and isolated code execution.
 
 ```mermaid
-flowchart TB
-  subgraph R[Reasoning plane]
-    Codex[Codex task review]
-    Derive[Derive redacted signals]
-    Codex --> Derive
+flowchart LR
+  subgraph Host[Codex host]
+    Conversation[Conversation]
+    Discovery[Consented task-summary discovery]
+    Research[Official + recent community research]
   end
 
-  subgraph X[Experience plane]
-    Page[Practice Desk canvas]
-    Tools[Top-level WebMCP tools]
-    Human[Learner]
-    Tools <--> Page
-    Human <--> Page
+  subgraph Page[Vite learning canvas]
+    Brief[LessonBriefV1]
+    Tools[Staged WebMCP tools]
+    Review[Claim + revision review]
+    Document[LessonDocumentV4]
+    Graph[Validated lesson DAG]
+    Renderers[Lazy renderer registry]
+    Evidence[Immutable local evidence]
   end
 
-  subgraph C[Context + control plane]
-    API[Ogram management API]
-    Profile[Role / workshop context]
-    Journey[Assignments / progress / proof]
-    Profile --> API
-    Journey <--> API
+  subgraph Worker[Cloudflare Worker]
+    Session[Signed guest + CSRF]
+    D1[D1 operational metadata]
+    R2[R2 content-addressed media]
+    Sandbox[No-network code sandbox]
   end
 
-  subgraph S[Sensor plane]
-    Shipper[Existing Codex session shipper]
-    Desktop[Ogram Electron desktop]
-    Feedback[Feedback / eject signals]
-  end
-
-  Derive -->|sanitized only| Tools
-  Page <--> API
-  Shipper --> API
-  Feedback --> API
-  Desktop <--> API
+  Conversation <--> Tools
+  Discovery -->|at most 8 minimized signals| Tools
+  Research -->|bounded claims + citations| Tools
+  Brief --> Tools --> Review --> Document --> Graph --> Renderers
+  Evidence --> Graph
+  Renderers <--> Session
+  Session --> D1
+  Session --> R2
+  Session --> Sandbox
 ```
 
-## Review boundary
+Raw task prompts, transcripts, code, and task IDs never enter the lesson or backend. The site cannot read task history; the host may inspect no more than ten accessible summaries from the prior 30 days when the learner leaves personalization enabled. Unavailable history falls back to the current conversation and saved brief.
 
-The page cannot and should not silently read other Codex tasks. The first tool returns a bounded mission:
+## One schema-driven authoring core
 
-- inspect at most eight authorized recent tasks from a seven-day window;
-- derive only `thread_hygiene`, `workspace_hygiene`, `effort_fit`, or `task_shaping`;
-- send counts, confidence, and a short sanitized behavioural summary;
-- never send prompts, outputs, task titles, files, paths, people, organisations, client data, or transcripts.
+`LessonDocumentV4` contains the topic metadata inherited from V3 plus:
 
-In production, the learner previews each signal before persistence and can accept, reject, or correct it.
-
-## Lesson ownership
-
-Codex chooses the focus and supplies a role-relevant scenario. Ogram’s recipe engine controls:
-
-- lesson duration and cognitive load;
-- concept explanation;
-- answer choices and feedback;
-- progress checkpoints;
-- the cue → response → proof practice contract;
-- visual hierarchy and accessibility.
-
-This prevents an agent-generated lesson from becoming an unbounded page builder while still making the content genuinely personal.
-
-## Longitudinal desktop loop
-
-The current desktop target is the Electron/Svelte Ogram client; no Swift project was found in the inspected workspace. A future Swift client can consume the same HTTPS/event contract.
-
-The existing `ogram sessions ship --background` pipeline already provides a credible sensor. It should derive signals server-side or locally, for example:
-
-```text
-thread_hygiene.long_running_without_fork
-workspace_hygiene.broad_cwd
-model_fit.effort_excessive
-model_fit.effort_insufficient
+```ts
+schemaVersion: 4
+blueprintId: string
+pedagogicalMode: "conceptual" | "quantitative" | "code" | "scenario" | "mixed"
+sourcePolicy: "evergreen" | "current"
+regions: LessonRegion[]
+flow: { entryRegionId: string; edges: LessonEdgeV4[] }
+assetRefs: string[]
 ```
 
-Raw working directories should become a classification (`project_git`, `project_non_git`, `home_or_broad`, `temp`, `unknown`) and, if correlation is needed, a tenant-salted project hash.
+The `open_topic_v1` blueprint accepts every pedagogical mode. A mode selects only an initial 3–5-region skeleton; the final 3–20-region document is supplied as data. No topic, number of sections, or subject-specific renderer is embedded in the page route.
 
-The web app emits the public [`learning-event.schema.json`](../contracts/learning-event.schema.json). Production delivery order:
+`src/domain/lessonRegistry.ts` is the shared source for:
 
-1. use the authenticated Ogram management API as canonical storage;
-2. expose a main-process-only `LearningClient` in the desktop app;
-3. add narrow preload methods for journey read, event write, capsule open, and handoff redemption;
-4. subscribe or poll for journey changes;
-5. surface a just-in-time cue when the sensor observes the next matching behaviour;
-6. record the observed new habit as proof.
+- authoring capabilities returned to Codex;
+- supported content and exercise discriminators;
+- blueprint metadata and source policy;
+- renderer loading behavior;
+- validation and service quotas.
 
-Suggested endpoints:
+That coupling makes unsupported types fail before publication and lets a future registered renderer or exercise enter without a new document version.
 
-```text
-POST /api/learning/reviews
-GET  /api/learning/context?review_id=<opaque-id>
-POST /api/learning/capsules
-POST /api/learning/capsules/:id/events
-GET  /api/learning/journey
-POST /api/learning/handoffs
-```
+## Brief, context, and topic radar
 
-Suggested deep link:
+The landing page stores `LessonBriefV1` at `learn-ogram-brief:v1`. It includes topic/question, desired outcome, level, minutes, preferred modes, accessibility notes, starter/blueprint, and the explicit recent-task toggle.
 
-```text
-app.ogram://learn/capsule/<capsule-id>?handoff=<one-time-code>
-```
+Context use has two human gates:
 
-The handoff code should be opaque, single-use, and expire within 60 seconds. No bearer token, PII, lesson content, or task identifier belongs in the URL. The prototype link omits the handoff code and demonstrates routing only.
+1. The learner controls which source scopes Codex may consult.
+2. Each derived claim is accepted, corrected, or rejected before it can personalize the draft.
 
-## Security requirements before production
+`LessonContextPackV1` is bounded to eight 280-character signals and contains no raw source material. For a `current` lesson, optional `TopicRadarSignalV1` entries carry authority, retrieval date, availability, official URL, community URLs, and three normalized scores. Overall rank is calculated as 50% learner relevance, 30% official recency, and 20% community corroboration. Product behavior requires an official reference; community-only entries remain visibly labeled exploration ideas.
 
-- HttpOnly, Secure, SameSite web sessions with CSRF protection on mutations.
-- Exact-origin CORS and tenant authorization on every read/write.
-- Main-process authentication; never return management tokens to the renderer.
-- Electron `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, a restrictive CSP, navigation/window denial, and sender-origin validation.
-- Exact allowlists for external URLs and deep-link hosts, paths, and actions.
-- Fail closed if encrypted credential storage is unavailable.
-- Replace long-lived WebSocket bearer query parameters with 30–60 second one-use tickets.
-- Append-only learning events plus idempotency uniqueness.
-- User-controlled data review, retention, and deletion.
+## Graph validation and branching
 
-## Prototype-to-production phases
+V4 validates the lesson as a directed acyclic graph:
 
-1. **Challenge prototype:** public WebMCP app, synthetic context, browser persistence, public event schema, and mock desktop status.
-2. **Redacted Ogram signals:** authenticated context endpoint, Lake-derived behaviour summaries, consent preview, and canonical learning journey.
-3. **Desktop companion:** typed preload bridge, one-time-code deep links, push/poll updates, and proof-of-application cues.
+- 3–20 unique regions, all reachable from the entry region;
+- no cycles or dangling endpoints;
+- no more than three outgoing edges per region;
+- no more than four conditional decisions on any path;
+- a single unconditional fallback, last by priority, wherever conditional edges exist;
+- no ambiguous mixture of answer and correctness conditions on one decision;
+- at least one learner exercise on every terminal path;
+- all asset references declared by blocks;
+- required source provenance for current product claims.
 
-This keeps proprietary desktop code and customer data out of the public judging path while demonstrating a real, credible integration.
+At runtime, completed, current, and locked regions remain visible in the concept map while unselected branch bodies are hidden. Submitting an exercise resolves its outgoing edge. The answer, correctness/result evidence, and selected edge cannot be changed. Any structural edit therefore creates a new draft revision and returns to learner review.
+
+## Content and exercise registries
+
+V4 keeps all V3 blocks and adds:
+
+| Block | Runtime policy |
+|---|---|
+| `formula` | KaTeX, HTML+MathML, `trust: false`, strict errors, no authored macros, 4 KB, required accessible label. |
+| `diagram` | Mermaid strict mode, HTML labels and links disabled, 16 KB, required title and description. |
+| `code_example` | Escaped semantic code with language, caption, and optional highlighted lines. |
+| `media` | Ready governed asset reference with caption, attribution, and kind-specific accessibility data. |
+
+Images require alt text. Audio requires a transcript. Video requires both a transcript and VTT captions. Every imported asset also requires explicit confirmation that copying and display are authorized, plus a recorded license or permission basis that remains visible beside the media. Native audio/video controls are shown, autoplay is absent, and preload is metadata-only. A malformed or unavailable rich block renders an accessible textual fallback instead of failing its region.
+
+Exercises are `choice`, `reflection`, `numeric`, and `code_lab`. Numeric evaluation uses an authored absolute tolerance and optional unit. Code tests are registered server-side; the lesson receives only the immutable exercise ID, visible test descriptions, starter source, and fallback prompt.
+
+KaTeX, Mermaid, CodeMirror, and language modes load through `React.lazy` only when their block is rendered. Offscreen regions use `content-visibility: auto`. The build script reads Vite’s manifest and rejects an initial JavaScript graph above 145 KB gzip.
+
+## V3 migration and persistence
+
+The local projection uses `learn-ogram-canvas:v4`. If it is absent, the loader reads `learn-ogram-canvas:v3`, retains content, responses, provenance, region history, session state, and revisions, and adds sequential `always` edges. It writes V4 only after the migrated document validates. The original V3 key remains untouched for rollback.
+
+The `transformer_technical_beginner` blueprint remains a deprecated alias for one release and is exercised as a regression fixture. The older V2 key is outside the migration boundary.
+
+## WebMCP lifecycle
+
+The top-level document owns all imperative registrations. Generated iframes register no tools.
+
+| State | Native registrations |
+|---|---|
+| Ready | start brief, authoring capabilities, begin session |
+| Context review | ready tools plus session/context reads, context proposal, snapshot, prepare, asset registration, and code registration |
+| Lesson review | context set plus publication |
+| Learning | all 15 tools |
+
+Every handler validates its own nonce and state gate, including the fallback registry. Agent writes are idempotent and revision checked. The learner approves the exact validated digest/revision; publication also asks the Worker to reject unresolved, failed, expired, or guest-inaccessible asset and exercise IDs.
+
+## Worker services
+
+Cloudflare Workers Static Assets serves the SPA and routes `/api/*` and `/media/*` through `worker/index.ts`.
+
+D1 contains only:
+
+- signed anonymous session metadata and the one-run concurrency flag;
+- asset metadata and inactivity expiry;
+- server-side code-test manifests and inactivity expiry;
+- rolling run events and sandbox cold/warm activity.
+
+R2 objects are keyed by SHA-256. Import accepts HTTPS only, strips fragments, forbids credentials and local/private literal destinations, follows at most three revalidated redirects, checks declared MIME and magic bytes, rejects HTML/SVG, and enforces per-kind plus per-lesson quotas.
+
+The stable `@cloudflare/sandbox` runtime uses a pinned custom image. A sandbox ID is derived from guest and exercise IDs. Its work directory is replaced on each run, internet is disabled at the container class, packages and secrets are not supplied, and only JavaScript, TypeScript, or Python one-file runners are available. Commands have a five-second process limit, combined output is capped at 64 KB, one guest run may be active, and the rolling allowance is 20 runs per ten minutes. Containers sleep after ten idle minutes.
+
+The service never persists submitted source. The browser stores source, SHA-256, bounded result summary, and submission time as learner evidence.
+
+## HTTP and observability boundary
+
+`GET /api/session` issues a signed, HTTP-only, secure, same-site guest cookie and returns a CSRF token. Mutations require an exact same-origin request, valid cookie, and matching CSRF header. Anonymous assets and code manifests expire after 90 inactive days; a daily scheduled handler marks expired records and removes unreferenced R2 objects.
+
+Logs are deliberately metadata-only: normalized endpoint, response status, latency, quota outcome, and sandbox cold/warm state. Request bodies, context, answers, prompts, test contents, and code are never logged.
+
+## Remaining release boundary
+
+The repository can test and package the stack, and both isolated staging and production now have provisioned D1/R2 resources plus real cold/warm Sandbox smoke coverage in all three languages. The public production origin is `https://ogram-learning-canvas.ervaucher.workers.dev`. Technical promotion does not replace the owner’s legal eligibility/rules acknowledgment; that personal gate remains tracked in `docs/challenge-preflight.md`.

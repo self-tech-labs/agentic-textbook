@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://learn.ogram.ch/contracts/learning-experience.schema.json",
+  "title": "Ogram Learning Experience Document",
+  "description": "Versioned declarative learning application authored by an agent and compiled by Ogram.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "specVersion",
+    "registryVersion",
+    "pedagogyPolicyVersion",
+    "experienceId",
+    "draftRevision",
+    "contextSnapshotId",
+    "learningBriefId",
+    "metadata",
+    "objectives",
+    "nodes",
+    "edges",
+    "entryNodeId",
+    "completion",
+    "adaptation",
+    "assets",
+    "provenance"
+  ],
+  "properties": {
+    "specVersion": { "const": "1.0" },
+    "registryVersion": { "const": "ogram.learning.v1" },
+    "pedagogyPolicyVersion": { "const": "2026.1" },
+    "experienceId": { "type": "string", "minLength": 4, "maxLength": 120 },
+    "draftRevision": { "type": "integer", "minimum": 1 },
+    "contextSnapshotId": { "type": "string", "minLength": 4, "maxLength": 160 },
+    "learningBriefId": { "type": "string", "minLength": 4, "maxLength": 160 },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "locale", "estimatedMinutes", "rationale", "theme"],
+      "properties": {
+        "title": { "type": "string", "minLength": 4, "maxLength": 140 },
+        "locale": { "type": "string", "minLength": 2, "maxLength": 20 },
+        "estimatedMinutes": { "type": "integer", "minimum": 1, "maximum": 90 },
+        "rationale": { "type": "string", "minLength": 16, "maxLength": 600 },
+        "theme": { "enum": ["field-notes", "decision-lab", "systems-map"] }
+      }
+    },
+    "objectives": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/objective" }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 30,
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "type": "array",
+      "maxItems": 60,
+      "items": { "$ref": "#/$defs/edge" }
+    },
+    "entryNodeId": { "type": "string", "minLength": 3, "maxLength": 100 },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requiredObjectiveIds",
+        "requiredNodeIds",
+        "minimumUnassistedAttempts",
+        "requireTransfer"
+      ],
+      "properties": {
+        "requiredObjectiveIds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "requiredNodeIds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "minimumUnassistedAttempts": { "type": "integer", "minimum": 1 },
+        "requireTransfer": { "type": "boolean" }
+      }
+    },
+    "adaptation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "maxRevisionsPerSession", "preserveCompletedEvidence"],
+      "properties": {
+        "mode": { "const": "learner_reviewed" },
+        "maxRevisionsPerSession": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "preserveCompletedEvidence": { "const": true }
+      }
+    },
+    "assets": {
+      "type": "array",
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/asset" }
+    },
+    "provenance": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 30,
+      "items": { "$ref": "#/$defs/provenance" }
+    }
+  },
+  "$defs": {
+    "objective": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "successCriteria"],
+      "properties": {
+        "id": { "type": "string", "minLength": 3, "maxLength": 100 },
+        "statement": { "type": "string", "minLength": 12, "maxLength": 320 },
+        "successCriteria": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": { "type": "string", "minLength": 5, "maxLength": 220 }
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "primitiveId", "primitiveVersion", "learningRole", "objectiveIds", "props"],
+      "properties": {
+        "id": { "type": "string", "minLength": 3, "maxLength": 100 },
+        "primitiveId": {
+          "enum": [
+            "orient.objective",
+            "diagnose.prediction",
+            "explain.concept",
+            "model.worked_example",
+            "practice.choice",
+            "practice.sort",
+            "consolidate.reflection",
+            "transfer.commitment",
+            "media.explainer"
+          ]
+        },
+        "primitiveVersion": { "const": "1" },
+        "learningRole": {
+          "enum": ["activate", "explain", "model", "practice", "retrieve", "assess", "reflect", "transfer"]
+        },
+        "objectiveIds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "props": {
+          "type": "object",
+          "description": "Primitive-specific props are advertised by the live versioned primitive registry and enforced by the compiler."
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "from", "to", "condition"],
+      "properties": {
+        "id": { "type": "string" },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "condition": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["op"],
+              "properties": { "op": { "const": "always" } }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["op", "nodeId", "value"],
+              "properties": {
+                "op": { "const": "answer_equals" },
+                "nodeId": { "type": "string" },
+                "value": { "type": "string" }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["op", "nodeId", "value"],
+              "properties": {
+                "op": { "const": "response_correct" },
+                "nodeId": { "type": "string" },
+                "value": { "type": "boolean" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "uri", "alt", "digest", "rightsBasis"],
+      "properties": {
+        "id": { "type": "string", "minLength": 4, "maxLength": 120 },
+        "kind": { "enum": ["image", "audio", "video"] },
+        "uri": { "type": "string", "minLength": 8, "maxLength": 500 },
+        "alt": { "type": "string", "minLength": 3, "maxLength": 400 },
+        "caption": { "type": "string", "maxLength": 400 },
+        "transcript": { "type": "string", "maxLength": 8000 },
+        "digest": { "type": "string", "minLength": 8, "maxLength": 180 },
+        "rightsBasis": { "type": "string", "minLength": 3, "maxLength": 800 },
+        "generatedBy": { "type": "string", "maxLength": 120 }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "lane", "label", "sourceRef"],
+      "properties": {
+        "id": { "type": "string" },
+        "lane": { "enum": ["pedagogy", "content", "personalization", "generation"] },
+        "label": { "type": "string" },
+        "sourceRef": { "type": "string" }
+      }
+    }
+  }
+}

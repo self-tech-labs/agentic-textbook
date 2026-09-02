@@ -1,75 +1,105 @@
-# Demo script — 2 minutes 35 seconds
+# Sep 3 acceptance demo — flexible learning canvas
 
-## 0:00–0:18 — The problem
+This is the release walkthrough for a fresh profile in Codex Desktop’s built-in browser. It leads with the personalized Codex lesson, then uses the compact fixture matrix to verify algebra, all three code languages, branching, and the transformer regression.
 
-Show the Ogram Practice Desk and the learning trace.
+## Before recording
 
-Voiceover:
+Use the deployed Worker URL, not the frontend-only Vite server. In a fresh profile confirm:
 
-> New Codex users often keep every job in one giant task, work outside projects, or spend the wrong reasoning gear on the wrong problem. Generic tutorials cannot see those habits. Ogram can.
+- `GET /api/health` reports schema 4 and all four services;
+- JavaScript, TypeScript, and Python fixture submissions each execute in the no-network Sandbox;
+- the console has no rich-renderer or WebMCP registration errors;
+- the repository and live URL are public and require no login;
+- the recording stays below three minutes and includes audio.
 
-## 0:18–0:35 — Make WebMCP visible
+Do not use real customer context or expose private task titles. Synthetic recent-task summaries are sufficient to demonstrate the review boundary.
 
-Open the browser’s available site tools. Briefly show the eight Ogram tools and the green “site tools ready” indicator.
+## 1. Start from a topic-neutral brief
 
-Prompt Codex:
+Open the landing page. Point out that there is no transformer headline or fixed six-part path. The form asks for:
 
-> Review my recent Codex work and use this page’s tools to build the one practice I need today.
+- topic/question and desired outcome;
+- current level and available time;
+- visual, quantitative, code, scenario, and reading preferences;
+- accessibility notes;
+- a visible, enabled-by-default recent-task personalization toggle.
 
-Voiceover:
+Select **Build a better Codex workflow**, save the brief, and say in the adjacent conversation:
 
-> The page does not read private tasks. It gives Codex a consent boundary and a behavioural rubric. Codex reviews only what I authorized using its own capabilities.
+> Use the lesson brief I prepared on this page. Personalize only from recent task summaries I am allowed to use, show me every derived claim before authoring, and use official sources for current Codex behavior.
 
-## 0:35–0:58 — Combine the two kinds of context
+Codex first calls `learn_get_start_brief` and `learn_get_authoring_capabilities`, then `learn_begin_session` with the brief ID and declared host capabilities.
 
-Show calls to `ogram_get_learning_mission` and `ogram_get_injected_context`.
+## 2. Review minimized context
 
-Point to:
+Demonstrate at most two synthetic derived claims, each short enough to inspect in full—for example, that the learner repeats repository setup work and wants stronger verification habits. The context pack reports its 30-day lookback and inspected-summary count but contains no task ID, prompt, transcript, or code.
 
-- synthetic role and workshop context;
-- the assigned firm training;
-- the blue privacy boundary.
+On the canvas:
 
-Voiceover:
+1. accept one claim;
+2. correct or reject the second;
+3. show that Codex cannot mark either decision itself.
 
-> Codex knows how I worked. Ogram knows why the work matters—my role, workshop goals, preferences, and firm assignments. Raw prompts and client content never cross into the page.
+If task history is unavailable, say so and continue from the brief/current conversation. This is a supported fallback, not an error.
 
-## 0:58–1:25 — Let the agent build in public
+## 3. Compose and approve a current Codex lesson
 
-Call `ogram_submit_practice_signals` with synthetic summaries. Show the evidence cards update.
+Ask Codex to create a short foundation plus the one to three modules most relevant to the reviewed signals. It should use the stable desktop loop—choose a workspace, state an outcome with context, inspect results, test, and refine—and attach official source records for product behavior.
 
-Call `ogram_publish_daily_capsule` with `thread_hygiene`. Show the canvas transform into “Know when the task has changed.”
+The progressive `learn_prepare_lesson` path can start a mixed-mode skeleton, fill individual regions, and finalize the graph. The visible review view exposes:
 
-Voiceover:
+- the learner's saved goal, audience, and available time;
+- the number of approved context claims;
+- every authored section, one page at a time;
+- the explicit **Approve lesson** action.
 
-> Codex chooses today’s focus and personalizes the scenario. Ogram controls the seven-minute recipe, visual system, feedback, and learning contract. This is a shared surface, not a chatbot bolted onto an LMS.
+The tool result carries the exact revision, digest, validation state, source records, and graph metadata. If those details are narrated, show the tool trace alongside the page rather than implying that the current review UI displays them.
 
-## 1:25–1:55 — Human judgment stays central
+Approve that exact revision, then let Codex call `learn_publish_lesson`. A changed, unapproved, or unresolved revision must fail.
 
-Choose **Fork the task**. Show “Good call.” and the checkpoints advance.
+## 4. Show rich blocks and one branch
 
-Voiceover:
+In the published lesson, show the lazy Mermaid workflow diagram and a code example. Answer the scenario choice that selects a remediation route. The concept map should mark completed and current regions, lock future regions, and omit the unselected branch body.
 
-> The learner still makes the decision. The site tool explicitly forbids Codex from answering on their behalf or claiming completion early.
+Submit the remediation evidence. Explain that the answer and selected edge are now immutable; a structural rewrite would create a new draft requiring approval.
 
-Click **Commit this practice**.
+## 5. Run the vertical-slice fixture matrix
 
-## 1:55–2:20 — Close the Ogram loop
+Use fresh local state between fixtures. This can be a short QA segment outside the final three-minute recording.
 
-Show the learning trace change to 3/4 and the desktop loop move to queued/synced. If the desktop companion is ready, cut to the same capsule appearing there.
+### Algebra
 
-Voiceover:
+Choose **Algebra and functions**. Verify:
 
-> Completion emits one privacy-minimized, idempotent learning event. Ogram’s existing desktop and session telemetry can now notice the next matching moment—say, a deliverable change inside a long task—and capture a real fork as proof that the practice stuck.
+- slope renders through KaTeX as HTML+MathML;
+- the lesson includes a Mermaid relationship diagram;
+- an incorrect numeric answer follows the remediation edge;
+- a correct answer follows the direct transfer edge;
+- malformed formula/diagram test inputs retain readable fallback text.
 
-## 2:20–2:35 — Why WebMCP
+### JavaScript, TypeScript, and Python
 
-Open the browser’s recently used site tools/sources.
+Choose **Debug JavaScript, TypeScript, or Python** and exercise each registered fixture. For every language:
 
-Voiceover:
+1. inspect the escaped starter example;
+2. edit in the lazily loaded CodeMirror lab;
+3. run the server-side tests;
+4. submit source plus hash/result/timestamp as local immutable evidence.
 
-> WebMCP is what lets Codex and a person co-author the same visible, authenticated learning canvas. The agent reasons, Ogram remembers, and the learner stays in control.
+Verify one concurrent-run rejection, the rolling quota response, output truncation, and timeout behavior separately from the happy-path recording.
 
-End card:
+### Governed media
 
-> Ogram Practice Desk — yesterday’s habit, today’s practice, tomorrow’s proof.
+Register a small HTTPS raster image with caption, attribution, and alt text. Verify the R2-backed reference renders. Also verify rejection of HTTP, credentialed/private/local URLs, HTML/SVG, spoofed MIME, excess redirects, and over-budget assets. Audio additionally needs a transcript; video needs transcript and inline WEBVTT captions.
+
+### Transformer regression
+
+Open the deprecated `transformer_technical_beginner` fixture and complete its choice and reflection. Load a saved V3 session and confirm content, provenance, responses, undo history, and revisions survive while sequential `always` edges are added. The V3 storage record must remain present.
+
+## What the demo proves
+
+- One generic brief can initiate a lesson about an arbitrary topic.
+- Registries, not topic-specific React flows, define available content, exercises, blueprints, and constraints.
+- Current product education combines learner relevance with authoritative recency while labeling community exploration.
+- Rich explanations degrade accessibly, heavy engines do not inflate the initial bundle, and executable code is isolated behind operational-only backend state.
+- Context, structural publication, branch selection, and evidence all retain explicit learner authority.

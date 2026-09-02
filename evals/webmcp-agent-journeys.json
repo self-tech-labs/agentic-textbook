@@ -1,0 +1,83 @@
+[
+  {
+    "name": "Read the learner-authored brief without acting",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "Read the lesson brief currently saved on this page. Do not inspect other capabilities and do not start a session."
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "learn_get_start_brief",
+        "arguments": {}
+      }
+    ]
+  },
+  {
+    "name": "Inspect registered authoring capabilities without acting",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "Inspect the lesson structures, content blocks, exercises, limits, and source requirements supported by this canvas. Do not read my brief and do not start a session."
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "learn_get_authoring_capabilities",
+        "arguments": {}
+      }
+    ]
+  },
+  {
+    "name": "Start a bounded algebra session and inspect shared state",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "I want a lesson on linear functions and slope. First read my saved brief, then inspect the canvas capabilities. Start a session with the explicit topic Linear functions and slope, the registered algebra blueprint, quantitative teaching mode, and no recent-task personalization. After it starts, read back the session and the semantic canvas, then stop before preparing a lesson draft."
+      }
+    ],
+    "expectedCall": [
+      {
+        "ordered": [
+          {
+            "functionName": "learn_get_start_brief",
+            "arguments": {}
+          },
+          {
+            "functionName": "learn_get_authoring_capabilities",
+            "arguments": {}
+          },
+          {
+            "functionName": "learn_begin_session",
+            "arguments": {
+              "topic": { "$pattern": "(?i)linear functions and slope" },
+              "blueprintId": "algebra_functions_v1",
+              "pedagogicalMode": "quantitative",
+              "personalizeFromRecentTasks": false
+            }
+          }
+        ]
+      },
+      {
+        "unordered": [
+          {
+            "functionName": "learn_get_session",
+            "arguments": {
+              "nonce": { "$type": "string" }
+            }
+          },
+          {
+            "functionName": "learn_get_canvas_snapshot",
+            "arguments": {
+              "nonce": { "$type": "string" }
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

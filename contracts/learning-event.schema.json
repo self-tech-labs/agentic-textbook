@@ -1,51 +1,55 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://learn.ogram.ch/contracts/learning-event.schema.json",
-  "title": "Ogram Learning Event Envelope",
-  "description": "Privacy-minimized, idempotent event shared by the learning web app, Ogram management service, and desktop companion.",
+  "$id": "https://learn.ogram.ch/contracts/v3/learning-event.schema.json",
+  "title": "learn.ogram v3 canvas event",
+  "description": "A sequenced, privacy-minimized event emitted by the agent-native learning canvas.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "eventId",
-    "idempotencyKey",
-    "learningSessionId",
-    "occurredAt",
-    "type",
-    "actor",
-    "capsuleId",
-    "data"
-  ],
+  "required": ["id", "sequence", "type", "actor", "at", "summary"],
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "eventId": { "type": "string", "minLength": 8, "maxLength": 160 },
-    "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 160 },
-    "learningSessionId": { "type": "string", "minLength": 8, "maxLength": 180 },
-    "occurredAt": { "type": "string", "format": "date-time" },
+    "id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 200
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
     "type": {
       "type": "string",
       "enum": [
-        "learning.context.loaded",
-        "learning.signals.submitted",
-        "learning.capsule.published",
-        "learning.choice.recorded",
-        "learning.training.completed",
-        "learning.desktop_follow_up.queued"
+        "agent.session.started",
+        "context.claim.proposed",
+        "context.claim.reviewed",
+        "context.personalization.skipped",
+        "lesson.draft.prepared",
+        "lesson.draft.approved",
+        "lesson.published",
+        "canvas.region.focused",
+        "canvas.region.patched",
+        "canvas.widget.injected",
+        "canvas.research.attached",
+        "canvas.region.reverted",
+        "learner.response.submitted"
       ]
     },
     "actor": {
       "type": "string",
-      "enum": ["codex", "learner", "ogram"]
+      "enum": ["agent", "learner", "ogram"]
     },
-    "capsuleId": {
-      "oneOf": [
-        { "type": "string", "minLength": 8, "maxLength": 120 },
-        { "type": "null" }
-      ]
+    "at": {
+      "type": "string",
+      "format": "date-time"
     },
-    "data": {
+    "summary": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 500
+    },
+    "payload": {
       "type": "object",
-      "description": "Sanitized event-specific fields. Raw conversations, prompts, file paths, credentials, and client content are prohibited.",
+      "description": "Bounded IDs, revisions, digests, counts, provider labels, and sanitized summaries only. Credentials, raw connector content, full conversations, local paths, arbitrary prompts, and free-text learner answers are prohibited.",
       "additionalProperties": true
     }
   }

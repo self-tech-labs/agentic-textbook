@@ -1,146 +1,89 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Header } from "./components/Header";
-import { PracticeCanvas } from "./components/PracticeCanvas";
-import { mockPracticeSignals } from "./domain/mockData";
-import { useLearningStore } from "./hooks/useLearningStore";
+import { useEffect, useRef, useState } from "react";
 import {
-  registerOgramLearningTools,
+  LearningNotebook,
+  type NotebookRegistration,
+} from "./components/LearningNotebook";
+import { useLearningCanvas } from "./hooks/useLearningCanvas";
+import {
+  createWebMcpRegistrationCoordinator,
+  registerLearnTools,
   type WebMcpRegistration,
 } from "./lib/webmcp";
 import "./styles.css";
 
-const wait = (milliseconds: number) =>
-  new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
-
 export default function App() {
-  const { state, actions } = useLearningStore();
-  const [registration, setRegistration] = useState<
-    Omit<WebMcpRegistration, "cleanup"> & { registering: boolean }
-  >({ supported: false, toolCount: 8, toolNames: [], registering: true });
-  const [simulationRunning, setSimulationRunning] = useState(false);
-  const [completing, setCompleting] = useState(false);
-
-  const stableActions = useMemo(
-    () => actions,
-    [
-      actions.completeCapsule,
-      actions.getState,
-      actions.publishCapsule,
-      actions.queueDesktopFollowUp,
-      actions.recordChoice,
-      actions.reset,
-      actions.submitSignals,
-    ],
-  );
+  const { state, actions } = useLearningCanvas();
+  const [registration, setRegistration] = useState<NotebookRegistration>({
+    supported: false,
+    registering: true,
+    toolCount: 1,
+    toolNames: ["learn_begin_session"],
+  });
+  const [registrationError, setRegistrationError] = useState<string | null>(null);
+  const hasNonce = Boolean(actions.getNonce());
+  const registrationCoordinator = useRef(
+    createWebMcpRegistrationCoordinator(),
+  ).current;
 
   useEffect(() => {
     let active = true;
-    let cleanup: () => void = () => {};
-    registerOgramLearningTools(stableActions)
-      .then((result) => {
-        cleanup = result.cleanup;
-        if (active) {
+    let cleanup: WebMcpRegistration["cleanup"] = () => undefined;
+    let registrationTimer = 0;
+    setRegistration((current) => ({ ...current, registering: true }));
+    setRegistrationError(null);
+
+    registrationTimer = window.setTimeout(() => {
+      registerLearnTools(
+        actions,
+        state.session.stage,
+        hasNonce,
+        registrationCoordinator,
+      )
+        .then((result) => {
+          if (!active) {
+            result.cleanup();
+            return;
+          }
+          cleanup = result.cleanup;
           setRegistration({
             supported: result.supported,
+            registering: false,
             toolCount: result.toolCount,
             toolNames: result.toolNames,
-            registering: false,
           });
-        }
-      })
-      .catch(() => {
-        if (active) {
+        })
+        .catch((error: unknown) => {
+          if (!active) return;
           setRegistration((current) => ({ ...current, registering: false }));
-        }
-      });
+          setRegistrationError(
+            error instanceof Error ? error.message : "Site-tool registration failed.",
+          );
+        });
+    }, 0);
+
     return () => {
       active = false;
+      window.clearTimeout(registrationTimer);
       cleanup();
     };
-  }, [stableActions]);
+  }, [actions, hasNonce, registrationCoordinator, state.session.stage]);
 
-  const replayAgentBuild = useCallback(async () => {
-    if (simulationRunning) return;
-    setSimulationRunning(true);
-    try {
-      actions.submitSignals(mockPracticeSignals);
-      const evidence = document.getElementById("evidence-signals");
-      if (evidence instanceof HTMLDetailsElement) evidence.open = true;
-      evidence?.scrollIntoView({ behavior: "smooth", block: "center" });
-      await wait(700);
-      actions.publishCapsule({
-        focus: "thread_hygiene",
-        personalizedScenario:
-          "A client-success lead has used one Codex task to explore, reject, and finally approve a workshop plan. The next job is to turn those approved decisions into a standalone client follow-up.",
-        coachNote:
-          "You do not need less context. You need the right context to cross the boundary with you.",
-        sourceTaskCount: 8,
-      });
-      document
-        .getElementById("todays-practice")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    } finally {
-      setSimulationRunning(false);
-    }
-  }, [actions, simulationRunning]);
+  useEffect(() => {
+    document.title = state.session.topic
+      ? `${state.session.topic} · learn.ogram`
+      : "learn.ogram · Personal learning canvas";
+  }, [state.session.topic]);
 
-  const choose = useCallback(
-    (choiceId: string) => {
-      actions.recordChoice(state.activeCapsule.id, choiceId);
-    },
-    [actions, state.activeCapsule.id],
-  );
-
-  const complete = useCallback(async () => {
-    if (completing) return;
-    setCompleting(true);
-    try {
-      actions.completeCapsule(state.activeCapsule.id);
-      await actions.queueDesktopFollowUp(
-        state.activeCapsule.id,
-        "Watch for the next matching decision point and capture proof of application.",
-      );
-    } finally {
-      setCompleting(false);
-    }
-  }, [actions, completing, state.activeCapsule.id]);
-
-  const focusSignal = state.signals.find(
-    (signal) => signal.id === state.activeCapsule.focus,
-  );
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [state.session.stage]);
 
   return (
-    <div className="app" id="top">
-      <a className="skip-link" href="#todays-practice">
-        Skip to today’s practice
-      </a>
-      <Header
-        webMcpSupported={registration.supported}
-        toolCount={registration.toolCount}
-        registering={registration.registering}
-        simulationRunning={simulationRunning}
-        onReplay={replayAgentBuild}
-      />
-
-      <main className="lesson-page">
-        <PracticeCanvas
-          capsule={state.activeCapsule}
-          context={state.context}
-          focusSignal={focusSignal}
-          desktopBridge={state.desktopBridge}
-          onChoose={choose}
-          onComplete={complete}
-          completing={completing}
-        />
-      </main>
-
-      <footer className="site-footer">
-        <span>ogram · Lausanne</span>
-        <span className="footer-note">Private practice, shaped from behaviour—not content.</span>
-        <button className="footer-reset" type="button" onClick={actions.reset}>
-          Reset lesson
-        </button>
-      </footer>
-    </div>
+    <LearningNotebook
+      state={state}
+      actions={actions}
+      registration={registration}
+      registrationError={registrationError}
+    />
   );
 }

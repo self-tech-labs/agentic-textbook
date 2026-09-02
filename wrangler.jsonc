@@ -1,0 +1,101 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "ogram-learning-canvas",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "SANDBOX_LOG_LEVEL": "error"
+  },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/media/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ogram-learning-canvas-db",
+      "database_id": "a3741a96-4cd1-4b76-b1c7-65890e468fbe"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "LESSON_MEDIA",
+      "bucket_name": "ogram-learning-canvas-lesson-media"
+    }
+  ],
+  "containers": [
+    {
+      "class_name": "LearningSandbox",
+      "image": "./Dockerfile",
+      "instance_type": "lite",
+      "max_instances": 10
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "Sandbox",
+        "class_name": "LearningSandbox"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["LearningSandbox"]
+    }
+  ],
+  "triggers": {
+    "crons": ["17 3 * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    }
+  },
+  "env": {
+    "staging": {
+      "name": "ogram-learning-canvas-staging",
+      "vars": {
+        "SANDBOX_LOG_LEVEL": "error"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "ogram-learning-canvas-staging-db",
+          "database_id": "7ad17771-f805-46e6-ab92-bbfb1ecb4929"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "LESSON_MEDIA",
+          "bucket_name": "ogram-learning-canvas-staging-lesson-media"
+        }
+      ],
+      "containers": [
+        {
+          "class_name": "LearningSandbox",
+          "image": "./Dockerfile",
+          "instance_type": "lite",
+          "max_instances": 10
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "Sandbox",
+            "class_name": "LearningSandbox"
+          }
+        ]
+      },
+      "triggers": {
+        "crons": []
+      }
+    }
+  }
+}

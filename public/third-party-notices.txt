@@ -1,0 +1,36 @@
+learn.ogram third-party notices
+================================
+
+Project code is licensed under MIT. Third-party packages remain under their
+own licenses. Exact resolved versions are recorded in package-lock.json.
+The complete production dependency license corpus is available at
+/third-party-licenses.txt.
+
+Apache-2.0
+-----------
+@cloudflare/sandbox 0.12.9 — Cloudflare
+@json-render/core 0.20.0 — Vercel Labs contributors
+@json-render/react 0.20.0 — Vercel Labs contributors
+TypeScript 7.0.2 — Microsoft and contributors (container runtime)
+Full text: /licenses/Apache-2.0.txt
+
+MIT
+---
+CodeMirror packages — Copyright (c) 2018-2021 Marijn Haverbeke and others
+KaTeX — Copyright (c) 2013-2020 Khan Academy and other contributors
+Mermaid — Copyright (c) 2014-2022 Knut Sveidqvist
+React and React DOM — Copyright (c) Meta Platforms, Inc. and affiliates
+Thinking Orbs — Copyright (c) 2026 Jakub Antalik
+Vite — Copyright (c) 2019-present VoidZero Inc. and Vite contributors
+Vite React plugin — Copyright (c) 2019-present Yuxi (Evan) You and Vite contributors
+Zod — Copyright (c) 2025 Colin McDonnell
+Khroma — Copyright (c) 2019-present Fabio Spampinato and Andrew Maney
+tsx 4.23.13 — Copyright (c) Privatenumber and contributors (container runtime)
+Full text: /licenses/MIT.txt
+
+Trademark notice
+----------------
+OpenAI, ChatGPT, Codex, Cloudflare, Chrome, Google, Devpost, GitHub, Vercel,
+Netlify, Render, Shopify, and other names are the property of their respective
+owners. References are descriptive and do not imply sponsorship or endorsement.
+No third-party brand logo is bundled.
