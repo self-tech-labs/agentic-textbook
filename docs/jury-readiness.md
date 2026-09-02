@@ -5,11 +5,11 @@ This record is technical evidence, not an eligibility attestation or a Devpost s
 
 ## Result
 
-The local product and WebMCP journey are release-candidate quality. Cloudflare OAuth
-is valid for the intended account, but the live Containers API confirms that the
-account does not have Workers Paid/Containers access. The staging Worker does not yet
-exist, so its secret cannot be created before the first deploy. No production URL or
-real Cloudflare Sandbox result is claimed.
+The local product, WebMCP journey, and deployed staging runtime are release-candidate
+quality. Cloudflare OAuth, Workers Paid/Containers, Docker, the isolated D1/R2
+resources, the custom Sandbox image, migration, and signing-secret attachment are all
+verified. Real Cloudflare Sandbox, media, security, and in-app-browser staging results
+are recorded below. No production promotion or eligibility attestation is claimed.
 
 | Surface | Evidence | Status |
 |---|---|---|
@@ -23,10 +23,13 @@ real Cloudflare Sandbox result is claimed.
 | Responsive UX | 362×783 browser run has no horizontal spill, full compact-nav accessible names, one-click section 01 → 03 navigation, and one-click scene 01 → 02 navigation | Pass |
 | Browser runtime | Fixed local journey records only Vite debug and React development-info messages; no warning or error | Pass |
 | Cloudflare authentication | `wrangler whoami` succeeds for the intended account; OAuth includes Workers, D1, Containers, and related write scopes | Pass |
-| Workers Paid / Containers | `wrangler containers list` returns Cloudflare's account-level denial: Containers require the Workers Paid plan | Blocked |
-| Container build runtime | Docker Desktop processes are present, but both `docker version` and `docker info` fail to return; the engine needs an owner-safe restart before image deployment | Blocked |
-| Staging Worker and secret | `ogram-learning-canvas-staging` does not exist; Wrangler requires the first deploy before `secret put`, while that deploy requires Containers entitlement | Blocked |
-| Public URL | Requires Workers Paid activation, staging bootstrap, secret creation, migrations, and the deployed smoke matrix | Blocked |
+| Workers Paid / Containers | `wrangler containers list` and image listing succeed; container application `ogram-learning-canvas-staging-learningsandbox-staging` is deployed | Pass |
+| Container build runtime | Docker Server 28.3.3 responds; the pinned Sandbox image built, pushed, and rolled out | Pass |
+| Staging Worker and secret | `ogram-learning-canvas-staging`, D1, R2, the custom container, and `GUEST_SIGNING_KEY` are provisioned; secret value was never printed or stored | Pass |
+| Public staging URL | `https://ogram-learning-canvas-staging.ervaucher.workers.dev` serves Worker version `259d3f54-9db9-4377-bf1d-5984c4f9ea7e`; schema-v4 health and CSRF checks pass | Pass |
+| Deployed runtime and media | JavaScript, TypeScript, and Python each pass cold and warm fixture runs; verified PNG import, R2 readback, and lesson-reference validation pass | Pass |
+| Deployed adversarial suite | All 13 origin/CSRF, isolation, filesystem, reset, injection, limit, concurrency, and quota checks pass | Pass |
+| Staging browser runtime | Correct page identity and WebMCP tools, meaningful first screen, no overlay or browser log, and a successful quantitative-starter interaction | Pass |
 | Remote branch | Commit `444f65b75ca15e9298af98960dbed00eb1b835f6` is pushed to `origin/codex/jury-ready-deep-ux` | Pass |
 
 ## Material fixes in this candidate
@@ -51,14 +54,11 @@ native combination with an actionable message instead of producing nine false er
 
 ## Remaining release gates
 
-1. The owner enables Workers Paid on the authenticated Cloudflare account and
-   restores a responsive Docker engine without interrupting other local workloads.
-2. Run the first staging deploy, create `GUEST_SIGNING_KEY`, complete
-   `npm run deploy:staging:bootstrap`, and record the URL. Wrangler cannot attach a
-   secret to this named Worker until its first deploy creates the service.
-3. Run health, session/CSRF, asset, three-language cold/warm, and adversarial smoke tests.
-4. Repeat clean-host browser/WebMCP acceptance against staging, then promote explicitly.
-5. The owner attests eligibility and rules acceptance; record a public, narrated demo under three minutes.
+1. The owner attests eligibility and rules acceptance.
+2. Rehearse the sanitized full Codex + Ogram Learn staging walkthrough, then record,
+   caption, privacy-review, and publish the narrated demo under three minutes.
+3. If a separate production origin is desired, promote explicitly and repeat the
+   incognito/WebMCP acceptance there; staging is not silently treated as production.
 
 Intentionally not performed: `$start-hackathon`, hosted Nekuda Workbench AI evaluation,
 Devpost form mutation, final submission, Workers plan purchase, or production promotion.

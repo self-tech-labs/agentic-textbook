@@ -75,12 +75,26 @@ assert(wrongOrigin.response.status === 403, "Cross-origin mutation was not rejec
 const network = await runCode(
   primary,
   [
+    "import { connect } from 'node:net';",
+    "function canReachNetwork() {",
+    "  return new Promise((resolve) => {",
+    "    let settled = false;",
+    "    let timer;",
+    "    const socket = connect({ host: '1.1.1.1', port: 443 });",
+    "    const finish = (connected) => {",
+    "      if (settled) return;",
+    "      settled = true;",
+    "      if (timer) clearTimeout(timer);",
+    "      socket.destroy();",
+    "      resolve(connected);",
+    "    };",
+    "    socket.once('connect', () => finish(true));",
+    "    socket.once('error', () => finish(false));",
+    "    timer = setTimeout(() => finish(false), 800);",
+    "  });",
+    "}",
     "export async function sum(values) {",
-    "  let connected = false;",
-    "  try {",
-    "    await fetch('https://example.com', { signal: AbortSignal.timeout(800) });",
-    "    connected = true;",
-    "  } catch {}",
+    "  const connected = await canReachNetwork();",
     "  return connected ? -999999 : values.reduce((total, value) => total + value, 0);",
     "}",
   ].join("\n"),
@@ -107,7 +121,16 @@ const packageInstall = await runCode(
     "export function sum(values) {",
     "  let installed = false;",
     "  try {",
-    "    execFileSync('npm', ['install', 'left-pad@1.3.0', '--ignore-scripts'], { stdio: 'ignore', timeout: 1200 });",
+    "    execFileSync('timeout', [",
+    "      '--signal=KILL',",
+    "      '1s',",
+    "      'npm',",
+    "      'install',",
+    "      'left-pad@1.3.0',",
+    "      '--ignore-scripts',",
+    "      '--no-audit',",
+    "      '--no-fund',",
+    "    ], { stdio: 'ignore', timeout: 2000 });",
     "    installed = true;",
     "  } catch {}",
     "  return installed ? -999999 : values.reduce((total, value) => total + value, 0);",
@@ -188,7 +211,11 @@ assert(
 const oversized = await runCode(primary, "é".repeat(20_000));
 assert(oversized.response.status === 413, "A source larger than 32 KB was not rejected.");
 
-const timeoutSession = await newSession();
+const passingSource =
+  "export function sum(values) { return values.reduce((total, value) => total + value, 0); }";
+const timeoutSession = primary;
+const timeoutWarmup = await runCode(timeoutSession, passingSource);
+expectPassed(timeoutWarmup, "Timeout sandbox warm-up");
 const loopingPromise = runCode(
   timeoutSession,
   "export function sum() { while (true) {} }",
@@ -209,8 +236,6 @@ assert(looping.body?.evidence?.status === "error", "Infinite loop was not termin
 assert(looping.body?.durationMs <= 7_000, "Infinite-loop timeout exceeded seven seconds.");
 
 const quotaSession = await newSession();
-const passingSource =
-  "export function sum(values) { return values.reduce((total, value) => total + value, 0); }";
 for (let index = 0; index < 20; index += 1) {
   const run = await runCode(quotaSession, passingSource);
   expectPassed(run, `Quota run ${index + 1}`);

@@ -14,21 +14,23 @@ Implementation status updated: September 2, 2026. Rules last checked against Dev
 - [x] Local nekuda Workbench tool discovery, read-only execution, saved unit test, and 100/100 audit pass.
 - [ ] Submitting owner confirms personal/entity eligibility and acknowledges the official rules.
 - [x] Cloudflare OAuth is authenticated to the intended account with the required Worker and Containers scopes.
-- [ ] Workers Paid/Containers account entitlement is enabled.
-- [ ] Docker responds to `docker version` and `docker info` for the container image build.
-- [ ] Staging Worker, D1 database, R2 bucket, custom container, and signing secret are provisioned.
-- [ ] The same three-language Sandbox smoke test passes against staging.
+- [x] Workers Paid/Containers account entitlement is enabled.
+- [x] Docker responds to `docker version` and `docker info` for the container image build.
+- [x] Staging Worker, D1 database, R2 bucket, custom container, and signing secret are provisioned.
+- [x] The same three-language Sandbox smoke test passes against staging.
 - [ ] Production/incognito run passes in ChatGPT’s in-app browser and a WebMCP-capable Chrome build.
 - [x] Gemini 3.5 Flash agent-trajectory suite passes 21/21 expected tool steps across three fresh-page samples through GoogleChromeLabs `webmcp-evals`, including dynamic bootstrap-to-session tool rotation.
 
 The owner eligibility item is a legal/personal attestation and must not be checked by
-an agent. On September 2, Wrangler authentication succeeded, but the live Containers
-API returned an account-level denial stating that Containers require the Workers Paid
-plan. The staging Worker does not exist, so Wrangler also refuses to attach its secret
-until the first deploy. Docker Desktop processes are present, but its engine did not
-answer either `docker version` or `docker info`; it was not force-restarted because
-that could interrupt unrelated local workloads. Production deployment remains blocked
-until every Gate 0 item is checked.
+an agent. On September 2, the owner enabled Workers Paid and R2; the live Containers
+API then succeeded, Docker Server 28.3.3 responded, and the isolated staging stack was
+provisioned. `npm run deploy:staging:bootstrap` published the custom container, applied
+`0001_v4_runtime.sql`, and deployed Worker version
+`259d3f54-9db9-4377-bf1d-5984c4f9ea7e`. Health, cookie/CSRF, governed media, all three
+language cold/warm paths, the adversarial suite, and an in-app-browser surface check
+passed against the public staging origin. Production promotion remains intentionally
+unperformed until the owner completes the remaining personal attestation and release
+decision.
 
 Optional confidence checks, not Devpost requirements: replay the tool surface with a
 second local inspector extension and preserve one production-origin trace. Do not

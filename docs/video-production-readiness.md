@@ -1,7 +1,7 @@
 # Devpost video production readiness
 
 Verified September 2, 2026. This is a production-method record, not a finished
-video or a claim that the staging release is ready to record.
+video. The staging release is technically ready for the final rehearsal and recording.
 
 ## Verdict
 
@@ -17,8 +17,11 @@ The local Ogram Learn panel also passed a browser readiness check at
 framework overlay, no console warnings or errors, and a successful skip-link state
 change to `#main-canvas`. This validates the capture surface, not the staging runtime.
 
-Final recording remains gated on a deployed staging URL and its full Sandbox smoke
-matrix. The video must not substitute local fixture behavior for deployed proof.
+The deployed staging URL now passes its full Sandbox, media, security, and browser
+smoke matrix. The Codex Merch technique is ready to reuse: record the truthful full
+Codex surface with Ogram Learn visible in the right panel, then place that real capture
+over the standard restrained abstract-colour background and use eased zoom/pan beats.
+The video must continue to show deployed proof rather than substitute local fixtures.
 
 ## Method recovered from Codex Merch
 
@@ -79,9 +82,9 @@ first, keep clips atomic, and surround—never replace—the real product record
   privacy shield.
 - [x] Ogram Learn right-panel page identity, content, console, screenshot, and one
   interaction verified locally.
-- [ ] Workers Paid/Containers entitlement enabled.
-- [ ] Docker engine responds for the Cloudflare container image build.
-- [ ] Staging deployed and health, CSRF, media, three-language cold/warm, and
+- [x] Workers Paid/Containers entitlement enabled.
+- [x] Docker engine responds for the Cloudflare container image build.
+- [x] Staging deployed and health, CSRF, media, three-language cold/warm, and
   adversarial checks pass.
 - [ ] Fresh, sanitized staging walkthrough rehearsed in the final window layout.
 - [ ] Narration, captions, contact sheets, loudness, full decode, and privacy QA pass.

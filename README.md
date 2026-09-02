@@ -145,4 +145,4 @@ docs/video-production-readiness.md full-surface capture and reusable demo method
 
 ## Deployment status
 
-The implementation can be packaged and dry-run without claiming challenge eligibility. Production publication remains gated on the submitting owner confirming the official rules/eligibility, Cloudflare Workers Paid and Containers access, and staging smoke tests for JavaScript, TypeScript, and Python. See [docs/challenge-preflight.md](docs/challenge-preflight.md) and [docs/deployment.md](docs/deployment.md).
+The implementation can be packaged and dry-run without claiming challenge eligibility. Workers Paid/Containers, the isolated staging resources, and the deployed JavaScript, TypeScript, Python, media, and adversarial smoke matrix were verified on September 2, 2026. Production publication remains gated on the submitting owner confirming the official rules/eligibility and choosing an explicit production promotion. See [docs/challenge-preflight.md](docs/challenge-preflight.md) and [docs/deployment.md](docs/deployment.md).
