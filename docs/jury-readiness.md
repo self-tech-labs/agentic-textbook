@@ -5,9 +5,11 @@ This record is technical evidence, not an eligibility attestation or a Devpost s
 
 ## Result
 
-The local product and WebMCP journey are release-candidate quality. Public deployment
-is blocked by expired Cloudflare CLI authentication and an unavailable local Docker
-daemon, so no production URL or real Cloudflare Sandbox result is claimed.
+The local product and WebMCP journey are release-candidate quality. Cloudflare OAuth
+is valid for the intended account, but the live Containers API confirms that the
+account does not have Workers Paid/Containers access. The staging Worker does not yet
+exist, so its secret cannot be created before the first deploy. No production URL or
+real Cloudflare Sandbox result is claimed.
 
 | Surface | Evidence | Status |
 |---|---|---|
@@ -20,9 +22,12 @@ daemon, so no production URL or real Cloudflare Sandbox result is claimed.
 | Full lifecycle | Clean origin: bootstrap → skipped/no-context review → progressive 5-region authoring → validation → human approval → exact-revision publication → adaptive evidence → completion | Pass |
 | Responsive UX | 362×783 browser run has no horizontal spill, full compact-nav accessible names, one-click section 01 → 03 navigation, and one-click scene 01 → 02 navigation | Pass |
 | Browser runtime | Fixed local journey records only Vite debug and React development-info messages; no warning or error | Pass |
-| Cloudflare account | `wrangler whoami` reports expired, non-refreshable OAuth in the non-interactive host | Blocked |
-| Container runtime | Docker server did not answer; staging JS/TS/Python and adversarial Sandbox smoke cannot be rerun | Blocked |
-| Public URL | Requires Cloudflare reauthentication, entitlement confirmation, staging bootstrap, migrations, secrets, and smoke tests | Blocked |
+| Cloudflare authentication | `wrangler whoami` succeeds for the intended account; OAuth includes Workers, D1, Containers, and related write scopes | Pass |
+| Workers Paid / Containers | `wrangler containers list` returns Cloudflare's account-level denial: Containers require the Workers Paid plan | Blocked |
+| Container build runtime | Docker Desktop processes are present, but both `docker version` and `docker info` fail to return; the engine needs an owner-safe restart before image deployment | Blocked |
+| Staging Worker and secret | `ogram-learning-canvas-staging` does not exist; Wrangler requires the first deploy before `secret put`, while that deploy requires Containers entitlement | Blocked |
+| Public URL | Requires Workers Paid activation, staging bootstrap, secret creation, migrations, and the deployed smoke matrix | Blocked |
+| Remote branch | Commit `444f65b75ca15e9298af98960dbed00eb1b835f6` is pushed to `origin/codex/jury-ready-deep-ux` | Pass |
 
 ## Material fixes in this candidate
 
@@ -46,12 +51,14 @@ native combination with an actionable message instead of producing nine false er
 
 ## Remaining release gates
 
-1. The owner reauthenticates Wrangler and confirms Workers Paid/Containers access.
-2. Create the staging secret, run `npm run deploy:staging:bootstrap`, and record the URL.
+1. The owner enables Workers Paid on the authenticated Cloudflare account and
+   restores a responsive Docker engine without interrupting other local workloads.
+2. Run the first staging deploy, create `GUEST_SIGNING_KEY`, complete
+   `npm run deploy:staging:bootstrap`, and record the URL. Wrangler cannot attach a
+   secret to this named Worker until its first deploy creates the service.
 3. Run health, session/CSRF, asset, three-language cold/warm, and adversarial smoke tests.
 4. Repeat clean-host browser/WebMCP acceptance against staging, then promote explicitly.
-5. Push this candidate commit to the public repository and record its SHA.
-6. The owner attests eligibility and rules acceptance; record a public, narrated demo under three minutes.
+5. The owner attests eligibility and rules acceptance; record a public, narrated demo under three minutes.
 
 Intentionally not performed: `$start-hackathon`, hosted Nekuda Workbench AI evaluation,
-Devpost form mutation, final submission, or remote Git push.
+Devpost form mutation, final submission, Workers plan purchase, or production promotion.

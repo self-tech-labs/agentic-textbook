@@ -140,6 +140,7 @@ docs/architecture.md               runtime and trust-boundary design
 docs/demo-script.md                Sep 3 vertical-slice walkthrough
 docs/deployment.md                 Cloudflare setup and release checks
 docs/jury-readiness.md             latest verified matrix, evidence, and blockers
+docs/video-production-readiness.md full-surface capture and reusable demo methodology
 ```
 
 ## Deployment status

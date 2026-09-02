@@ -37,13 +37,18 @@ npx wrangler whoami
 docker info
 ```
 
-Create the staging signing secret through Wrangler’s encrypted secret prompt:
+For an existing staging Worker, create the signing secret through Wrangler's
+encrypted secret prompt:
 
 ```bash
 npx wrangler secret put GUEST_SIGNING_KEY --env staging
 ```
 
 Never place the production value in `wrangler.jsonc`, `.dev.vars.example`, logs, or screenshots.
+
+Wrangler cannot attach a secret to a Worker that has never been deployed. For a
+brand-new `ogram-learning-canvas-staging` service, first run the one-time creation
+deploy in the next section, then create the secret, then run the bootstrap script.
 
 `SANDBOX_LOG_LEVEL` is pinned to `error` in `wrangler.jsonc`. Application request logs contain only endpoint label, status, latency, quota outcome, and cold/warm sandbox state; do not add request bodies, learner context, answers, or source code to logs.
 
@@ -55,8 +60,17 @@ required before production promotion or submission, but it does not block an
 isolated technical staging test.
 
 ```bash
+npm run build
+npx wrangler deploy --env staging
+npx wrangler secret put GUEST_SIGNING_KEY --env staging
 npm run deploy:staging:bootstrap
 ```
+
+The first two commands create the named Worker and its draft resources so the secret
+has a target. The bootstrap script then rebuilds, deploys, migrates D1, and deploys the
+same candidate again. This extra first deployment is intentional for a previously
+nonexistent Worker; subsequent environments that already exist start with
+`wrangler secret put` and the bootstrap script.
 
 The staging environment has the explicit Worker name `ogram-learning-canvas-staging`
 and its own draft D1, R2, Durable Object, and Container bindings. The bootstrap

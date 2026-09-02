@@ -13,13 +13,22 @@ Implementation status updated: September 2, 2026. Rules last checked against Dev
 - [x] GoogleChromeLabs `webmcp-evals` deterministic smoke passes 3/3 cases in WebMCP-enabled Chrome.
 - [x] Local nekuda Workbench tool discovery, read-only execution, saved unit test, and 100/100 audit pass.
 - [ ] Submitting owner confirms personal/entity eligibility and acknowledges the official rules.
-- [ ] Cloudflare account is authenticated and Workers Paid/Containers access is confirmed.
+- [x] Cloudflare OAuth is authenticated to the intended account with the required Worker and Containers scopes.
+- [ ] Workers Paid/Containers account entitlement is enabled.
+- [ ] Docker responds to `docker version` and `docker info` for the container image build.
 - [ ] Staging Worker, D1 database, R2 bucket, custom container, and signing secret are provisioned.
 - [ ] The same three-language Sandbox smoke test passes against staging.
 - [ ] Production/incognito run passes in ChatGPT’s in-app browser and a WebMCP-capable Chrome build.
 - [x] Gemini 3.5 Flash agent-trajectory suite passes 21/21 expected tool steps across three fresh-page samples through GoogleChromeLabs `webmcp-evals`, including dynamic bootstrap-to-session tool rotation.
 
-The owner eligibility item is a legal/personal attestation and must not be checked by an agent. On September 2 the local Cloudflare OAuth token was expired and non-interactively unrefreshable; the local Docker daemon also did not respond, so Workers Paid/Containers entitlement and the real Sandbox runtime remain unverified. Production deployment remains blocked until every Gate 0 item is checked.
+The owner eligibility item is a legal/personal attestation and must not be checked by
+an agent. On September 2, Wrangler authentication succeeded, but the live Containers
+API returned an account-level denial stating that Containers require the Workers Paid
+plan. The staging Worker does not exist, so Wrangler also refuses to attach its secret
+until the first deploy. Docker Desktop processes are present, but its engine did not
+answer either `docker version` or `docker info`; it was not force-restarted because
+that could interrupt unrelated local workloads. Production deployment remains blocked
+until every Gate 0 item is checked.
 
 Optional confidence checks, not Devpost requirements: replay the tool surface with a
 second local inspector extension and preserve one production-origin trace. Do not
