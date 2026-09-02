@@ -156,4 +156,4 @@ Logs are deliberately metadata-only: normalized endpoint, response status, laten
 
 ## Remaining release boundary
 
-The repository can test and package the stack, and the Workers Paid/Containers staging release now has provisioned D1/R2 resources plus real cold/warm Sandbox smoke coverage in all three languages. A production release still requires the owner’s legal eligibility/rules acknowledgment and an explicit promotion decision. Those are tracked in `docs/challenge-preflight.md` and `docs/deployment.md`.
+The repository can test and package the stack, and both isolated staging and production now have provisioned D1/R2 resources plus real cold/warm Sandbox smoke coverage in all three languages. The public production origin is `https://ogram-learning-canvas.ervaucher.workers.dev`. Technical promotion does not replace the owner’s legal eligibility/rules acknowledgment; that personal gate remains tracked in `docs/challenge-preflight.md`.

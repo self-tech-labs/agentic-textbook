@@ -171,6 +171,32 @@ After acceptance, record the deployment URL, commit SHA, UTC verification time, 
 | Adversarial | All 13 checks passed, including isolation, reset, limits, concurrency, and rolling quota |
 | In-app browser | Correct identity/tools/content, no error overlay or browser logs, and the quantitative starter updated the brief |
 
+## Verified production release — September 2, 2026
+
+- Origin: `https://ogram-learning-canvas.ervaucher.workers.dev`
+- Worker version: `8c2a1d11-6710-4f40-8325-0d5cde414122`
+- Verification completed: `2026-09-02T19:40:15Z`
+- Source application commit: `8c7d1d08dba26a74f4b225df1f582a78e1f51fae`
+- Promotion PR: `https://github.com/self-tech-labs/ogram-learning-webmcp/pull/7`
+- D1: `ogram-learning-canvas-db`
+- R2: `ogram-learning-canvas-lesson-media`
+- Container application: `ogram-learning-canvas-learningsandbox`
+- Secret: `GUEST_SIGNING_KEY` confirmed by name only; its value was never printed or stored
+
+`npm run deploy:production:bootstrap` rebuilt the release candidate, deployed the
+Worker and custom image, applied `0001_v4_runtime.sql`, and completed the final deploy.
+The production smoke evidence was:
+
+| Check | Result |
+|---|---|
+| Health | `status: ok`; Assets, D1, R2, and Sandbox present |
+| Cookie + CSRF | Signed-cookie and same-origin protections passed |
+| JavaScript | 3/3 tests; cold 2468 ms, warm 281 ms |
+| TypeScript | 2/2 tests; cold 3219 ms, warm 959 ms |
+| Python | 2/2 tests; cold 3980 ms, warm 288 ms |
+| Governed media | 8090-byte PNG verified, stored in R2, read back, and accepted as a lesson reference |
+| Adversarial | All 13 checks passed, including isolation, reset, limits, concurrency, and rolling quota |
+
 ## Rollback
 
 Cloudflare deployment rollback restores the application version. V4 local migration retains `learn-ogram-canvas:v3`, so the browser-side state can also fall back without deleting learner data. R2 objects are immutable and content-addressed; D1 records are operational metadata only. Do not delete production resources during a rollback unless their exact scope and retention impact have been reviewed.

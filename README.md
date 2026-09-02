@@ -139,10 +139,11 @@ contracts/                         transport-facing JSON Schemas
 docs/architecture.md               runtime and trust-boundary design
 docs/demo-script.md                Sep 3 vertical-slice walkthrough
 docs/deployment.md                 Cloudflare setup and release checks
+docs/hackathon-links.md            canonical source, production, and release-PR URLs
 docs/jury-readiness.md             latest verified matrix, evidence, and blockers
 docs/video-production-readiness.md full-surface capture and reusable demo methodology
 ```
 
 ## Deployment status
 
-The implementation can be packaged and dry-run without claiming challenge eligibility. Workers Paid/Containers, the isolated staging resources, and the deployed JavaScript, TypeScript, Python, media, and adversarial smoke matrix were verified on September 2, 2026. Production publication remains gated on the submitting owner confirming the official rules/eligibility and choosing an explicit production promotion. See [docs/challenge-preflight.md](docs/challenge-preflight.md) and [docs/deployment.md](docs/deployment.md).
+Workers Paid/Containers, isolated staging, and the production Cloudflare stack were verified on September 2, 2026. The public release is available at [ogram-learning-canvas.ervaucher.workers.dev](https://ogram-learning-canvas.ervaucher.workers.dev), where health, CSRF, governed media, JavaScript/TypeScript/Python cold-and-warm Sandbox runs, and all 13 adversarial checks pass. This technical promotion does not claim challenge eligibility or submit anything to Devpost. See [docs/hackathon-links.md](docs/hackathon-links.md), [docs/challenge-preflight.md](docs/challenge-preflight.md), and [docs/deployment.md](docs/deployment.md).

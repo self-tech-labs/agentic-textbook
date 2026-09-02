@@ -87,9 +87,10 @@ That staged disclosure is important to the pitch. The number **15** is less pers
 ## Honest submission boundaries
 
 - There is no `.devpost-hackathon-state.json`, reviewed rules state, or official Devpost draft in this checkout. Run the guided hackathon start and rules-review steps before drafting submission copy.
-- The V4 candidate is merged into `staging` through PR #4, while the public repository's default branch may still point at an older prototype. Align the default branch or share the intended release branch explicitly before giving judges the source URL.
-- No production URL or public sub-three-minute demo video is recorded yet.
-- Cloudflare Workers Paid/Containers, staging resources, and the staging security/runtime smoke matrix passed on September 2; production work still needs the owner's eligibility/rules acknowledgment and an explicit promotion decision.
+- The V4 candidate, deployment evidence, and final surface polish are merged into `staging`; PR #7 promotes the complete release to the default `main` branch.
+- The verified production URL is `https://ogram-learning-canvas.ervaucher.workers.dev`; a public sub-three-minute demo video is still outstanding.
+- Cloudflare Workers Paid/Containers, isolated staging, production D1/R2 resources, and both deployed security/runtime smoke matrices passed on September 2. The owner's eligibility/rules acknowledgment remains personal and outstanding.
+- The canonical repository is `https://github.com/self-tech-labs/ogram-learning-webmcp`, but it is currently private and must be made public or explicitly shared with judges before it is used as a submission link.
 - Run the Workbench audit and independent inspector on the production URL in a supported Chrome profile; capture the tool list, one successful end-to-end trace, one rejected unsafe/stale action, and a clean audit result.
 - Preserve the three-run Gemini report and rerun the agent suite against the production origin; review any real trajectory failures rather than tuning only for pass rate.
 - The tool name `learn_get_authoring_capabilities` exceeds the resource guide's 30-character recommendation, and large capability/session/snapshot results should be measured for pagination or summarization before release.
