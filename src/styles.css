@@ -15,6 +15,13 @@
   --lime: #b7f313;
   --lime-soft: #eafbb8;
   --orange: #c5532e;
+  --radius-control: 7px;
+  --radius-surface: 12px;
+  --radius-feature: 16px;
+  --surface-shadow: 0 14px 34px rgba(23, 75, 56, 0.08),
+    0 2px 7px rgba(23, 75, 56, 0.05);
+  --surface-shadow-raised: 0 18px 42px rgba(23, 75, 56, 0.11),
+    0 3px 9px rgba(23, 75, 56, 0.06);
   --max-notebook: 880px;
   --app-header-height: 66px;
   --visible-header-height: var(--app-header-height);
@@ -4951,5 +4958,151 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 
   .code-lab__actions > button {
     width: 100%;
+  }
+}
+
+/* Final surface polish: retain the editorial geometry, soften only its edges. */
+
+.primary-button,
+.secondary-button,
+.danger-button {
+  border-radius: var(--radius-control);
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.primary-button:hover:not(:disabled),
+.secondary-button:hover,
+.danger-button:hover {
+  transform: translateY(-1px);
+}
+
+:where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  border-radius: var(--radius-control);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
+}
+
+:where(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus-visible {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(23, 75, 56, 0.09);
+}
+
+.session-menu__popover,
+.lesson-brief,
+.starter-prompt,
+.context-decision,
+.lesson-review-pager,
+.sandbox-card {
+  overflow: hidden;
+  border-radius: var(--radius-feature);
+  box-shadow: var(--surface-shadow);
+}
+
+.lesson-panel,
+.learner-interaction,
+.saved-evidence,
+.notebook-outline,
+.folded-notebook__cover,
+.formula-block,
+.mermaid-block,
+.code-example,
+.media-block,
+.comparison-wrap,
+.code-lab__editor {
+  border-radius: var(--radius-surface);
+}
+
+.lesson-panel,
+.learner-interaction,
+.sandbox-card,
+.lesson-completion-panel {
+  box-shadow: var(--surface-shadow);
+}
+
+.lesson-slot--focused .lesson-panel,
+.lesson-completion-panel {
+  box-shadow: var(--surface-shadow-raised);
+}
+
+.saved-evidence {
+  box-shadow: none;
+}
+
+.agent-bridge {
+  border-radius: 0 var(--radius-surface) var(--radius-surface) 0;
+}
+
+.loop-model,
+.loop-model__canvas,
+.construction-activity,
+.context-card,
+.consent-empty,
+.gate-ready,
+.approval-complete,
+.browser-notice,
+.research-block,
+.agent-working,
+.region-attribution,
+.rich-placeholder,
+.rich-fallback,
+.feedback,
+.code-result {
+  border-radius: var(--radius-control);
+}
+
+.loop-model__canvas {
+  box-shadow: 0 10px 26px rgba(183, 243, 19, 0.1);
+}
+
+.folded-notebook__page {
+  border-radius: 0 0 var(--radius-surface) var(--radius-surface);
+}
+
+.folded-notebook__cover {
+  box-shadow: inset 4px 0 0 rgba(0, 0, 0, 0.1);
+}
+
+.choice-list label,
+.mode-picker label > span,
+.review-stamp,
+.focus-badge,
+.loop-model__approval,
+.loop-model__building,
+.loop-model__focus,
+.code-lab details {
+  border-radius: 6px;
+}
+
+.starter-card.is-selected {
+  box-shadow: inset 0 -3px 0 var(--green);
+}
+
+.lesson-time-field input {
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
+}
+
+.lesson-time-field > span,
+.numeric-field > div > span {
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+}
+
+.lesson-brief input:not([type="checkbox"]),
+.lesson-brief textarea,
+.lesson-brief select,
+.numeric-field input,
+.context-card__correction textarea,
+.reflection-field textarea {
+  border-color: #aaa79e;
+}
+
+@media (max-width: 600px) {
+  .lesson-brief {
+    box-shadow: var(--surface-shadow);
   }
 }
