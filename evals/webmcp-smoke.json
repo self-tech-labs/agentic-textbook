@@ -1,0 +1,57 @@
+[
+  {
+    "name": "Read the saved lesson brief",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "Read the lesson brief I prepared on this page, but do not start a session yet."
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "learn_get_start_brief",
+        "arguments": {}
+      }
+    ]
+  },
+  {
+    "name": "Inspect authoring capabilities",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "What lesson structures, content blocks, and exercises can this canvas support?"
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "learn_get_authoring_capabilities",
+        "arguments": {}
+      }
+    ]
+  },
+  {
+    "name": "Bootstrap a bounded generic lesson",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "Start a 15-minute lesson about evaluating WebMCP tools. Do not use recent-task personalization."
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "learn_begin_session",
+        "arguments": {
+          "topic": "Evaluating WebMCP tools",
+          "goal": "Design and run a focused WebMCP evaluation.",
+          "blueprintId": "open_topic_v1",
+          "pedagogicalMode": "mixed",
+          "personalizeFromRecentTasks": false,
+          "hostCapabilities": ["webmcp"]
+        }
+      }
+    ]
+  }
+]

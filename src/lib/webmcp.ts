@@ -3,16 +3,37 @@ import type {
   ContextClaimKind,
   ContextDiscoveryScope,
   ContextSource,
+  EdgeCondition,
   LearnerContextClaim,
   LearnerInteraction,
+  LessonContextPackV1,
   LessonDocumentV3,
+  LessonEdgeV4,
   LessonRegion,
   LearningSessionStage,
+  PedagogicalMode,
   RegionContent,
   ResearchReference,
   TrustedPatchContent,
 } from "../domain/agentCanvas";
+import { createLinearLessonFlow } from "../domain/agentCanvas";
+import {
+  getAuthoringCapabilities,
+  pedagogicalModeForBrief,
+} from "../domain/lessonCatalog";
+import { LESSON_LIMITS } from "../domain/lessonRegistry";
+import {
+  algebraLessonFixture,
+  codeLessonFixture,
+  createPersonalizedCodexLesson,
+} from "../domain/v4Fixtures";
 import { transformerLessonFixture } from "../domain/transformerFixture";
+import { loadLessonBrief } from "./lessonBriefPersistence";
+import {
+  registerAsset as registerGovernedAsset,
+  registerCodeExercise as registerSandboxExercise,
+  validateLessonReferences,
+} from "./learningService";
 import type { JsonSchema } from "../domain/experienceSchema";
 import type { CanvasActions } from "../hooks/useLearningCanvas";
 
@@ -66,6 +87,7 @@ export interface WebMcpToolDefinition {
   inputSchema: JsonSchema;
   annotations?: {
     readOnlyHint?: boolean;
+    untrustedContentHint?: boolean;
     destructiveHint?: boolean;
     idempotentHint?: boolean;
     openWorldHint?: boolean;
@@ -79,6 +101,109 @@ export interface WebMcpRegistration {
   toolNames: string[];
   cleanup: () => void;
 }
+
+interface WebMcpRegistrationWaiter {
+  targetKey: string;
+  afterGeneration: number;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timeout: number;
+}
+
+export interface WebMcpRegistrationCoordinator {
+  currentGeneration(): number;
+  waitFor(
+    stage: LearningSessionStage,
+    hasNonce: boolean,
+    afterGeneration: number,
+  ): Promise<void>;
+  complete(stage: LearningSessionStage, hasNonce: boolean): void;
+  fail(stage: LearningSessionStage, hasNonce: boolean, error: unknown): void;
+}
+
+function registrationTargetKey(
+  stage: LearningSessionStage,
+  hasNonce: boolean,
+) {
+  return `${stage}:${hasNonce ? "nonce" : "no-nonce"}`;
+}
+
+export function createWebMcpRegistrationCoordinator(
+  timeoutMs = 2_000,
+): WebMcpRegistrationCoordinator {
+  let generation = 0;
+  const completedGenerations = new Map<string, number>();
+  const waiters = new Set<WebMcpRegistrationWaiter>();
+
+  const removeWaiter = (waiter: WebMcpRegistrationWaiter) => {
+    window.clearTimeout(waiter.timeout);
+    waiters.delete(waiter);
+  };
+
+  return {
+    currentGeneration() {
+      return generation;
+    },
+    waitFor(stage, hasNonce, afterGeneration) {
+      const targetKey = registrationTargetKey(stage, hasNonce);
+      if ((completedGenerations.get(targetKey) ?? 0) > afterGeneration) {
+        return Promise.resolve();
+      }
+      return new Promise<void>((resolve, reject) => {
+        const waiter: WebMcpRegistrationWaiter = {
+          targetKey,
+          afterGeneration,
+          resolve,
+          reject,
+          timeout: 0,
+        };
+        waiter.timeout = window.setTimeout(() => {
+          removeWaiter(waiter);
+          reject(
+            new Error(
+              `Timed out waiting for the ${stage} WebMCP tool set to register.`,
+            ),
+          );
+        }, timeoutMs);
+        waiters.add(waiter);
+      });
+    },
+    complete(stage, hasNonce) {
+      generation += 1;
+      const targetKey = registrationTargetKey(stage, hasNonce);
+      completedGenerations.set(targetKey, generation);
+      for (const waiter of [...waiters]) {
+        if (
+          waiter.targetKey === targetKey &&
+          generation > waiter.afterGeneration
+        ) {
+          removeWaiter(waiter);
+          waiter.resolve();
+        }
+      }
+    },
+    fail(stage, hasNonce, error) {
+      const targetKey = registrationTargetKey(stage, hasNonce);
+      const registrationError =
+        error instanceof Error
+          ? error
+          : new Error("The WebMCP tool set failed to register.");
+      for (const waiter of [...waiters]) {
+        if (waiter.targetKey === targetKey) {
+          removeWaiter(waiter);
+          waiter.reject(registrationError);
+        }
+      }
+    },
+  };
+}
+
+const registeredAssetIds = new Set<string>();
+const registeredCodeExerciseIds = new Set<string>([
+  "fixture-js-sum-v1",
+  "fixture-ts-display-name-v1",
+  "fixture-python-positives-v1",
+]);
 
 const nonceSchema = {
   type: "string",
@@ -94,6 +219,96 @@ const idempotencySchema = {
   description: "Stable key for this exact write and any retry.",
 };
 
+const contextPackSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["generatedAt", "lookbackDays", "inspectedTaskCount", "signals"],
+  properties: {
+    generatedAt: { type: "string", minLength: 8, maxLength: 80 },
+    lookbackDays: { type: "integer", minimum: 1, maximum: 30 },
+    inspectedTaskCount: { type: "integer", minimum: 0, maximum: 10 },
+    signals: {
+      type: "array",
+      maxItems: 8,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "summary", "kind", "observedAt", "sourceLabel"],
+        properties: {
+          id: { type: "string", minLength: 2, maxLength: 120 },
+          summary: { type: "string", minLength: 3, maxLength: 280 },
+          kind: {
+            type: "string",
+            enum: [
+              "stated_goal",
+              "prior_knowledge",
+              "current_project",
+              "preference",
+              "accessibility",
+              "business_constraint",
+            ],
+          },
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+          observedAt: { type: "string", minLength: 8, maxLength: 80 },
+          sourceLabel: { type: "string", minLength: 2, maxLength: 160 },
+        },
+      },
+    },
+    topicRadar: {
+      type: "array",
+      maxItems: 12,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "id",
+          "topic",
+          "summary",
+          "retrievedAt",
+          "learnerRelevance",
+          "officialRecency",
+          "communityCorroboration",
+          "authority",
+        ],
+        properties: {
+          id: { type: "string", minLength: 2, maxLength: 120 },
+          topic: { type: "string", minLength: 2, maxLength: 200 },
+          summary: { type: "string", minLength: 8, maxLength: 600 },
+          officialUrl: { type: "string", minLength: 10, maxLength: 1000 },
+          officialPublishedAt: { type: "string", minLength: 8, maxLength: 80 },
+          retrievedAt: { type: "string", minLength: 8, maxLength: 80 },
+          availability: { type: "string", maxLength: 400 },
+          learnerRelevance: { type: "number", minimum: 0, maximum: 1 },
+          officialRecency: { type: "number", minimum: 0, maximum: 1 },
+          communityCorroboration: {
+            type: "number",
+            minimum: 0,
+            maximum: 1,
+          },
+          authority: {
+            type: "string",
+            enum: ["official", "community_exploration"],
+          },
+          communitySources: {
+            type: "array",
+            maxItems: 5,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["url", "publishedAt"],
+              properties: {
+                url: { type: "string", minLength: 10, maxLength: 1000 },
+                publishedAt: { type: "string", minLength: 8, maxLength: 80 },
+                publisher: { type: "string", minLength: 2, maxLength: 160 },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+} satisfies JsonSchema;
+
 const researchReferenceSchema = {
   type: "object",
   additionalProperties: false,
@@ -104,7 +319,13 @@ const researchReferenceSchema = {
     url: { type: "string", minLength: 10, maxLength: 1000 },
     publisher: { type: "string", minLength: 2, maxLength: 160 },
     publishedAt: { type: "string", maxLength: 80 },
+    retrievedAt: { type: "string", maxLength: 80 },
     claim: { type: "string", minLength: 8, maxLength: 500 },
+    sourceType: {
+      type: "string",
+      enum: ["official", "community", "primary", "secondary"],
+    },
+    availability: { type: "string", maxLength: 400 },
   },
 };
 
@@ -221,6 +442,77 @@ const trustedContentSchema = {
         },
       },
     },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "summary", "sources"],
+      properties: {
+        type: { const: "source_cards" },
+        summary: { type: "string", minLength: 8, maxLength: 1800 },
+        sources: {
+          type: "array",
+          minItems: 1,
+          maxItems: 8,
+          items: researchReferenceSchema,
+        },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "latex", "accessibleLabel"],
+      properties: {
+        type: { const: "formula" },
+        latex: { type: "string", minLength: 1, maxLength: 4096 },
+        display: { type: "boolean" },
+        accessibleLabel: { type: "string", minLength: 4, maxLength: 800 },
+        explanation: { type: "string", maxLength: 1200 },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "syntax", "source", "title", "description"],
+      properties: {
+        type: { const: "diagram" },
+        syntax: { const: "mermaid" },
+        source: { type: "string", minLength: 4, maxLength: 16384 },
+        title: { type: "string", minLength: 3, maxLength: 240 },
+        description: { type: "string", minLength: 8, maxLength: 1200 },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "language", "code", "caption"],
+      properties: {
+        type: { const: "code_example" },
+        language: {
+          type: "string",
+          enum: ["javascript", "typescript", "python", "json", "text"],
+        },
+        code: { type: "string", minLength: 1, maxLength: 32768 },
+        caption: { type: "string", minLength: 4, maxLength: 800 },
+        highlightedLines: {
+          type: "array",
+          maxItems: 100,
+          items: { type: "integer", minimum: 1 },
+        },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "asset"],
+      properties: {
+        type: { const: "media" },
+        asset: {
+          type: "object",
+          description:
+            "Immutable asset reference returned by learn_register_asset, including caption, attribution, and accessibility metadata.",
+        },
+      },
+    },
   ],
 };
 
@@ -266,6 +558,26 @@ function integerValue(
     throw new Error(`${key} must be an integer between ${minimum} and ${maximum}.`);
   }
   return Number(value);
+}
+
+function finiteNumberValue(
+  object: Record<string, unknown>,
+  key: string,
+  minimum = -Number.MAX_VALUE,
+  maximum = Number.MAX_VALUE,
+): number {
+  const value = object[key];
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < minimum ||
+    value > maximum
+  ) {
+    throw new Error(
+      key + " must be a finite number between " + minimum + " and " + maximum + ".",
+    );
+  }
+  return value;
 }
 
 function stringArray(
@@ -333,6 +645,19 @@ function parseReference(value: unknown): ResearchReference {
   };
   const publishedAt = optionalString(item, "publishedAt", 80);
   if (publishedAt) result.publishedAt = publishedAt;
+  const retrievedAt = optionalString(item, "retrievedAt", 80);
+  if (retrievedAt) result.retrievedAt = retrievedAt;
+  const sourceType =
+    item.sourceType === undefined
+      ? undefined
+      : enumValue(
+          item,
+          "sourceType",
+          ["official", "community", "primary", "secondary"] as const,
+        );
+  if (sourceType) result.sourceType = sourceType;
+  const availability = optionalString(item, "availability", 400);
+  if (availability) result.availability = availability;
   return result;
 }
 
@@ -428,13 +753,109 @@ function parseTrustedContent(value: unknown): TrustedPatchContent {
       }),
     };
   }
+  if (type === "source_cards") {
+    if (!Array.isArray(item.sources) || !item.sources.length || item.sources.length > 8) {
+      throw new Error("source_cards needs one to eight canonical references.");
+    }
+    return {
+      type,
+      summary: stringValue(item, "summary", 8, 1800),
+      sources: item.sources.map(parseReference),
+    };
+  }
+  if (type === "formula") {
+    if (typeof item.display !== "undefined" && typeof item.display !== "boolean") {
+      throw new Error("formula display must be boolean.");
+    }
+    const explanation = optionalString(item, "explanation", 1200);
+    return {
+      type,
+      latex: stringValue(item, "latex", 1, 4096),
+      accessibleLabel: stringValue(item, "accessibleLabel", 4, 800),
+      ...(typeof item.display === "boolean" ? { display: item.display } : {}),
+      ...(explanation ? { explanation } : {}),
+    };
+  }
+  if (type === "diagram") {
+    return {
+      type,
+      syntax: enumValue(item, "syntax", ["mermaid"] as const),
+      source: stringValue(item, "source", 4, 16384),
+      title: stringValue(item, "title", 3, 240),
+      description: stringValue(item, "description", 8, 1200),
+    };
+  }
+  if (type === "code_example") {
+    const rawLines = item.highlightedLines;
+    const highlightedLines = Array.isArray(rawLines)
+      ? rawLines.map((value, index) => {
+          if (!Number.isInteger(value) || Number(value) < 1) {
+            throw new Error("highlightedLines[" + index + "] must be a positive integer.");
+          }
+          return Number(value);
+        })
+      : undefined;
+    return {
+      type,
+      language: enumValue(
+        item,
+        "language",
+        ["javascript", "typescript", "python", "json", "text"] as const,
+      ),
+      code: stringValue(item, "code", 1, 32768),
+      caption: stringValue(item, "caption", 4, 800),
+      ...(highlightedLines ? { highlightedLines } : {}),
+    };
+  }
+  if (type === "media") {
+    const asset = objectInput(item.asset, "Media asset");
+    const block: Extract<RegionContent, { type: "media" }> = {
+      type,
+      asset: {
+        id: stringValue(asset, "id", 2, 200),
+        kind: enumValue(asset, "kind", ["image", "audio", "video"] as const),
+        status: enumValue(
+          asset,
+          "status",
+          ["pending", "ready", "failed", "expired"] as const,
+        ),
+        caption: stringValue(asset, "caption", 3, 800),
+        attribution: stringValue(asset, "attribution", 2, 800),
+      },
+    };
+    const optionalKeys = [
+      ["url", 1000],
+      ["mimeType", 120],
+      ["alt", 1200],
+      ["transcript", 20000],
+      ["captionsVtt", 4000],
+      ["contentHash", 200],
+    ] as const;
+    for (const [key, maximum] of optionalKeys) {
+      const value = optionalString(asset, key, maximum);
+      if (value) Object.assign(block.asset, { [key]: value });
+    }
+    if (asset.byteLength !== undefined) {
+      block.asset.byteLength = integerValue(
+        asset,
+        "byteLength",
+        0,
+        80 * 1024 * 1024,
+      );
+    }
+    return block;
+  }
   throw new Error(`Unsupported trusted content type: ${type}.`);
 }
 
 function parseInteraction(value: unknown): LearnerInteraction | undefined {
   if (value === undefined) return undefined;
   const item = objectInput(value, "Interaction");
-  const type = enumValue(item, "type", ["choice", "reflection"] as const);
+  const type = enumValue(
+    item,
+    "type",
+    ["choice", "reflection", "numeric", "code_lab"] as const,
+  );
   if (type === "choice") {
     if (!Array.isArray(item.options) || item.options.length < 2 || item.options.length > 6) {
       throw new Error("A choice interaction needs two to six options.");
@@ -454,12 +875,87 @@ function parseInteraction(value: unknown): LearnerInteraction | undefined {
     }
     return { type, prompt: stringValue(item, "prompt", 5, 500), options };
   }
+  if (type === "reflection") {
+    return {
+      type,
+      prompt: stringValue(item, "prompt", 5, 500),
+      placeholder: stringValue(item, "placeholder", 1, 300),
+      minimumCharacters: integerValue(item, "minimumCharacters", 1, 1000),
+      feedback: stringValue(item, "feedback", 3, 600),
+    };
+  }
+  if (type === "numeric") {
+    const unit = optionalString(item, "unit", 80);
+    const placeholder = optionalString(item, "placeholder", 300);
+    return {
+      type,
+      prompt: stringValue(item, "prompt", 5, 500),
+      correctAnswer: finiteNumberValue(item, "correctAnswer"),
+      tolerance: finiteNumberValue(item, "tolerance", 0),
+      correctFeedback: stringValue(item, "correctFeedback", 3, 600),
+      incorrectFeedback: stringValue(item, "incorrectFeedback", 3, 600),
+      ...(unit ? { unit } : {}),
+      ...(placeholder ? { placeholder } : {}),
+    };
+  }
+  const starterCode =
+    typeof item.starterCode === "string"
+      ? item.starterCode
+      : (() => {
+          throw new Error("starterCode must be a string.");
+        })();
+  if (new TextEncoder().encode(starterCode).byteLength > LESSON_LIMITS.codeBytes) {
+    throw new Error("starterCode cannot exceed 32 KB.");
+  }
   return {
     type,
+    exerciseId: stringValue(item, "exerciseId", 3, 200),
     prompt: stringValue(item, "prompt", 5, 500),
-    placeholder: stringValue(item, "placeholder", 1, 300),
-    minimumCharacters: integerValue(item, "minimumCharacters", 10, 1000),
-    feedback: stringValue(item, "feedback", 3, 600),
+    language: enumValue(
+      item,
+      "language",
+      ["javascript", "typescript", "python"] as const,
+    ),
+    starterCode,
+    visibleTests: stringArray(item, "visibleTests", 20),
+    fallbackPrompt: stringValue(item, "fallbackPrompt", 5, 800),
+  };
+}
+
+function parseEdgeCondition(value: unknown): EdgeCondition {
+  const condition = objectInput(value, "Edge condition");
+  const type = enumValue(
+    condition,
+    "type",
+    ["always", "answer_equals", "response_correct"] as const,
+  );
+  if (type === "always") return { type };
+  if (type === "answer_equals") {
+    return { type, value: stringValue(condition, "value", 1, 500) };
+  }
+  if (typeof condition.value !== "boolean") {
+    throw new Error("response_correct value must be boolean.");
+  }
+  return { type, value: condition.value };
+}
+
+function parseLessonFlow(value: unknown) {
+  const flow = objectInput(value, "Lesson flow");
+  if (!Array.isArray(flow.edges)) throw new Error("Lesson flow edges must be an array.");
+  return {
+    entryRegionId: stringValue(flow, "entryRegionId", 2, 120),
+    edges: flow.edges.map((value, index): LessonEdgeV4 => {
+      const edge = objectInput(value, "Lesson edge " + (index + 1));
+      const label = optionalString(edge, "label", 240);
+      return {
+        id: stringValue(edge, "id", 2, 160),
+        from: stringValue(edge, "from", 2, 120),
+        to: stringValue(edge, "to", 2, 120),
+        priority: integerValue(edge, "priority", 0, 20),
+        condition: parseEdgeCondition(edge.condition),
+        ...(label ? { label } : {}),
+      };
+    }),
   };
 }
 
@@ -467,9 +963,30 @@ function parseLessonMetadata(
   value: unknown,
 ): Omit<LessonDocumentV3, "regions"> {
   const document = objectInput(value, "Lesson metadata");
+  if (
+    document.schemaVersion !== undefined &&
+    integerValue(document, "schemaVersion", 4, 4) !== 4
+  ) {
+    throw new Error("Only lesson schema version 4 is supported.");
+  }
   return {
+    schemaVersion: 4,
     id: stringValue(document, "id", 3, 160),
     revision: integerValue(document, "revision", 1),
+    blueprintId:
+      optionalString(document, "blueprintId", 160) ?? "open_topic_v1",
+    pedagogicalMode:
+      document.pedagogicalMode === undefined
+        ? "mixed"
+        : enumValue(
+            document,
+            "pedagogicalMode",
+            ["conceptual", "quantitative", "code", "scenario", "mixed"] as const,
+          ),
+    sourcePolicy:
+      document.sourcePolicy === undefined
+        ? "evergreen"
+        : enumValue(document, "sourcePolicy", ["evergreen", "current"] as const),
     topic: stringValue(document, "topic", 3, 240),
     title: stringValue(document, "title", 6, 240),
     subtitle: stringValue(document, "subtitle", 3, 400),
@@ -477,6 +994,13 @@ function parseLessonMetadata(
     estimatedMinutes: integerValue(document, "estimatedMinutes", 1, 120),
     objective: stringValue(document, "objective", 20, 700),
     approvedClaimIds: stringArray(document, "approvedClaimIds", 40),
+    flow:
+      document.flow === undefined
+        ? { entryRegionId: "", edges: [] }
+        : parseLessonFlow(document.flow),
+    assetRefs: Array.isArray(document.assetRefs)
+      ? stringArray(document, "assetRefs", 8)
+      : [],
   };
 }
 
@@ -517,11 +1041,16 @@ function parseLessonRegion(value: unknown, label = "Lesson region"): LessonRegio
 function parseLessonDocument(value: unknown): LessonDocumentV3 {
   const document = objectInput(value, "Lesson document");
   if (!Array.isArray(document.regions)) throw new Error("Lesson regions must be an array.");
+  const regions = document.regions.map((region, index) =>
+    parseLessonRegion(region, `Region ${index + 1}`),
+  );
+  const metadata = parseLessonMetadata(document);
   return {
-    ...parseLessonMetadata(document),
-    regions: document.regions.map((region, index) =>
-      parseLessonRegion(region, `Region ${index + 1}`),
-    ),
+    ...metadata,
+    flow: metadata.flow.entryRegionId
+      ? metadata.flow
+      : createLinearLessonFlow(regions),
+    regions,
   };
 }
 
@@ -530,9 +1059,7 @@ function parseLessonOutline(value: unknown) {
   if (!Array.isArray(outline.regions)) {
     throw new Error("Lesson outline regions must be an array.");
   }
-  return {
-    document: parseLessonMetadata(outline),
-    regions: outline.regions.map((value, index) => {
+  const regions = outline.regions.map((value, index) => {
       const region = objectInput(value, `Outline region ${index + 1}`);
       return {
         id: stringValue(region, "id", 2, 120),
@@ -546,7 +1073,16 @@ function parseLessonOutline(value: unknown) {
           ["orient", "explain", "model", "practice", "reflect"] as const,
         ),
       };
-    }),
+    });
+  const document = parseLessonMetadata(outline);
+  return {
+    document: {
+      ...document,
+      flow: document.flow.entryRegionId
+        ? document.flow
+        : createLinearLessonFlow(regions),
+    },
+    regions,
   };
 }
 
@@ -571,6 +1107,265 @@ function defaultTransformerLesson(actions: CanvasActions): LessonDocumentV3 {
     });
   }
   return document;
+}
+
+function documentMetadata(
+  document: LessonDocumentV3,
+): Omit<LessonDocumentV3, "regions"> {
+  const { regions: _regions, ...metadata } = structuredClone(document);
+  return metadata;
+}
+
+function defaultBlueprintLesson(
+  actions: CanvasActions,
+  blueprintId: string,
+): LessonDocumentV3 | null {
+  const state = actions.getState();
+  const accepted = state.contextClaims.filter(
+    (claim) => claim.review === "accepted" || claim.review === "corrected",
+  );
+  let document: LessonDocumentV3 | null = null;
+  if (blueprintId === "transformer_technical_beginner") {
+    document = defaultTransformerLesson(actions);
+  } else if (blueprintId === "algebra_functions_v1") {
+    document = structuredClone(algebraLessonFixture);
+  } else if (blueprintId === "code_debugging_v1") {
+    document = structuredClone(codeLessonFixture);
+  } else if (blueprintId === "codex_current_personalized_v1") {
+    document = createPersonalizedCodexLesson(state.contextClaims, state.topicRadar);
+  }
+  if (!document) return null;
+  document.revision =
+    Math.max(
+      state.lesson.draft?.revision ?? 0,
+      state.lesson.publishedRevision ?? 0,
+    ) + 1;
+  document.approvedClaimIds = accepted.map((claim) => claim.id);
+  return document;
+}
+
+function parseContextPack(value: unknown): LessonContextPackV1 {
+  const pack = objectInput(value, "Lesson context pack");
+  const generatedAt = stringValue(pack, "generatedAt", 8, 80);
+  const generatedAtMs = Date.parse(generatedAt);
+  if (!Number.isFinite(generatedAtMs)) {
+    throw new Error("generatedAt must be an ISO date-time.");
+  }
+  const lookbackDays = integerValue(pack, "lookbackDays", 1, 30);
+  if (!Array.isArray(pack.signals) || pack.signals.length > 8) {
+    throw new Error("A lesson context pack may contain at most eight signals.");
+  }
+  const signals = pack.signals.map((value, index) => {
+    const signal = objectInput(value, "Context signal " + (index + 1));
+    const confidence =
+      signal.confidence === undefined
+        ? undefined
+        : finiteNumberValue(signal, "confidence", 0, 1);
+    const observedAt = stringValue(signal, "observedAt", 8, 80);
+    const observedAtMs = Date.parse(observedAt);
+    if (
+      !Number.isFinite(observedAtMs) ||
+      observedAtMs < generatedAtMs - lookbackDays * 24 * 60 * 60 * 1000 ||
+      observedAtMs > generatedAtMs + 5 * 60 * 1000
+    ) {
+      throw new Error(
+        "Context signals must come from the declared recent-task lookback window.",
+      );
+    }
+    return {
+      id: stringValue(signal, "id", 2, 120),
+      summary: stringValue(signal, "summary", 3, 280),
+      kind: enumValue(
+        signal,
+        "kind",
+        [
+          "stated_goal",
+          "prior_knowledge",
+          "current_project",
+          "preference",
+          "accessibility",
+          "business_constraint",
+        ] as const,
+      ),
+      observedAt,
+      sourceLabel: stringValue(signal, "sourceLabel", 2, 160),
+      ...(confidence === undefined ? {} : { confidence }),
+    };
+  });
+
+  if (Array.isArray(pack.topicRadar) && pack.topicRadar.length > 12) {
+    throw new Error("A lesson context pack may contain at most twelve topic-radar signals.");
+  }
+  const topicRadar = Array.isArray(pack.topicRadar)
+    ? pack.topicRadar.map((value, index) => {
+        const signal = objectInput(value, "Topic radar signal " + (index + 1));
+        const learnerRelevance = finiteNumberValue(
+          signal,
+          "learnerRelevance",
+          0,
+          1,
+        );
+        const officialRecency = finiteNumberValue(
+          signal,
+          "officialRecency",
+          0,
+          1,
+        );
+        const communityCorroboration = finiteNumberValue(
+          signal,
+          "communityCorroboration",
+          0,
+          1,
+        );
+        const officialUrl = optionalString(signal, "officialUrl", 1000);
+        const officialPublishedAt = optionalString(
+          signal,
+          "officialPublishedAt",
+          80,
+        );
+        const availability = optionalString(signal, "availability", 400);
+        const retrievedAt = stringValue(signal, "retrievedAt", 8, 80);
+        const retrievedAtMs = Date.parse(retrievedAt);
+        if (
+          !Number.isFinite(retrievedAtMs) ||
+          retrievedAtMs > generatedAtMs + 5 * 60 * 1000
+        ) {
+          throw new Error("Topic-radar retrieval dates must be valid and not in the future.");
+        }
+        if (
+          officialPublishedAt &&
+          (!Number.isFinite(Date.parse(officialPublishedAt)) ||
+            Date.parse(officialPublishedAt) > generatedAtMs + 5 * 60 * 1000)
+        ) {
+          throw new Error("Official topic-radar publication dates must be valid.");
+        }
+        const authority = enumValue(
+          signal,
+          "authority",
+          ["official", "community_exploration"] as const,
+        );
+        if (
+          signal.communitySources !== undefined &&
+          !Array.isArray(signal.communitySources)
+        ) {
+          throw new Error("communitySources must be an array.");
+        }
+        if (
+          Array.isArray(signal.communitySources) &&
+          signal.communitySources.length > 5
+        ) {
+          throw new Error("Topic-radar signals may cite at most five community sources.");
+        }
+        const communitySources = Array.isArray(signal.communitySources)
+          ? signal.communitySources.map((value, sourceIndex) => {
+              const source = objectInput(
+                value,
+                `Community source ${sourceIndex + 1}`,
+              );
+              const url = stringValue(source, "url", 10, 1000);
+              const publishedAt = stringValue(source, "publishedAt", 8, 80);
+              const publishedAtMs = Date.parse(publishedAt);
+              if (
+                !Number.isFinite(publishedAtMs) ||
+                publishedAtMs < generatedAtMs - 30 * 24 * 60 * 60 * 1000 ||
+                publishedAtMs > generatedAtMs + 5 * 60 * 1000
+              ) {
+                throw new Error(
+                  "Community topic-radar sources must be published within the previous 30 days.",
+                );
+              }
+              return {
+                url,
+                publishedAt,
+                ...(source.publisher === undefined
+                  ? {}
+                  : { publisher: stringValue(source, "publisher", 2, 160) }),
+              };
+            })
+          : [];
+        for (const source of communitySources) {
+          let communityUrl: URL;
+          try {
+            communityUrl = new URL(source.url);
+          } catch {
+            throw new Error("Community topic-radar sources require valid HTTPS URLs.");
+          }
+          if (
+            communityUrl.protocol !== "https:" ||
+            communityUrl.username ||
+            communityUrl.password ||
+            communityUrl.hostname === "localhost" ||
+            communityUrl.hostname.endsWith(".local")
+          ) {
+            throw new Error("Community topic-radar sources require valid HTTPS URLs.");
+          }
+        }
+        if (officialRecency > 0 && !officialPublishedAt) {
+          throw new Error(
+            "Official recency points require an official publication date.",
+          );
+        }
+        if (communityCorroboration > 0 && !communitySources.length) {
+          throw new Error(
+            "Community corroboration points require a dated community source.",
+          );
+        }
+        if (authority === "official") {
+          let sourceUrl: URL;
+          try {
+            sourceUrl = new URL(officialUrl ?? "");
+          } catch {
+            throw new Error("Official topic-radar signals require an OpenAI documentation URL.");
+          }
+          if (
+            sourceUrl.protocol !== "https:" ||
+            sourceUrl.username ||
+            sourceUrl.password ||
+            ![
+              "learn.chatgpt.com",
+              "developers.openai.com",
+              "platform.openai.com",
+              "help.openai.com",
+              "openai.com",
+            ].includes(sourceUrl.hostname)
+          ) {
+            throw new Error("Official topic-radar signals require an OpenAI documentation URL.");
+          }
+        } else if (!communitySources.length) {
+          throw new Error(
+            "Community exploration signals require at least one dated community source.",
+          );
+        }
+        return {
+          id: stringValue(signal, "id", 2, 120),
+          topic: stringValue(signal, "topic", 2, 200),
+          summary: stringValue(signal, "summary", 8, 600),
+          retrievedAt,
+          learnerRelevance,
+          officialRecency,
+          communityCorroboration,
+          score:
+            learnerRelevance * 0.5 +
+            officialRecency * 0.3 +
+            communityCorroboration * 0.2,
+          authority,
+          ...(officialUrl ? { officialUrl } : {}),
+          ...(officialPublishedAt ? { officialPublishedAt } : {}),
+          ...(availability ? { availability } : {}),
+          ...(communitySources.length ? { communitySources } : {}),
+        };
+      })
+    : [];
+
+  topicRadar.sort((left, right) => right.score - left.score);
+
+  return {
+    generatedAt,
+    lookbackDays,
+    inspectedTaskCount: integerValue(pack, "inspectedTaskCount", 0, 10),
+    signals,
+    topicRadar,
+  };
 }
 
 function revealRegion(regionId: string): void {
@@ -624,25 +1419,63 @@ function nextActions(stage: LearningSessionStage, lessonStatus: string): string[
   ];
 }
 
-function readOnlyAnnotations() {
+function readOnlyAnnotations(untrustedContentHint = false) {
   return {
     readOnlyHint: true,
+    untrustedContentHint,
     destructiveHint: false,
     idempotentHint: true,
     openWorldHint: false,
   };
 }
 
-function writeAnnotations(openWorldHint = false) {
+function writeAnnotations(untrustedContentHint = false) {
   return {
     readOnlyHint: false,
+    untrustedContentHint,
     destructiveHint: false,
     idempotentHint: true,
-    openWorldHint,
+    openWorldHint: untrustedContentHint,
   };
 }
 
 export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[] {
+  const getStartBrief: WebMcpToolDefinition = {
+    name: "learn_get_start_brief",
+    description:
+      "Read the learner-authored local lesson brief, personalization preference, and selected starter before a session exists.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {},
+    },
+    annotations: readOnlyAnnotations(true),
+    execute() {
+      const brief = loadLessonBrief();
+      return {
+        brief,
+        personalizationRequested: brief.personalizeFromRecentTasks,
+        selectedStarterId: brief.starterId,
+        instruction: "Use the lesson brief I prepared on this page.",
+      };
+    },
+  };
+
+  const getAuthoringCapabilitiesTool: WebMcpToolDefinition = {
+    name: "learn_get_authoring_capabilities",
+    description:
+      "Read the shared V4 registry: content blocks, exercises, blueprints, limits, and source requirements.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {},
+    },
+    annotations: readOnlyAnnotations(),
+    execute() {
+      return getAuthoringCapabilities();
+    },
+  };
+
   const begin: WebMcpToolDefinition = {
     name: "learn_begin_session",
     description:
@@ -650,19 +1483,123 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      required: ["topic"],
       properties: {
-        topic: { type: "string", minLength: 3, maxLength: 240 },
-        goal: { type: "string", minLength: 3, maxLength: 500 },
+        topic: {
+          type: "string",
+          minLength: 3,
+          maxLength: 240,
+          description:
+            "Lesson topic or question. Omit when briefId selects the current saved brief.",
+        },
+        goal: {
+          type: "string",
+          minLength: 3,
+          maxLength: 500,
+          description:
+            "Concrete learning outcome. Omit to use the desired outcome from the saved brief.",
+        },
+        briefId: {
+          type: "string",
+          minLength: 3,
+          maxLength: 200,
+          description:
+            "ID returned by learn_get_start_brief. When present, use that saved brief.",
+        },
+        blueprintId: {
+          type: "string",
+          minLength: 3,
+          maxLength: 160,
+          description:
+            "Registered lesson blueprint ID. Defaults to the saved brief or open_topic_v1.",
+        },
+        pedagogicalMode: {
+          type: "string",
+          enum: ["conceptual", "quantitative", "code", "scenario", "mixed"],
+          description:
+            "Teaching mode for the lesson. Defaults from the selected saved brief.",
+        },
+        personalizeFromRecentTasks: {
+          type: "boolean",
+          description:
+            "Allow the host to derive minimized signals from recent task summaries for learner review.",
+        },
+        hostCapabilities: {
+          type: "array",
+          maxItems: 32,
+          description:
+            "Capabilities available in the WebMCP host, such as webmcp or rich visual output.",
+          items: {
+            type: "string",
+            minLength: 1,
+            maxLength: 160,
+            description: "One capability identifier exposed by the host.",
+          },
+        },
+        contextPack: {
+          ...contextPackSchema,
+          description:
+            "Optional minimized context pack: up to eight signals from ten summaries over 30 days. Never include prompts, code, transcripts, or task IDs.",
+        },
       },
     },
     annotations: writeAnnotations(),
     execute(input) {
       const object = objectInput(input);
+      const savedBrief = loadLessonBrief();
+      const briefId = optionalString(object, "briefId", 200);
+      if (briefId && briefId !== savedBrief.id) {
+        throw new Error("The requested brief does not match the current saved landing brief.");
+      }
+      const useSavedBrief = Boolean(briefId) || object.topic === undefined;
+      const topic =
+        object.topic === undefined
+          ? savedBrief.topic.trim()
+          : stringValue(object, "topic", 3, 240);
+      if (topic.length < 3) {
+        throw new Error("Add a topic to the landing brief or provide topic explicitly.");
+      }
+      const goal =
+        object.goal === undefined
+          ? savedBrief.desiredOutcome.trim() || undefined
+          : stringValue(object, "goal", 3, 500);
+      if (
+        object.personalizeFromRecentTasks !== undefined &&
+        typeof object.personalizeFromRecentTasks !== "boolean"
+      ) {
+        throw new Error("personalizeFromRecentTasks must be boolean.");
+      }
+      const pedagogicalMode =
+        object.pedagogicalMode === undefined
+          ? useSavedBrief
+            ? pedagogicalModeForBrief(savedBrief)
+            : ("mixed" as PedagogicalMode)
+          : enumValue(
+              object,
+              "pedagogicalMode",
+              ["conceptual", "quantitative", "code", "scenario", "mixed"] as const,
+            );
       return {
         ...actions.beginSession({
-        topic: stringValue(object, "topic", 3, 240),
-        goal: optionalString(object, "goal", 500),
+          topic,
+          goal,
+          briefId: useSavedBrief ? savedBrief.id : briefId,
+          blueprintId:
+            optionalString(object, "blueprintId", 160) ??
+            (useSavedBrief ? savedBrief.blueprintId : "open_topic_v1"),
+          pedagogicalMode,
+          personalizeFromRecentTasks:
+            typeof object.personalizeFromRecentTasks === "boolean"
+              ? object.personalizeFromRecentTasks
+              : useSavedBrief
+                ? savedBrief.personalizeFromRecentTasks
+                : undefined,
+          contextPack:
+            object.contextPack === undefined
+              ? undefined
+              : parseContextPack(object.contextPack),
+          hostCapabilities: Array.isArray(object.hostCapabilities)
+            ? stringArray(object, "hostCapabilities", 32)
+            : [],
         }),
         contextDiscoveryPolicy,
         visualOutputPolicy: canvasVisualOutputPolicy,
@@ -680,7 +1617,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
       required: ["nonce"],
       properties: { nonce: nonceSchema },
     },
-    annotations: readOnlyAnnotations(),
+    annotations: readOnlyAnnotations(true),
     execute(input) {
       const object = objectInput(input);
       requireNonce(object, actions);
@@ -771,7 +1708,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
                   "business_constraint",
                 ],
               },
-              summary: { type: "string", minLength: 3, maxLength: 240 },
+              summary: { type: "string", minLength: 3, maxLength: 280 },
               source: {
                 type: "object",
                 additionalProperties: false,
@@ -857,7 +1794,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
               "business_constraint",
             ] as readonly ContextClaimKind[],
           ),
-          summary: stringValue(claim, "summary", 3, 240),
+          summary: stringValue(claim, "summary", 3, 280),
           source,
           ...(confidence === undefined ? {} : { confidence }),
           sensitivity: enumValue(
@@ -906,7 +1843,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
       required: ["nonce"],
       properties: { nonce: nonceSchema },
     },
-    annotations: readOnlyAnnotations(),
+    annotations: readOnlyAnnotations(true),
     execute(input) {
       const object = objectInput(input);
       requireNonce(object, actions);
@@ -915,6 +1852,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
         version: state.version,
         revision: state.revision,
         session: state.session,
+        topicRadar: state.topicRadar,
         contextDiscoveryPolicy,
         visualOutputPolicy: canvasVisualOutputPolicy,
         lesson: {
@@ -936,6 +1874,10 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
           approvedDraftRevision: state.lesson.approvedDraftRevision,
           publishedRevision: state.lesson.publishedRevision,
           validation: state.lesson.validation,
+          schemaVersion: state.lesson.draft?.schemaVersion ?? 4,
+          blueprintId:
+            state.lesson.draft?.blueprintId ?? state.session.blueprintId,
+          flow: state.lesson.draft?.flow ?? null,
         },
         progress: {
           regionCount: state.regions.length,
@@ -950,7 +1892,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
   const prepareLesson: WebMcpToolDefinition = {
     name: "learn_prepare_lesson",
     description:
-      "Shape and compile a lesson draft. Prefer the progressive start → region (one call per region) → finalize phases so the learner watches the canvas take shape. Use complete, or omit phase, only for a one-shot document or the bundled transformer blueprint.",
+      "Shape and compile a schema V4 lesson from any blueprint id. Prefer start → region → finalize so the learner watches the canvas take shape; complete accepts a full arbitrary-topic document.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -966,7 +1908,13 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
             "Progressive authoring phase. Each call uses the latest canvas revision returned by the previous call.",
         },
         draftRevision: { type: "integer", minimum: 1 },
-        template: { type: "string", enum: ["transformer_technical_beginner"] },
+        schemaVersion: { type: "integer", enum: [4] },
+        blueprintId: { type: "string", minLength: 3, maxLength: 160 },
+        template: {
+          type: "string",
+          enum: ["transformer_technical_beginner"],
+          description: "Deprecated V3 alias retained for one release.",
+        },
         regionId: {
           type: "string",
           minLength: 2,
@@ -977,7 +1925,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
         outline: {
           type: "object",
           description:
-            "For phase=start: lesson metadata plus 4–12 stable region stubs (id, order, label, title, objective, kind).",
+            "For phase=start: V4 lesson metadata plus 3–20 stable region stubs and flow.",
         },
         region: {
           type: "object",
@@ -987,7 +1935,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
         document: {
           type: "object",
           description:
-            "LessonDocumentV3 with 4–12 stable regions, trusted content specs, and at least one learner interaction.",
+            "LessonDocumentV4 with 3–20 regions, registered content, flow, and learner evidence.",
         },
       },
     },
@@ -1007,25 +1955,27 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
         baseRevision: integerValue(object, "baseRevision"),
         idempotencyKey: stringValue(object, "idempotencyKey", 8, 160),
       };
+      if (
+        object.schemaVersion !== undefined &&
+        integerValue(object, "schemaVersion", 4, 4) !== 4
+      ) {
+        throw new Error("learn_prepare_lesson supports schema version 4.");
+      }
+      const current = actions.getState();
+      const blueprintId =
+        optionalString(object, "blueprintId", 160) ??
+        (object.template === "transformer_technical_beginner"
+          ? "transformer_technical_beginner"
+          : current.session.blueprintId ?? "open_topic_v1");
+      const blueprintDocument = defaultBlueprintLesson(actions, blueprintId);
       if (phase === "start") {
         const parsed = object.outline
           ? parseLessonOutline(object.outline)
-          : object.template === "transformer_technical_beginner"
+          : blueprintDocument
             ? (() => {
-                const document = defaultTransformerLesson(actions);
                 return {
-                  document: {
-                    id: document.id,
-                    revision: document.revision,
-                    topic: document.topic,
-                    title: document.title,
-                    subtitle: document.subtitle,
-                    audience: document.audience,
-                    estimatedMinutes: document.estimatedMinutes,
-                    objective: document.objective,
-                    approvedClaimIds: document.approvedClaimIds,
-                  },
-                  regions: document.regions.map((region) => ({
+                  document: documentMetadata(blueprintDocument),
+                  regions: blueprintDocument.regions.map((region) => ({
                     id: region.id,
                     order: region.order,
                     label: region.label,
@@ -1036,7 +1986,9 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
                 };
               })()
             : (() => {
-                throw new Error("phase=start requires an outline or the bundled transformer template.");
+                throw new Error(
+                  "phase=start requires a V4 outline when the blueprint has no bundled starter.",
+                );
               })();
         return actions.startLessonConstruction({
           ...common,
@@ -1047,14 +1999,16 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
       if (phase === "region") {
         const region = object.region
           ? parseLessonRegion(object.region)
-          : object.template === "transformer_technical_beginner"
-            ? defaultTransformerLesson(actions).regions.find(
+          : blueprintDocument
+            ? blueprintDocument.regions.find(
                 (candidate) =>
                   candidate.id === stringValue(object, "regionId", 2, 120),
               )
             : undefined;
         if (!region) {
-          throw new Error("phase=region requires a complete region or a valid bundled template regionId.");
+          throw new Error(
+            "phase=region requires a complete region or a valid registered blueprint regionId.",
+          );
         }
         return actions.shapeLessonRegion({
           ...common,
@@ -1068,20 +2022,120 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
           draftRevision: integerValue(object, "draftRevision", 1),
         });
       }
-      const current = actions.getState();
-      const useTemplate =
-        object.document === undefined &&
-        (object.template === "transformer_technical_beginner" ||
-          /transformer/i.test(current.session.topic ?? ""));
-      if (object.document === undefined && !useTemplate) {
-        throw new Error("A lesson document is required for topics without a bundled template.");
+      if (object.document === undefined && !blueprintDocument) {
+        throw new Error(
+          "A full V4 document is required when the blueprint is agent-authored.",
+        );
       }
       return actions.prepareLesson({
         ...common,
-        document: useTemplate
-          ? defaultTransformerLesson(actions)
-          : parseLessonDocument(object.document),
+        document:
+          object.document !== undefined
+            ? parseLessonDocument(object.document)
+            : blueprintDocument!,
       });
+    },
+  };
+
+  const registerAsset: WebMcpToolDefinition = {
+    name: "learn_register_asset",
+    description:
+      "Validate and import one governed HTTPS image, audio, or video asset. The service rejects private destinations, spoofed MIME types, SVG, HTML, oversized files, and unsafe redirects.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["nonce", "url", "kind", "caption", "attribution"],
+      properties: {
+        nonce: nonceSchema,
+        url: { type: "string", minLength: 10, maxLength: 2000 },
+        kind: { type: "string", enum: ["image", "audio", "video"] },
+        caption: { type: "string", minLength: 3, maxLength: 800 },
+        attribution: { type: "string", minLength: 2, maxLength: 800 },
+        alt: { type: "string", minLength: 3, maxLength: 1200 },
+        transcript: { type: "string", minLength: 3, maxLength: 20000 },
+        captionsVtt: { type: "string", minLength: 3, maxLength: 4000 },
+      },
+    },
+    annotations: writeAnnotations(true),
+    async execute(input) {
+      const object = objectInput(input);
+      requireNonce(object, actions);
+      const kind = enumValue(object, "kind", ["image", "audio", "video"] as const);
+      const alt = optionalString(object, "alt", 1200);
+      const transcript = optionalString(object, "transcript", 20000);
+      const captionsVtt = optionalString(object, "captionsVtt", 4000);
+      if (kind === "image" && !alt) throw new Error("Images require alt text.");
+      if ((kind === "audio" || kind === "video") && !transcript) {
+        throw new Error("Audio and video require a transcript.");
+      }
+      if (kind === "video" && !captionsVtt) {
+        throw new Error("Video requires a VTT captions reference.");
+      }
+      const result = await registerGovernedAsset({
+        lessonId: actions.getState().session.id!,
+        url: stringValue(object, "url", 10, 2000),
+        kind,
+        caption: stringValue(object, "caption", 3, 800),
+        attribution: stringValue(object, "attribution", 2, 800),
+        ...(alt ? { alt } : {}),
+        ...(transcript ? { transcript } : {}),
+        ...(captionsVtt ? { captionsVtt } : {}),
+      });
+      registeredAssetIds.add(result.asset.id);
+      return result;
+    },
+  };
+
+  const registerCodeExercise: WebMcpToolDefinition = {
+    name: "learn_register_code_exercise",
+    description:
+      "Store an immutable server-side test manifest for one JavaScript, TypeScript, or Python code lab and return its exercise id. testManifest is JSON shaped as {entrypoint, tests:[{name,args,expected}]}; expected results never enter the lesson document.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["nonce", "language", "testManifest", "visibleTests"],
+      properties: {
+        nonce: nonceSchema,
+        language: {
+          type: "string",
+          enum: ["javascript", "typescript", "python"],
+        },
+        testManifest: {
+          type: "string",
+          minLength: 4,
+          maxLength: 32768,
+          description:
+            "JSON object with a simple exported-function entrypoint and one to twenty bounded {name,args,expected} test cases.",
+        },
+        visibleTests: {
+          type: "array",
+          minItems: 1,
+          maxItems: 20,
+          items: { type: "string", minLength: 2, maxLength: 500 },
+        },
+      },
+    },
+    annotations: writeAnnotations(),
+    async execute(input) {
+      const object = objectInput(input);
+      requireNonce(object, actions);
+      const result = await registerSandboxExercise({
+        lessonId: actions.getState().session.id!,
+        language: enumValue(
+          object,
+          "language",
+          ["javascript", "typescript", "python"] as const,
+        ),
+        testManifest:
+          typeof object.testManifest === "string"
+            ? object.testManifest
+            : (() => {
+                throw new Error("testManifest must be a string.");
+              })(),
+        visibleTests: stringArray(object, "visibleTests", 20),
+      });
+      registeredCodeExerciseIds.add(result.exerciseId);
+      return result;
     },
   };
 
@@ -1101,9 +2155,41 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
       },
     },
     annotations: writeAnnotations(),
-    execute(input) {
+    async execute(input) {
       const object = objectInput(input);
       requireNonce(object, actions);
+      const draft = actions.getState().lesson.draft;
+      if (draft) {
+        const assetIds = draft.regions.flatMap((region) =>
+          region.content
+            .filter(
+              (content): content is Extract<RegionContent, { type: "media" }> =>
+                content.type === "media",
+            )
+            .map((content) => content.asset.id),
+        );
+        const exerciseIds = draft.regions.flatMap((region) =>
+          region.interaction?.type === "code_lab"
+            ? [region.interaction.exerciseId]
+            : [],
+        );
+        const unknownAssets = assetIds.filter((id) => !registeredAssetIds.has(id));
+        const unknownExercises = exerciseIds.filter(
+          (id) => !registeredCodeExerciseIds.has(id),
+        );
+        if (unknownAssets.length || unknownExercises.length) {
+          const validation = await validateLessonReferences({
+            assetIds,
+            exerciseIds,
+          });
+          if (!validation.valid) {
+            throw new Error(
+              "Lesson references are unresolved, failed, or expired: " +
+                validation.issues.join("; "),
+            );
+          }
+        }
+      }
       return actions.publishLesson({
         baseRevision: integerValue(object, "baseRevision"),
         draftRevision: integerValue(object, "draftRevision", 1),
@@ -1122,7 +2208,7 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
       required: ["nonce"],
       properties: { nonce: nonceSchema },
     },
-    annotations: readOnlyAnnotations(),
+    annotations: readOnlyAnnotations(true),
     execute(input) {
       const object = objectInput(input);
       requireNonce(object, actions);
@@ -1157,15 +2243,9 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
           latestUndoToken: region.history.at(-1)?.undoToken ?? null,
         })),
         rendererCapabilities: {
-          trusted: [
-            "prose",
-            "key_points",
-            "token_sequence",
-            "attention_map",
-            "transformer_stack",
-            "comparison",
-            "source_cards",
-          ],
+          schemaVersion: 4,
+          trusted: Object.keys(getAuthoringCapabilities().content),
+          exercises: Object.keys(getAuthoringCapabilities().exercises),
           sandboxWidget: {
             supported: true,
             htmlBytes: 12_288,
@@ -1414,11 +2494,15 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
   };
 
   return [
+    getStartBrief,
+    getAuthoringCapabilitiesTool,
     begin,
     getContext,
     proposeContext,
     getSession,
     prepareLesson,
+    registerAsset,
+    registerCodeExercise,
     publishLesson,
     getSnapshot,
     patchRegion,
@@ -1428,12 +2512,16 @@ export function createLearnTools(actions: CanvasActions): WebMcpToolDefinition[]
   ];
 }
 
-export const v3ToolNames = [
+export const v4ToolNames = [
+  "learn_get_start_brief",
+  "learn_get_authoring_capabilities",
   "learn_begin_session",
   "learn_get_context",
   "learn_propose_context",
   "learn_get_session",
   "learn_prepare_lesson",
+  "learn_register_asset",
+  "learn_register_code_exercise",
   "learn_publish_lesson",
   "learn_get_canvas_snapshot",
   "learn_patch_region",
@@ -1442,30 +2530,44 @@ export const v3ToolNames = [
   "learn_revert_region",
 ] as const;
 
+// Deprecated export retained for one release.
+export const v3ToolNames = v4ToolNames;
+
 export function activeToolNames(
   stage: LearningSessionStage,
   hasNonce: boolean,
 ): string[] {
-  if (!hasNonce || stage === "ready") return ["learn_begin_session"];
+  if (!hasNonce || stage === "ready") {
+    return [
+      "learn_get_start_brief",
+      "learn_get_authoring_capabilities",
+      "learn_begin_session",
+    ];
+  }
   const contextTools = [
+    "learn_get_start_brief",
+    "learn_get_authoring_capabilities",
     "learn_begin_session",
     "learn_get_session",
     "learn_get_context",
     "learn_propose_context",
     "learn_get_canvas_snapshot",
     "learn_prepare_lesson",
+    "learn_register_asset",
+    "learn_register_code_exercise",
   ];
   if (stage === "context_review") return contextTools;
   if (stage === "lesson_review") {
     return [...contextTools, "learn_publish_lesson"];
   }
-  return [...v3ToolNames];
+  return [...v4ToolNames];
 }
 
 export async function registerLearnTools(
   actions: CanvasActions,
   stage: LearningSessionStage,
   hasNonce: boolean,
+  coordinator?: WebMcpRegistrationCoordinator,
 ): Promise<WebMcpRegistration> {
   const allTools = createLearnTools(actions);
   const allRegistry = Object.fromEntries(allTools.map((tool) => [tool.name, tool]));
@@ -1478,10 +2580,38 @@ export async function registerLearnTools(
   if (supported) {
     try {
       for (const tool of active) {
-        await document.modelContext!.registerTool(tool, { signal: controller.signal });
+        const registeredTool = coordinator
+          ? {
+              ...tool,
+              async execute(input: unknown) {
+                const previousStage = actions.getState().session.stage;
+                const previousHasNonce = Boolean(actions.getNonce());
+                const registrationGeneration = coordinator.currentGeneration();
+                const result = await tool.execute(input);
+                const nextStage = actions.getState().session.stage;
+                const nextHasNonce = Boolean(actions.getNonce());
+                if (
+                  nextStage !== previousStage ||
+                  nextHasNonce !== previousHasNonce
+                ) {
+                  await coordinator.waitFor(
+                    nextStage,
+                    nextHasNonce,
+                    registrationGeneration,
+                  );
+                }
+                return result;
+              },
+            }
+          : tool;
+        await document.modelContext!.registerTool(registeredTool, {
+          signal: controller.signal,
+        });
       }
+      coordinator?.complete(stage, hasNonce);
     } catch (error) {
       controller.abort();
+      coordinator?.fail(stage, hasNonce, error);
       throw error;
     }
   }

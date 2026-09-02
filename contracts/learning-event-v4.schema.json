@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://learn.ogram.ch/contracts/v4/learning-event-v4.schema.json",
+  "title": "learn.ogram V4 canvas event",
+  "description": "A sequenced, privacy-minimized event emitted by the V4 learning canvas.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "sequence", "type", "actor", "at", "summary"],
+  "properties": {
+    "id": { "type": "string", "minLength": 8, "maxLength": 200 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "type": {
+      "enum": [
+        "agent.session.started",
+        "context.claim.proposed",
+        "context.claim.reviewed",
+        "context.personalization.skipped",
+        "lesson.construction.started",
+        "lesson.construction.region_shaped",
+        "lesson.draft.prepared",
+        "lesson.draft.approved",
+        "lesson.published",
+        "canvas.region.focused",
+        "canvas.region.patched",
+        "canvas.widget.injected",
+        "canvas.research.attached",
+        "canvas.region.reverted",
+        "learner.response.submitted"
+      ]
+    },
+    "actor": { "enum": ["agent", "learner", "ogram"] },
+    "at": { "type": "string", "format": "date-time" },
+    "summary": { "type": "string", "minLength": 3, "maxLength": 500 },
+    "payload": {
+      "type": "object",
+      "description": "Bounded identifiers, revisions, digests, counts, correctness, provider labels, and sanitized summaries only. Credentials, task IDs, raw connector content, prompts, transcripts, source code, local paths, and free-text learner answers are prohibited.",
+      "additionalProperties": true
+    }
+  }
+}

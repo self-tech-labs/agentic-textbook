@@ -1,17 +1,20 @@
 # learn.ogram contracts
 
-This directory holds transport-facing contracts for a future canonical service. The running prototype keeps its authoritative TypeScript model in `src/domain/agentCanvas.ts` and persists a local v3 projection.
+The authoritative runtime types and semantic validators live in `src/domain/agentCanvas.ts`; these JSON Schemas make the transport shapes available to non-TypeScript authoring clients.
 
-## `learning-event.schema.json`
+## Current contracts
 
-The v3 event contract covers:
+- `lesson-brief-v1.schema.json` describes the local, topic-neutral landing brief.
+- `lesson-document-v4.schema.json` describes every V4 document field, registered rich block, exercise, edge condition, and accessibility-bearing media reference.
+- `learning-event-v4.schema.json` describes the privacy-minimized V4 event envelope.
 
-- session bootstrap;
-- context proposal, learner review, and generic-path selection;
-- lesson preparation, exact-revision approval, and publication;
-- scoped region patching, widget injection, research attachment, and reversion;
-- immutable learner evidence submission.
+JSON Schema checks structure and scalar bounds. The runtime validator additionally enforces byte limits, unique IDs, registered types, graph acyclicity/reachability, branch priority/fallback rules, decision depth, evidence on every terminal path, current-source provenance, declared asset references, and preservation of submitted learner evidence.
 
-Events are sequenced and privacy-minimized. Payloads may carry IDs, revisions, digests, counts, content-type labels, provider identifiers, and bounded summaries. They must not carry connector credentials, raw mail/calendar/file content, full conversations, arbitrary prompts, local paths, or free-text learner answers.
+## Retained contracts
 
-The browser prototype stores events inside `learn-ogram-canvas:v3`. Production should add authenticated tenant/session identifiers, server-side idempotency constraints, immutable storage, purpose-bound retention, and an ordered delivery envelope without weakening the payload rules.
+- `learning-event.schema.json` is the V3 event contract retained for consumers during the one-release migration window.
+- `learning-experience.schema.json` is an earlier graph/primitive research contract. It is not the V4 lesson transport and must not be advertised by `learn_get_authoring_capabilities`.
+
+The browser stores a V4 local projection at `learn-ogram-canvas:v4`. A validated V3 migration does not delete or overwrite `learn-ogram-canvas:v3`.
+
+Event payloads may contain bounded IDs, revisions, digests, counts, content-type labels, provider labels, correctness, and sanitized summaries. They must not contain connector credentials, raw mail/calendar/file content, task IDs, full conversations, arbitrary prompts, local paths, submitted source code, or free-text learner answers.

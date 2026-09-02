@@ -1,8 +1,9 @@
 import type {
   CanvasRegion,
-  LessonDocumentV3,
+  LegacyLessonDocumentV3,
   RegionProvenance,
 } from "./agentCanvas";
+import { upgradeLessonDocumentV3 } from "./agentCanvas";
 
 const createdAt = "2026-08-31T14:00:00.000Z";
 
@@ -59,7 +60,7 @@ export function createTransformerSkeleton(): CanvasRegion[] {
   });
 }
 
-export const transformerLessonFixture: LessonDocumentV3 = {
+const transformerLessonFixtureV3: LegacyLessonDocumentV3 = {
   id: "lesson-transformers-v1",
   revision: 1,
   topic: "How transformers work",
@@ -243,3 +244,12 @@ export const transformerLessonFixture: LessonDocumentV3 = {
     },
   ],
 };
+
+export const transformerLessonFixture = upgradeLessonDocumentV3(
+  transformerLessonFixtureV3,
+  {
+    blueprintId: "transformer_technical_beginner",
+    pedagogicalMode: "conceptual",
+    sourcePolicy: "evergreen",
+  },
+);

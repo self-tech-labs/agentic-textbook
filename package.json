@@ -1,19 +1,45 @@
 {
   "name": "ogram-learning-canvas",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
+  "engines": {
+    "node": ">=20.12"
+  },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/check-bundle.mjs",
+    "check:bundle": "node scripts/check-bundle.mjs",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "dev:worker": "npm run build && wrangler dev",
+    "cf:dry-run": "npm run build && wrangler deploy --dry-run --containers-rollout none --env=\"\"",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local --env=\"\"",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote --env=\"\"",
+    "db:migrate:remote:staging": "wrangler d1 migrations apply DB --remote --env staging",
+    "smoke:worker": "node scripts/smoke-worker.mjs",
+    "smoke:security": "node scripts/security-smoke-worker.mjs",
+    "eval:webmcp:smoke": "npx --yes webmcp-evals@0.0.4 --chrome-channel chrome smoke -u http://127.0.0.1:5173 -e evals/webmcp-smoke.json -v",
+    "eval:webmcp:agent": "node scripts/run-webmcp-agent-evals.mjs",
+    "deploy:staging:bootstrap": "npm run build && wrangler deploy --env staging && npm run db:migrate:remote:staging && wrangler deploy --env staging",
+    "deploy:staging": "npm run build && npm run db:migrate:remote:staging && wrangler deploy --env staging",
+    "deploy:production:bootstrap": "npm run build && wrangler deploy --env=\"\" && npm run db:migrate:remote && wrangler deploy --env=\"\"",
+    "deploy:production": "npm run build && npm run db:migrate:remote && wrangler deploy --env=\"\"",
+    "deploy:bootstrap": "npm run deploy:production:bootstrap",
+    "deploy": "npm run deploy:production"
   },
   "dependencies": {
+    "@cloudflare/sandbox": "0.12.9",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/state": "^6.7.2",
+    "@codemirror/view": "^6.43.10",
     "@json-render/core": "^0.20.0",
     "@json-render/react": "^0.20.0",
     "@vitejs/plugin-react": "latest",
+    "katex": "^0.18.5",
+    "mermaid": "^11.17.2",
     "react": "latest",
     "react-dom": "latest",
     "thinking-orbs": "^0.3.1",
@@ -21,12 +47,15 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260901.1",
     "@testing-library/jest-dom": "latest",
     "@testing-library/react": "latest",
+    "@types/katex": "^0.16.8",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "jsdom": "latest",
     "typescript": "latest",
-    "vitest": "latest"
+    "vitest": "latest",
+    "wrangler": "^4.128.0"
   }
 }

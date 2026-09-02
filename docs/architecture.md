@@ -1,177 +1,159 @@
-# Architecture — learn.ogram v3
+# Architecture — learn.ogram V4
 
 ## Product boundary
 
-The Codex Desktop conversation is the sole conversational surface. learn.ogram is the live page beside it: a top-level WebMCP owner, a governed learning state machine, and a semantic notebook renderer.
+The Codex conversation is the coordination surface. The adjacent page owns a local-first lesson brief, reviewed learner context, a validated lesson document, a semantic canvas, and immutable learner evidence. The Cloudflare service owns only operational resources needed for governed media and isolated code execution.
 
 ```mermaid
 flowchart LR
-  subgraph Host[Codex Desktop]
-    Conversation[Codex conversation]
-    Agent[Codex agent]
-    Sources[Current chat + Codex/project history + optional MCP sources]
+  subgraph Host[Codex host]
+    Conversation[Conversation]
+    Discovery[Consented task-summary discovery]
+    Research[Official + recent community research]
   end
 
-  subgraph Page[learn.ogram top-level page]
+  subgraph Page[Vite learning canvas]
+    Brief[LessonBriefV1]
     Tools[Staged WebMCP tools]
-    Session[Session + consent state]
-    Compiler[Lesson compiler + review gate]
-    Regions[Stable semantic regions]
-    Renderers[Trusted React + SVG renderers]
-    Sandbox[No-origin widget iframe]
-    Evidence[Immutable learner evidence]
+    Review[Claim + revision review]
+    Document[LessonDocumentV4]
+    Graph[Validated lesson DAG]
+    Renderers[Lazy renderer registry]
+    Evidence[Immutable local evidence]
   end
 
-  Sources -->|consent-attested minimized claims| Agent
-  Conversation <--> Agent
-  Agent <--> Tools
-  Tools --> Session --> Compiler --> Regions --> Renderers
-  Tools --> Regions
-  Tools --> Sandbox
-  Evidence --> Regions
+  subgraph Worker[Cloudflare Worker]
+    Session[Signed guest + CSRF]
+    D1[D1 operational metadata]
+    R2[R2 content-addressed media]
+    Sandbox[No-network code sandbox]
+  end
+
+  Conversation <--> Tools
+  Discovery -->|at most 8 minimized signals| Tools
+  Research -->|bounded claims + citations| Tools
+  Brief --> Tools --> Review --> Document --> Graph --> Renderers
+  Evidence --> Graph
+  Renderers <--> Session
+  Session --> D1
+  Session --> R2
+  Session --> Sandbox
 ```
 
-The page never receives raw connector content or credentials. The agent is responsible for external research and connector access, then passes only minimized learner claims or bounded citation records through page tools.
+Raw task prompts, transcripts, code, and task IDs never enter the lesson or backend. The site cannot read task history; the host may inspect no more than ten accessible summaries from the prior 30 days when the learner leaves personalization enabled. Unavailable history falls back to the current conversation and saved brief.
 
-## State model
+## One schema-driven authoring core
 
-`AgentLearningCanvasState` is the persisted v3 projection:
+`LessonDocumentV4` contains the topic metadata inherited from V3 plus:
 
-```text
-version + canvas revision
-learning session (topic, stage, consent, personalization)
-reviewable context claims
-lesson draft, compiler result, approval, and publication revision
-ordered stable canvas regions
-focus + selected text
-privacy-minimized event ledger
-bounded idempotency receipts
+```ts
+schemaVersion: 4
+blueprintId: string
+pedagogicalMode: "conceptual" | "quantitative" | "code" | "scenario" | "mixed"
+sourcePolicy: "evergreen" | "current"
+regions: LessonRegion[]
+flow: { entryRegionId: string; edges: LessonEdgeV4[] }
+assetRefs: string[]
 ```
 
-The session stages are:
+The `open_topic_v1` blueprint accepts every pedagogical mode. A mode selects only an initial 3–5-region skeleton; the final 3–20-region document is supplied as data. No topic, number of sections, or subject-specific renderer is embedded in the page route.
 
-```mermaid
-stateDiagram-v2
-  [*] --> ready
-  ready --> context_review: learn_begin_session
-  context_review --> lesson_review: valid learn_prepare_lesson
-  lesson_review --> learning: exact approval + learn_publish_lesson
-  learning --> lesson_review: replacement lesson prepared
-```
+`src/domain/lessonRegistry.ts` is the shared source for:
 
-Only the v3 storage key is loaded. A reload restores session, claims, draft/publication status, regions, evidence, history, and the correct registration stage, but never restores an in-memory nonce. Codex must call `learn_begin_session` again to resume and unlock the tools.
+- authoring capabilities returned to Codex;
+- supported content and exercise discriminators;
+- blueprint metadata and source policy;
+- renderer loading behavior;
+- validation and service quotas.
 
-## Dynamic WebMCP registration
+That coupling makes unsupported types fail before publication and lets a future registered renderer or exercise enter without a new document version.
 
-All tools are registered imperatively by the top-level document. Generated iframes own no tools.
+## Brief, context, and topic radar
 
-| State | Native tools registered |
+The landing page stores `LessonBriefV1` at `learn-ogram-brief:v1`. It includes topic/question, desired outcome, level, minutes, preferred modes, accessibility notes, starter/blueprint, and the explicit recent-task toggle.
+
+Context use has two human gates:
+
+1. The learner controls which source scopes Codex may consult.
+2. Each derived claim is accepted, corrected, or rejected before it can personalize the draft.
+
+`LessonContextPackV1` is bounded to eight 280-character signals and contains no raw source material. For a `current` lesson, optional `TopicRadarSignalV1` entries carry authority, retrieval date, availability, official URL, community URLs, and three normalized scores. Overall rank is calculated as 50% learner relevance, 30% official recency, and 20% community corroboration. Product behavior requires an official reference; community-only entries remain visibly labeled exploration ideas.
+
+## Graph validation and branching
+
+V4 validates the lesson as a directed acyclic graph:
+
+- 3–20 unique regions, all reachable from the entry region;
+- no cycles or dangling endpoints;
+- no more than three outgoing edges per region;
+- no more than four conditional decisions on any path;
+- a single unconditional fallback, last by priority, wherever conditional edges exist;
+- no ambiguous mixture of answer and correctness conditions on one decision;
+- at least one learner exercise on every terminal path;
+- all asset references declared by blocks;
+- required source provenance for current product claims.
+
+At runtime, completed, current, and locked regions remain visible in the concept map while unselected branch bodies are hidden. Submitting an exercise resolves its outgoing edge. The answer, correctness/result evidence, and selected edge cannot be changed. Any structural edit therefore creates a new draft revision and returns to learner review.
+
+## Content and exercise registries
+
+V4 keeps all V3 blocks and adds:
+
+| Block | Runtime policy |
 |---|---|
-| No active nonce / ready | `learn_begin_session` |
-| Context review | bootstrap, session/context reads, context proposal, snapshot, lesson preparation |
-| Lesson review | context-review set plus publication |
-| Published learning | all eleven v3 tools |
+| `formula` | KaTeX, HTML+MathML, `trust: false`, strict errors, no authored macros, 4 KB, required accessible label. |
+| `diagram` | Mermaid strict mode, HTML labels and links disabled, 16 KB, required title and description. |
+| `code_example` | Escaped semantic code with language, caption, and optional highlighted lines. |
+| `media` | Ready governed asset reference with caption, attribution, and kind-specific accessibility data. |
 
-Each registration group has its own `AbortController`. A stage transition aborts the prior group before registering the next one. The fallback registry exposes all definitions for test/replay environments while every handler independently enforces nonce and state gates.
+Images require alt text. Audio requires a transcript. Video requires both a transcript and VTT captions. Native audio/video controls are shown, autoplay is absent, and preload is metadata-only. A malformed or unavailable rich block renders an accessible textual fallback instead of failing its region.
 
-## Context consent
+Exercises are `choice`, `reflection`, `numeric`, and `code_lab`. Numeric evaluation uses an authored absolute tolerance and optional unit. Code tests are registered server-side; the lesson receives only the immutable exercise ID, visible test descriptions, starter source, and fallback prompt.
 
-Context has two distinct gates:
+KaTeX, Mermaid, CodeMirror, and language modes load through `React.lazy` only when their block is rendered. Offscreen regions use `content-visibility: auto`. The build script reads Vite’s manifest and rejects an initial JavaScript graph above 145 KB gzip.
 
-1. Before Codex consults the current chat, past tasks/conversations, saved-project history, Ogram, or a connector, the learner explicitly authorizes source scopes and provider IDs. `learn_propose_context` carries that attestation.
-2. Retrieval stays in the Codex host. A short current chat does not collapse the discovery scope: when approved, Codex can use task-listing and task-reading capabilities to inspect relevant accessible history.
-3. The page renders each minimized claim with route, provider, resource type, sensitivity, purpose, and opaque evidence reference. The learner makes one binary decision: **Use this** or **Don’t use**.
+## V3 migration and persistence
 
-An agent cannot mark a claim approved. A claim cannot personalize a lesson until card-level review is complete. Choosing the generic path rejects any still-pending claims and records `personalization: skipped`.
+The local projection uses `learn-ogram-canvas:v4`. If it is absent, the loader reads `learn-ogram-canvas:v3`, retains content, responses, provenance, region history, session state, and revisions, and adds sequential `always` edges. It writes V4 only after the migrated document validates. The original V3 key remains untouched for rollback.
 
-## Authoring and publication
+The `transformer_technical_beginner` blueprint remains a deprecated alias for one release and is exercised as a regression fixture. The older V2 key is outside the migration boundary.
 
-`learn_prepare_lesson` supports two authoring paths. The preferred path is progressive: `start` commits typed metadata and 4–12 stable region stubs, each `region` call fills one stub with trusted content, and `finalize` assembles and validates the exact document. The preparation preview therefore changes from skeleton rows into compact renders of the real components while Codex is still working. A `complete` phase remains for compatibility and the bundled transformer template.
+## WebMCP lifecycle
 
-This split is the transport layer that makes live rendering possible. A WebMCP handler normally receives complete tool arguments, so a renderer alone cannot expose tokens produced before the call begins. Smaller idempotent calls create observable commit points without accepting invalid partial JSON or generated code.
+The top-level document owns all imperative registrations. Generated iframes register no tools.
 
-The transport shape mirrors [json-render’s SpecStream model](https://json-render.dev/docs/streaming): stable IDs receive bounded commits and the UI updates after each one. At the rendering boundary, `TrustedContentRenderer.tsx` converts each typed `RegionContent[]` payload into json-render’s flat `root + elements` spec, validates it against the `ogram.learning.v1` catalog, and renders it through the `@json-render/react` registry. The shaping preview and published notebook call that same renderer with different presentation modes; there is no second hand-written content switch. Region-sized WebMCP commits remain the observable transport because a tool handler receives complete arguments rather than an in-flight token stream.
+| State | Native registrations |
+|---|---|
+| Ready | start brief, authoring capabilities, begin session |
+| Context review | ready tools plus session/context reads, context proposal, snapshot, prepare, asset registration, and code registration |
+| Lesson review | context set plus publication |
+| Learning | all 15 tools |
 
-The v3 validator checks:
+Every handler validates its own nonce and state gate, including the fallback registry. Agent writes are idempotent and revision checked. The learner approves the exact validated digest/revision; publication also asks the Worker to reject unresolved, failed, expired, or guest-inaccessible asset and exercise IDs.
 
-- an observable objective and meaningful title;
-- four to twelve unique, non-empty stable regions;
-- at least one learner-owned interaction;
-- personalization claims against the accepted claim set;
-- a focused prototype duration warning;
-- preservation of any published region that already contains learner evidence.
+## Worker services
 
-The learner approves the exact compiled revision. `learn_publish_lesson` requires that exact revision, the latest canvas revision, a nonce, and an idempotency key. Publishing preserves existing learner responses on matching regions and rejects structural drafts that would remove or alter completed interactions.
+Cloudflare Workers Static Assets serves the SPA and routes `/api/*` and `/media/*` through `worker/index.ts`.
 
-## Semantic canvas regions
+D1 contains only:
 
-Each `CanvasRegion` has a stable ID, order, label, objective, kind, monotonic revision, status, trusted content, optional learner interaction/response, provenance, and bounded undo history.
+- signed anonymous session metadata and the one-run concurrency flag;
+- asset metadata and inactivity expiry;
+- server-side code-test manifests and inactivity expiry;
+- rolling run events and sandbox cold/warm activity.
 
-The semantic snapshot includes:
+R2 objects are keyed by SHA-256. Import accepts HTTPS only, strips fragments, forbids credentials and local/private literal destinations, follows at most three revalidated redirects, checks declared MIME and magic bytes, rejects HTML/SVG, and enforces per-kind plus per-lesson quotas.
 
-- canvas and region revisions;
-- region purpose, content, status, attribution, and response-completion state;
-- the focused region and selected text;
-- visible region IDs plus current viewport dimensions and scroll position;
-- the trusted renderer registry and widget budgets.
+The stable `@cloudflare/sandbox` runtime uses a pinned custom image. A sandbox ID is derived from guest and exercise IDs. Its work directory is replaced on each run, internet is disabled at the container class, packages and secrets are not supplied, and only JavaScript, TypeScript, or Python one-file runners are available. Commands have a five-second process limit, combined output is capped at 64 KB, one guest run may be active, and the rolling allowance is 20 runs per ten minutes. Containers sleep after ten idle minutes.
 
-`learn_patch_region` can replace, append, annotate, or set an activity status. Its input has no learner-response or interaction field, so it cannot cross the ownership boundary. A content write creates a prior-state snapshot and an undo token. A background-research `agent_working` transition is coalesced with the completed result so undo restores the usable pre-research region rather than a stranded working state.
+The service never persists submitted source. The browser stores source, SHA-256, bounded result summary, and submission time as learner evidence.
 
-If an `agent_working` region receives no completion within ninety seconds, local housekeeping returns it to `ready`, records a timeout event, and preserves its prior content. The rest of the notebook remains usable throughout.
+## HTTP and observability boundary
 
-## Trusted json-render catalog
+`GET /api/session` issues a signed, HTTP-only, secure, same-site guest cookie and returns a CSRF token. Mutations require an exact same-origin request, valid cookie, and matching CSRF header. Anonymous assets and code manifests expire after 90 inactive days; a daily scheduled handler marks expired records and removes unreferenced R2 objects.
 
-V3 ships an explicit `@json-render/react` catalog and native, responsive registry implementations for:
+Logs are deliberately metadata-only: normalized endpoint, response status, latency, quota outcome, and sandbox cold/warm state. Request bodies, context, answers, prompts, test contents, and code are never logged.
 
-- editorial prose and emphasized explanations;
-- concise key-point grids;
-- token sequences;
-- accessible SVG attention weights;
-- transformer-block stacks;
-- comparisons;
-- research synthesis and source cards.
+## Remaining release boundary
 
-Token sequences, attention sources, and transformer-stack stages expose keyboard-accessible inspection states. Static explanatory text remains static; visual models invite manipulation when it adds information rather than motion alone.
-
-The transformer fixture uses six stable regions: goal, tokens/embeddings, self-attention, transformer block, next-token practice, and teach-back. The choice and reflection controls create immutable learner evidence.
-
-## Canvas-only visual output and sandboxed widgets
-
-The WebMCP contract names the learning canvas as the only visual-output destination. Codex should not invoke a host visualization surface or first produce an inline conversation widget and then copy it into the lesson. Trusted declarative content is preferred; when bespoke interaction materially helps, `learn_inject_widget` authors it directly inside the focused region.
-
-`learn_inject_widget` accepts a body-fragment HTML payload, CSS, JavaScript, title, accessible summary, and initial height. The page rejects document shells and duplicate top-level titles, then enforces 12 KB HTML, 12 KB CSS, 24 KB JavaScript, and a 180–720 px height. The canvas supplies the visible title, Reset/Stop controls, fallback, and text alternative. A sandbox-side `ResizeObserver` requests a bounded parent height so the iframe does not become a nested reading scroller.
-
-The iframe is created with:
-
-```html
-<iframe sandbox="allow-scripts" ... />
-```
-
-Its `srcdoc` CSP sets `default-src 'none'`, allows inline styles/scripts required by the payload, allows only data images, and blocks connections, media, fonts, objects, nested frames, form actions, and base URLs. Omitting `allow-same-origin`, forms, top navigation, popups, downloads, and modals prevents access to the parent origin and browser capabilities.
-
-The wrapper validates `postMessage` by source window, channel, widget ID, event type, and numeric resize bounds. A two-second ready timeout removes the iframe and retains the previous region content with an accessible text fallback. External reset/stop controls and an Escape message return keyboard control to the parent.
-
-This is a rendering sandbox, not a source of WebMCP tools or network access.
-
-## Events and idempotency
-
-The local ledger records session start, context proposal/review/skip, lesson preparation/approval/publication, region patch, widget injection, research attachment, reversion, and learner evidence submission. Payloads use IDs, counts, revisions, digests, and bounded summaries rather than raw connector content or long learner answers.
-
-Every agent write checks its idempotency receipt before its expected revision. An exact retry therefore returns its original result even after the state advances. A new command with a stale canvas or region revision fails and tells the agent which read tool to call before retrying.
-
-## Responsive and accessibility contract
-
-The desktop layout assumes a right-hand Codex browser pane: a narrow sticky concept map, generous notebook measure, and a subtle left-edge agent bridge. At narrower widths, the map becomes a horizontal region index and all two-column review layouts stack. Anchor offsets reserve both sticky layers, the compact map uses one continuous connector line, progressive previews fit rather than clipping their last card, and comparison tables become stacked cards instead of creating a horizontal reading trap.
-
-The next major iteration is the slot-based sticky lesson deck specified in `docs/sticky-section-ux-plan.md`. It deliberately separates document-flow slots (focus, anchoring, and reachable tall content) from sticky visual panels (the constrained object the learner sees).
-
-Landmarks, semantic headings, native controls, focus-visible styling, text alternatives, SVG titles, live regions, keyboard Escape handling, and reduced-motion rules are part of the shipped implementation.
-
-## Prototype boundaries
-
-- A site cannot force an unsolicited Codex message; the bootstrap tool returns the guide Codex should relay.
-- A site cannot read Codex task history. The host agent performs consented discovery and sends minimized claims through the page tool.
-- The page cannot control Codex Desktop’s split layout.
-- The in-browser persistence adapter is a local prototype cache, not a multi-tenant canonical store.
-- The sandbox constrains capabilities but cannot guarantee interruption of all pathological CPU-heavy JavaScript; production should add stronger process/time isolation.
-- Rich future renderers can enter behind the trusted registry and dynamic imports without widening the core tool surface.
+The repository can test and package the stack, but a production release still requires the owner’s legal eligibility/rules acknowledgment, Workers Paid/Containers access, provisioned staging resources, and real Sandbox smoke tests in all three languages. Those are explicit gates in `docs/challenge-preflight.md` and `docs/deployment.md`.

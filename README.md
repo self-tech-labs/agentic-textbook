@@ -1,102 +1,148 @@
-# learn.ogram v3 — Agent-native Learning Canvas
+# learn.ogram v4 — Flexible, personalized learning canvas
 
-learn.ogram is a WebMCP prototype for co-constructing an e-learning experience with Codex. The Codex conversation is the only conversational surface. The website is the shared, addressable notebook beside it: Codex can read its semantic state, propose learner context, prepare a lesson, and reshape one focused region while the learner keeps control of consent, publication, and answers.
+learn.ogram turns the page beside a Codex conversation into a governed lesson canvas. A learner prepares a topic-neutral brief; Codex can then author a 3–20-region lesson using registered prose, formulas, Mermaid diagrams, code, governed media, and exercises. Subject matter and pedagogy are data in a validated `LessonDocumentV4`, not React routes.
 
-The polished demonstration teaches a technical beginner **how transformers work**, from tokens and embeddings through self-attention, transformer blocks, and next-token prediction.
+The learner still owns the important decisions: context claims are reviewed before use, the exact structural revision is approved before publication, and submitted evidence and its selected branch are immutable.
+
+## What V4 demonstrates
+
+- A generic landing brief with topic, outcome, level, time, learning modes, accessibility notes, and visible recent-task personalization control.
+- Registry-driven starters for a current personalized Codex workflow, algebra and functions, and JavaScript/TypeScript/Python debugging.
+- A deprecated transformer starter retained as a migration and renderer regression fixture.
+- Five pedagogical modes: `conceptual`, `quantitative`, `code`, `scenario`, and `mixed`.
+- KaTeX formulas with HTML+MathML, strict Mermaid diagrams, escaped code examples, and governed native media with textual fallbacks.
+- Single-choice, reflection, tolerance-aware numeric, and executable code-lab exercises.
+- A validated acyclic lesson graph with remediation branches and an evidence-bearing terminal path.
+- A local-first V3-to-V4 migration that validates before writing V4 and retains the V3 record for rollback.
+- A Cloudflare Worker that serves the Vite app and `/api/*`, using D1 for operational metadata, R2 for immutable media, and an isolated Sandbox container for code.
+
+V4.1 blocks—Vega-Lite, multi-select, ordering, matching, cloze, uploads, and multi-file projects—are intentionally not registered yet.
 
 ## Run locally
 
+Install dependencies and run the frontend-only experience:
+
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-Open the Vite URL in Codex Desktop’s built-in browser. The page is designed for the right-hand pane with the Codex conversation on the left.
+The algebra and current-Codex fixtures work in this mode. Code execution and governed media import need the Worker runtime:
 
-Start from the conversation:
+```bash
+cp .dev.vars.example .dev.vars
+# Replace the placeholder with a local random secret of at least 32 characters.
+npm run db:migrate:local
+npm run dev:worker
+```
 
-> Teach me how transformers work. Start by calling `learn_begin_session` on this page, relay its short guide, and ask before using any personal context.
+With the Worker running, verify the three language runtimes and the adversarial isolation matrix:
 
-For visual explanations, keep the conversation as the coordination surface and render the visual only in the WebMCP canvas. With consent, Codex can inspect relevant past tasks, conversations, and saved-project history; it is not limited to the messages in the current chat.
+```bash
+npm run smoke:worker
+npm run smoke:security
+```
 
-The first site-tool call returns a five-step user guide and an in-memory session nonce. On a fresh page, it is the only native WebMCP tool registered.
+Open the Wrangler URL in a fresh browser profile or Codex Desktop’s built-in browser. The page is designed to sit in the right-hand pane beside the Codex conversation.
 
-## The learning loop
+## Start any lesson
 
-1. Codex calls `learn_begin_session`; the page becomes a progressive transformers skeleton.
-2. The learner chooses whether Codex may consult this chat, past Codex tasks/conversations, saved-project history, Ogram, or connected-source context.
-3. Codex sends only privacy-minimized claims to the page. For each claim, the learner chooses **Use this** or **Don’t use**.
-4. Codex starts a stable outline, shapes one region per tool call, and finalizes the assembled draft. The learner watches the notebook form, then approves the exact revision before publication.
-5. The learner works through a continuous notebook and asks questions in the adjacent Codex conversation.
-6. Codex reads focus, selected text, viewport, interactions, and region revisions, then patches a trusted renderer, adds a sandboxed interaction, or attaches sourced research.
-7. Agent-owned changes are scoped, attributed, concurrency-safe, and undoable. Learner responses remain immutable.
+Fill the brief on the landing page, or choose one of its registry-driven starters, and save it. Then tell Codex:
 
-There is no embedded assistant, **Ask Codex** button, pinned-question flow, or assistance rail.
+> Use the lesson brief I prepared on this page.
 
-## Public WebMCP tools
+When personalization is enabled, Codex may inspect up to ten accessible recent task summaries from the previous 30 days. It sends at most eight short derived signals to the page; task IDs, raw prompts, transcripts, and code do not enter the lesson service. Every claim still requires learner review. If history is unavailable, the brief and current conversation remain sufficient.
+
+For current Codex lessons, product behavior must be supported by an official source. Recent community material may affect prioritization but can only enter as a labeled exploration idea.
+
+## WebMCP tools
+
+The initial page exposes the first three tools; registration expands with the session stage. Every mutating post-bootstrap call requires the session nonce, an idempotency key, and the relevant current revision.
 
 | Stage | Tool | Purpose |
 |---|---|---|
-| Bootstrap | `learn_begin_session` | Required first call; starts or resumes the handshake, creates the skeleton, and returns the guide and nonce. |
-| Context | `learn_get_context` | Reads minimized claims, provenance, consent coverage, and learner review status. |
-| Context | `learn_propose_context` | Proposes consent-attested claims from the current conversation, Codex history, project history, Ogram, or a connected MCP source. |
-| Session | `learn_get_session` | Reads stage, lesson status, progress, revisions, recent events, and next valid actions. |
-| Authoring | `learn_prepare_lesson` | Progressively starts, shapes, and finalizes a region-based lesson draft; also keeps a one-shot compatibility path and bundled transformer blueprint. |
-| Authoring | `learn_publish_lesson` | Publishes only the exact compiled revision approved by the learner. |
-| Canvas | `learn_get_canvas_snapshot` | Reads stable regions, focus, selected text, viewport, evidence, revisions, and renderer capabilities. |
-| Canvas | `learn_patch_region` | Replaces, appends, annotates, or marks one region with trusted content specifications. |
-| Canvas | `learn_inject_widget` | Appends bounded HTML/CSS/JS inside a no-origin, no-network sandbox. |
-| Research | `learn_attach_research` | Adds a bounded synthesis and canonical citation cards to a target region. |
-| Canvas | `learn_revert_region` | Restores an agent-owned prior region version with an undo token. |
+| Brief | `learn_get_start_brief` | Read the saved brief, starter, and personalization request before a session exists. |
+| Brief | `learn_get_authoring_capabilities` | Read schema version, registries, blueprints, limits, and source rules. |
+| Bootstrap | `learn_begin_session` | Start or resume from a brief, optional minimized context pack, and host capabilities. |
+| Context | `learn_get_context` | Read consent coverage and reviewable minimized claims. |
+| Context | `learn_propose_context` | Propose consent-attested learner claims for accept/correct/reject review. |
+| Session | `learn_get_session` | Read stage, revisions, validation, path, progress, and next actions. |
+| Authoring | `learn_prepare_lesson` | Start, shape, finalize, or submit a V4 lesson for any topic and blueprint. |
+| Assets | `learn_register_asset` | Import governed HTTPS media and return an immutable R2-backed reference. |
+| Code | `learn_register_code_exercise` | Store a server-side test manifest and return an immutable exercise ID. |
+| Authoring | `learn_publish_lesson` | Publish only the approved revision after reference validation. |
+| Canvas | `learn_get_canvas_snapshot` | Read semantic regions, selected path, focus, evidence, and capabilities. |
+| Canvas | `learn_patch_region` | Make a scoped, attributed, revision-safe content update. |
+| Canvas | `learn_inject_widget` | Add a bounded no-origin widget for legacy bespoke interactions. |
+| Research | `learn_attach_research` | Attach bounded synthesis and canonical citation records. |
+| Canvas | `learn_revert_region` | Restore an agent-owned prior region revision. |
 
-All non-bootstrap calls require the nonce. Every write also carries an idempotency key and the current canvas or region revision. A stale write reports the latest revision instead of overwriting newer work.
+The test/replay registry is available at `window.__OGRAM_WEBMCP_TOOLS__` and enforces the same gates as native registration.
 
-Native tool registration rotates by stage with abortable lifecycles. The test/replay fallback registry at `window.__OGRAM_WEBMCP_TOOLS__` contains all eleven tools but enforces the same nonce and state gates.
+## Trust boundaries
 
-## Safety and learner authority
+- Learner state—answers, source code, recent-task summaries, prompts, publication history, and context review—stays in local storage.
+- D1 stores signed guest-session metadata, quotas, asset metadata, code-test manifests, and rate-limit events only.
+- Media import is HTTPS-only, follows at most three governed redirects, rejects local/private destinations, HTML, SVG, MIME spoofing, and oversized bytes, then stores content-addressed objects in R2.
+- Code labs accept one source file, no packages, no network, no secrets, a reset working directory, a five-second process timeout, and 64 KB output. One run per guest may execute concurrently; the rolling quota is 20 runs per ten minutes.
+- Guest requests use a signed HTTP-only same-site cookie, same-origin mutations, and a CSRF token.
+- Operational logs contain endpoint, status, latency, quota outcome, and cold/warm sandbox state—never request bodies or learning content.
+- Invalid formula, diagram, or media blocks fall back to accessible text without breaking the lesson.
 
-- External connectors stay agent-side. The page receives neither connector credentials nor raw messages, files, or calendar entries.
-- Connector or conversation context needs an explicit consent attestation before proposal and separate card-level approval before personalization.
-- Context retrieval remains agent-side. The site’s discovery contract tells Codex to use accessible task-listing and task-reading capabilities when history is allowed, then send only minimized claims to the page.
-- Structural lesson changes need compiler approval and learner approval of the exact digest/revision.
-- Region tools cannot edit interactions, learner responses, completed evidence, consent receipts, or publication history.
-- An explicit `@json-render/react` catalog turns trusted region JSON into React/SVG prose, key points, token sequences, attention maps, transformer stacks, comparisons, source cards, and bounded widgets.
-- Generated widgets run in an iframe with `sandbox="allow-scripts"`, a network-blocking CSP, size budgets, a two-second ready timeout, validated messages, reset/stop controls, and a text alternative.
-- Generated visuals belong only on the WebMCP canvas. Widget payloads are body fragments; the canvas owns wrapper chrome and automatically requests a bounded height so the iframe does not become a second reading scrollbar.
-- The v3 persistence adapter reads only `learn-ogram-canvas:v3`. It deliberately ignores the old v2 cache key without deleting it.
-
-## Useful commands
+## Verification
 
 ```bash
 npm run typecheck
 npm run test:run
 npm run build
+npm run cf:dry-run
 ```
 
-The automated suite covers bootstrap-only registration, nonce and consent gates, exact publication approval, generic context skipping, focus and semantic snapshots, scoped/idempotent/stale-safe patches, learner evidence immutability, undo, research provenance, widget budgets, persistence boundaries, and the end-to-end transformer path.
+With `npm run dev` already running on `127.0.0.1:5173`, exercise the live
+WebMCP registrations in Chrome with Google's experimental eval CLI:
+
+```bash
+npm run eval:webmcp:smoke
+```
+
+The agent-journey suite in `evals/webmcp-agent-journeys.json` also checks tool
+selection, fresh-page starting states, and the bootstrap-to-session tool
+rotation. Run three samples before release with
+`npm run eval:webmcp:agent -- --runs 3`. The default runner needs
+`GOOGLE_AI` (the legacy `GEMINI_API_KEY` and
+`GOOGLE_GENERATIVE_AI_API_KEY` names remain accepted) and runs Gemini 3.5 Flash
+through the official CLI's implemented Vercel-AI browser loop. The package's
+native `gemini` backend currently implements static-schema evals but not live
+browser evals. Alternatively, select another backend/model
+supported by `webmcp-evals` with arguments such as
+`npm run eval:webmcp:agent -- --backend ollama --model <model>`. The wrapper
+loads an ignored local `.env` when present and fails the command when the CLI
+report contains failed or errored trajectories.
+
+`npm run build` also fails if initial JavaScript exceeds 145 KB gzip. KaTeX, Mermaid, CodeMirror, and language support are visibility-triggered chunks and are excluded from the initial bundle.
 
 ## Project map
 
 ```text
-src/domain/agentCanvas.ts          v3 session, context, lesson, region, event, and validation model
-src/domain/transformerFixture.ts   polished technical-beginner transformer notebook
-src/hooks/useLearningCanvas.ts     state machine, consent gates, revisions, receipts, and undo
-src/lib/webmcp.ts                  eleven staged site tools and fallback registry
-src/components/LearningNotebook.tsx
-                                    context review, lesson review, concept map, regions, and evidence
-src/components/TrustedContentRenderer.tsx
-                                    json-render catalog, flat-spec adapter, and trusted React registry
-src/components/SandboxedWidget.tsx no-origin widget runtime and accessibility fallback
-src/lib/canvasPersistence.ts       isolated v3 local cache
-docs/architecture.md               implementation and trust-boundary details
-docs/sticky-section-ux-plan.md     slot-based sticky/snap lesson-deck redesign and QA gates
-docs/demo-script.md                uninterrupted acceptance-demo walkthrough
-contracts/learning-event.schema.json
-                                    v3 privacy-minimized event contract
+src/domain/agentCanvas.ts          V4 contracts, graph validation, path selection, V3 migration
+src/domain/lessonRegistry.ts       shared blocks, exercises, blueprints, limits, and source policy
+src/domain/lessonCatalog.ts        LessonBriefV1, generic mode skeletons, and landing starters
+src/domain/v4Fixtures.ts           Codex, algebra/remediation, and three-language code fixtures
+src/domain/transformerFixture.ts   deprecated transformer regression fixture
+src/hooks/useLearningCanvas.ts     consent, revision, branch, evidence, and persistence state machine
+src/lib/webmcp.ts                  staged 15-tool WebMCP surface
+src/lib/learningService.ts         same-origin Worker API client
+src/components/rich/               lazy formula, diagram, media, and code-lab renderers
+worker/                            guest security, R2 import, D1 metadata, Sandbox code runner
+migrations/0001_v4_runtime.sql     operational D1 schema
+contracts/                         transport-facing JSON Schemas
+docs/architecture.md               runtime and trust-boundary design
+docs/demo-script.md                Sep 3 vertical-slice walkthrough
+docs/deployment.md                 Cloudflare setup and release checks
+docs/jury-readiness.md             latest verified matrix, evidence, and blockers
+docs/video-production-readiness.md full-surface capture and reusable demo methodology
 ```
 
-The earlier graph compiler and primitive runtime remain as internal research code and tests. `learn_prepare_lesson` stays the single authoring entry point, but supports `start → region → finalize` phases so visible work can land incrementally without widening the tool surface. The v2 task-boundary lesson cannot enter the new UI.
+## Deployment status
 
-## Current prototype boundaries
-
-A website cannot send an unsolicited message into the Codex conversation, so `learn_begin_session` returns copy that Codex should relay. It also cannot read Codex task history itself: after consent, the host agent uses its task-listing and task-reading capabilities and passes only minimized claims through WebMCP. The page cannot force Codex Desktop’s split layout. Connected sources are optional; learner-provided or approved Codex-history context is the fallback. External research remains agent-side and enters the page only as a bounded synthesis plus citation records.
+The implementation can be packaged and dry-run without claiming challenge eligibility. Production publication remains gated on the submitting owner confirming the official rules/eligibility, Cloudflare Workers Paid and Containers access, and staging smoke tests for JavaScript, TypeScript, and Python. See [docs/challenge-preflight.md](docs/challenge-preflight.md) and [docs/deployment.md](docs/deployment.md).

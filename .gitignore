@@ -5,6 +5,11 @@ dist/
 .env
 .env.*
 !.env.example
+.dev.vars
 coverage/
 playwright-report/
 test-results/
+.playwright-cli/
+.wrangler/
+output/playwright/
+.evals/

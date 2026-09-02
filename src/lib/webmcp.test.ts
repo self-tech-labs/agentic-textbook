@@ -2,6 +2,8 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useLearningCanvas, type CanvasActions } from "../hooks/useLearningCanvas";
 import { transformerLessonFixture } from "../domain/transformerFixture";
+import { createLessonBrief } from "../domain/lessonCatalog";
+import { saveLessonBrief } from "./lessonBriefPersistence";
 import {
   activeToolNames,
   createLearnTools,
@@ -40,7 +42,7 @@ function startPublishedTransformer(actions: CanvasActions): string {
   return started.nonce;
 }
 
-describe("learn.ogram v3 WebMCP surface", () => {
+describe("learn.ogram v4 WebMCP surface", () => {
   beforeEach(() => {
     window.localStorage.clear();
     delete window.__OGRAM_WEBMCP_TOOLS__;
@@ -50,15 +52,19 @@ describe("learn.ogram v3 WebMCP surface", () => {
     });
   });
 
-  it("publishes eleven tools while exposing only bootstrap before the handshake", async () => {
+  it("publishes fifteen tools while exposing only the three bootstrap tools", async () => {
     const { result } = renderHook(() => useLearningCanvas());
     const tools = createLearnTools(result.current.actions);
     expect(tools.map((tool) => tool.name)).toEqual([
+      "learn_get_start_brief",
+      "learn_get_authoring_capabilities",
       "learn_begin_session",
       "learn_get_context",
       "learn_propose_context",
       "learn_get_session",
       "learn_prepare_lesson",
+      "learn_register_asset",
+      "learn_register_code_exercise",
       "learn_publish_lesson",
       "learn_get_canvas_snapshot",
       "learn_patch_region",
@@ -66,7 +72,11 @@ describe("learn.ogram v3 WebMCP surface", () => {
       "learn_attach_research",
       "learn_revert_region",
     ]);
-    expect(activeToolNames("ready", false)).toEqual(["learn_begin_session"]);
+    expect(activeToolNames("ready", false)).toEqual([
+      "learn_get_start_brief",
+      "learn_get_authoring_capabilities",
+      "learn_begin_session",
+    ]);
     expect(() =>
       findTool(result.current.actions, "learn_get_session").execute({ nonce: "not-a-valid-session" }),
     ).toThrow(/call learn_begin_session first/i);
@@ -77,10 +87,281 @@ describe("learn.ogram v3 WebMCP surface", () => {
       false,
     );
     expect(registration.supported).toBe(false);
-    expect(registration.toolNames).toEqual(["learn_begin_session"]);
-    expect(Object.keys(window.__OGRAM_WEBMCP_TOOLS__ ?? {})).toHaveLength(11);
+    expect(registration.toolNames).toEqual([
+      "learn_get_start_brief",
+      "learn_get_authoring_capabilities",
+      "learn_begin_session",
+    ]);
+    expect(Object.keys(window.__OGRAM_WEBMCP_TOOLS__ ?? {})).toHaveLength(15);
     registration.cleanup();
     expect(window.__OGRAM_WEBMCP_TOOLS__).toBeUndefined();
+  });
+
+  it("labels learner-authored and externally sourced outputs as untrusted", () => {
+    const { result } = renderHook(() => useLearningCanvas());
+    const tools = createLearnTools(result.current.actions);
+    const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
+
+    for (const name of [
+      "learn_get_start_brief",
+      "learn_get_context",
+      "learn_get_session",
+      "learn_get_canvas_snapshot",
+      "learn_propose_context",
+      "learn_register_asset",
+      "learn_attach_research",
+    ]) {
+      expect(byName[name]?.annotations?.untrustedContentHint, name).toBe(true);
+    }
+
+    expect(
+      byName.learn_get_authoring_capabilities?.annotations?.untrustedContentHint,
+    ).toBe(false);
+    expect(byName.learn_get_start_brief?.annotations?.readOnlyHint).toBe(true);
+    expect(byName.learn_propose_context?.annotations?.readOnlyHint).toBe(false);
+  });
+
+  it("describes every bootstrap argument within the model-facing budget", () => {
+    const { result } = renderHook(() => useLearningCanvas());
+    const begin = findTool(result.current.actions, "learn_begin_session");
+    const properties = begin.inputSchema.properties as Record<
+      string,
+      { description?: unknown }
+    >;
+
+    for (const [name, property] of Object.entries(properties)) {
+      expect(property.description, name).toEqual(expect.any(String));
+      expect((property.description as string).length, name).toBeLessThanOrEqual(150);
+    }
+  });
+
+  it("reads a generic saved brief and the registry before a session exists", () => {
+    const brief = createLessonBrief({
+      topic: "How plate tectonics reshape continents",
+      desiredOutcome: "Explain one convergent and one divergent boundary.",
+      preferredModes: ["visual", "scenario"],
+      personalizeFromRecentTasks: false,
+    });
+    saveLessonBrief(brief);
+    const { result } = renderHook(() => useLearningCanvas());
+    const startBrief = findTool(
+      result.current.actions,
+      "learn_get_start_brief",
+    ).execute({}) as {
+      brief: typeof brief;
+      personalizationRequested: boolean;
+      instruction: string;
+    };
+    expect(startBrief).toMatchObject({
+      brief: {
+        id: brief.id,
+        topic: "How plate tectonics reshape continents",
+      },
+      personalizationRequested: false,
+      instruction: "Use the lesson brief I prepared on this page.",
+    });
+
+    const capabilities = findTool(
+      result.current.actions,
+      "learn_get_authoring_capabilities",
+    ).execute({}) as {
+      schemaVersion: number;
+      content: Record<string, unknown>;
+      exercises: Record<string, unknown>;
+      blueprints: Record<string, unknown>;
+      limits: { minimumRegions: number; maximumRegions: number };
+    };
+    expect(capabilities).toMatchObject({
+      schemaVersion: 4,
+      limits: { minimumRegions: 3, maximumRegions: 20 },
+    });
+    expect(Object.keys(capabilities.content)).toEqual(
+      expect.arrayContaining(["formula", "diagram", "code_example", "media"]),
+    );
+    expect(Object.keys(capabilities.exercises)).toEqual(
+      expect.arrayContaining(["choice", "reflection", "numeric", "code_lab"]),
+    );
+    expect(Object.keys(capabilities.blueprints)).toContain("open_topic_v1");
+  });
+
+  it("minimizes recent-task signals, ranks the topic radar, and falls back without history", () => {
+    const { result } = renderHook(() => useLearningCanvas());
+    const actions = result.current.actions;
+    const begin = findTool(actions, "learn_begin_session");
+    expect(() =>
+      begin.execute({
+        topic: "Codex workflows",
+        contextPack: {
+          generatedAt: "2026-09-01T12:00:00.000Z",
+          lookbackDays: 30,
+          inspectedTaskCount: 1,
+          signals: [
+            {
+              id: "raw-task-id-must-disappear",
+              summary: "The learner repeatedly asks for browser-based verification.",
+              kind: "preference",
+              observedAt: "2026-07-01T12:00:00.000Z",
+              sourceLabel: "Recent tasks",
+            },
+          ],
+        },
+      }),
+    ).toThrow(/lookback window/i);
+
+    expect(() =>
+      begin.execute({
+        topic: "Codex workflows",
+        contextPack: {
+          generatedAt: "2026-09-01T12:00:00.000Z",
+          lookbackDays: 30,
+          inspectedTaskCount: 0,
+          signals: [],
+          topicRadar: [
+            {
+              id: "unsourced-community-idea",
+              topic: "Community pattern",
+              summary: "An idea that cannot enter the radar without its source.",
+              retrievedAt: "2026-09-01T12:00:00.000Z",
+              learnerRelevance: 0.5,
+              officialRecency: 0,
+              communityCorroboration: 0.4,
+              authority: "community_exploration",
+            },
+          ],
+        },
+      }),
+    ).toThrow(/dated community source/i);
+
+    expect(() =>
+      begin.execute({
+        topic: "Codex workflows",
+        contextPack: {
+          generatedAt: "2026-09-01T12:00:00.000Z",
+          lookbackDays: 30,
+          inspectedTaskCount: 0,
+          signals: [],
+          topicRadar: [
+            {
+              id: "stale-community-idea",
+              topic: "Old community pattern",
+              summary: "A source outside the momentum window must not affect ranking.",
+              retrievedAt: "2026-09-01T12:00:00.000Z",
+              learnerRelevance: 0.5,
+              officialRecency: 0,
+              communityCorroboration: 0.4,
+              authority: "community_exploration",
+              communitySources: [
+                {
+                  url: "https://community.example/old-pattern",
+                  publishedAt: "2026-07-01T12:00:00.000Z",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    ).toThrow(/previous 30 days/i);
+
+    act(() => {
+      begin.execute({
+        topic: "Codex workflows",
+        blueprintId: "codex_current_personalized_v1",
+        contextPack: {
+          generatedAt: "2026-09-01T12:00:00.000Z",
+          lookbackDays: 30,
+          inspectedTaskCount: 2,
+          signals: [
+            {
+              id: "raw-task-id-must-disappear",
+              summary: "The learner repeatedly asks for browser-based verification.",
+              kind: "preference",
+              confidence: 0.8,
+              observedAt: "2026-08-28T12:00:00.000Z",
+              sourceLabel: "Recent tasks",
+            },
+          ],
+          topicRadar: [
+            {
+              id: "lower",
+              topic: "Worktrees",
+              summary: "A lower-ranked official module.",
+              officialUrl: "https://learn.chatgpt.com/docs/app",
+              officialPublishedAt: "2026-08-20T12:00:00.000Z",
+              retrievedAt: "2026-09-01T12:00:00.000Z",
+              learnerRelevance: 0.2,
+              officialRecency: 0.4,
+              communityCorroboration: 0.2,
+              authority: "official",
+              communitySources: [
+                {
+                  url: "https://community.example/worktrees",
+                  publishedAt: "2026-08-25T12:00:00.000Z",
+                  publisher: "Community example",
+                },
+              ],
+            },
+            {
+              id: "higher",
+              topic: "Computer Use",
+              summary: "A highly relevant current module.",
+              officialUrl: "https://learn.chatgpt.com/docs/computer-use",
+              officialPublishedAt: "2026-08-28T12:00:00.000Z",
+              retrievedAt: "2026-09-01T12:00:00.000Z",
+              learnerRelevance: 1,
+              officialRecency: 0.8,
+              communityCorroboration: 0.5,
+              authority: "official",
+              communitySources: [
+                {
+                  url: "https://community.example/computer-use",
+                  publishedAt: "2026-08-30T12:00:00.000Z",
+                  publisher: "Community example",
+                },
+              ],
+            },
+          ],
+        },
+      });
+    });
+    expect(actions.getState().contextClaims[0]).toMatchObject({
+      id: "context-signal-1",
+      evidenceRef: "derived-task-summary:1",
+      review: "pending",
+    });
+    expect(JSON.stringify(actions.getState().contextClaims)).not.toContain(
+      "raw-task-id-must-disappear",
+    );
+    expect(actions.getState().topicRadar.map((signal) => signal.id)).toEqual([
+      "higher",
+      "lower",
+    ]);
+    expect(actions.getState().topicRadar[0]?.communitySources?.[0]).toMatchObject({
+      publishedAt: "2026-08-30T12:00:00.000Z",
+    });
+
+    window.localStorage.clear();
+    const fallback = renderHook(() => useLearningCanvas());
+    let fallbackNonce = "";
+    act(() => {
+      fallbackNonce = (
+        findTool(fallback.result.current.actions, "learn_begin_session").execute({
+          topic: "Linear functions",
+          blueprintId: "algebra_functions_v1",
+          personalizeFromRecentTasks: true,
+        }) as { nonce: string }
+      ).nonce;
+    });
+    expect(fallback.result.current.actions.getState().session.personalization).toBe(
+      "skipped",
+    );
+    expect(() =>
+      findTool(fallback.result.current.actions, "learn_prepare_lesson").execute({
+        nonce: fallbackNonce,
+        baseRevision: fallback.result.current.actions.getState().revision,
+        idempotencyKey: "history-unavailable-fallback-01",
+        blueprintId: "algebra_functions_v1",
+      }),
+    ).not.toThrow();
   });
 
   it("rotates native tool groups with abortable stage lifecycles", async () => {
@@ -96,7 +377,7 @@ describe("learn.ogram v3 WebMCP surface", () => {
       "ready",
       false,
     );
-    expect(registerTool).toHaveBeenCalledTimes(1);
+    expect(registerTool).toHaveBeenCalledTimes(3);
     const bootstrapSignal = registerTool.mock.calls[0]?.[1]?.signal as AbortSignal;
     expect(bootstrapSignal.aborted).toBe(false);
     bootstrap.cleanup();
@@ -117,7 +398,7 @@ describe("learn.ogram v3 WebMCP surface", () => {
       "context_review",
       true,
     );
-    expect(context.toolNames).toHaveLength(6);
+    expect(context.toolNames).toHaveLength(10);
     expect(context.toolNames).toContain("learn_prepare_lesson");
     expect(context.toolNames).not.toContain("learn_inject_widget");
     context.cleanup();
@@ -273,7 +554,7 @@ describe("learn.ogram v3 WebMCP surface", () => {
     ]);
   });
 
-  it("rejects publication without exact learner approval", () => {
+  it("rejects publication without exact learner approval", async () => {
     const { result } = renderHook(() => useLearningCanvas());
     const actions = result.current.actions;
     let nonce = "";
@@ -290,28 +571,29 @@ describe("learn.ogram v3 WebMCP surface", () => {
         nonce,
         baseRevision: actions.getState().revision,
         idempotencyKey: "prepare-exact-approval-01",
+        template: "transformer_technical_beginner",
       });
     });
     const state = actions.getState();
     expect(state.lesson.validation?.valid).toBe(true);
-    expect(() =>
+    await expect(
       findTool(actions, "learn_publish_lesson").execute({
         nonce,
         baseRevision: state.revision,
         draftRevision: state.lesson.draft!.revision,
         idempotencyKey: "publish-without-approval-01",
       }),
-    ).toThrow(/exact compiled revision/i);
+    ).rejects.toThrow(/exact compiled revision/i);
 
     act(() => actions.approveLesson(state.lesson.draft!.revision));
-    expect(() =>
+    await expect(
       findTool(actions, "learn_publish_lesson").execute({
         nonce,
         baseRevision: actions.getState().revision,
         draftRevision: state.lesson.draft!.revision + 1,
         idempotencyKey: "publish-wrong-revision-01",
       }),
-    ).toThrow(/exact compiled revision/i);
+    ).rejects.toThrow(/exact compiled revision/i);
   });
 
   it("shapes a lesson region by region before compiling the exact draft", () => {
@@ -518,7 +800,7 @@ describe("learn.ogram v3 WebMCP surface", () => {
     });
   });
 
-  it("restores the v3 notebook without restoring its nonce", () => {
+  it("restores the v4 notebook without restoring its nonce", () => {
     const first = renderHook(() => useLearningCanvas());
     act(() => {
       startPublishedTransformer(first.result.current.actions);
@@ -526,10 +808,14 @@ describe("learn.ogram v3 WebMCP surface", () => {
     first.unmount();
 
     const restored = renderHook(() => useLearningCanvas());
-    expect(restored.result.current.state.version).toBe(3);
+    expect(restored.result.current.state.version).toBe(4);
     expect(restored.result.current.state.session.stage).toBe("learning");
     expect(restored.result.current.actions.getNonce()).toBeNull();
-    expect(activeToolNames("learning", false)).toEqual(["learn_begin_session"]);
+    expect(activeToolNames("learning", false)).toEqual([
+      "learn_get_start_brief",
+      "learn_get_authoring_capabilities",
+      "learn_begin_session",
+    ]);
 
     let resumed = { resumed: false, nonce: "" };
     act(() => {
@@ -543,7 +829,7 @@ describe("learn.ogram v3 WebMCP surface", () => {
     });
     expect(resumed).toMatchObject({ resumed: true });
     expect(resumed.nonce).toMatch(/^session-nonce-/);
-    expect(activeToolNames("learning", true)).toHaveLength(11);
+    expect(activeToolNames("learning", true)).toHaveLength(15);
   });
 
   it("rejects oversized widget programs before changing the region", () => {
