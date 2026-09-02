@@ -87,9 +87,9 @@ That staged disclosure is important to the pitch. The number **15** is less pers
 ## Honest submission boundaries
 
 - There is no `.devpost-hackathon-state.json`, reviewed rules state, or official Devpost draft in this checkout. Run the guided hackathon start and rules-review steps before drafting submission copy.
-- The current V4 work is on `deep-UX-improvement`, while the public repository's default branch still points at an older prototype. Merge or change the default branch before sharing the source URL with judges.
+- The V4 candidate is merged into `staging` through PR #4, while the public repository's default branch may still point at an older prototype. Align the default branch or share the intended release branch explicitly before giving judges the source URL.
 - No production URL or public sub-three-minute demo video is recorded yet.
-- Cloudflare production work still needs owner eligibility/rules acknowledgment, authenticated Workers Paid/Containers access, staging resources, and a staging security/runtime smoke pass.
+- Cloudflare Workers Paid/Containers, staging resources, and the staging security/runtime smoke matrix passed on September 2; production work still needs the owner's eligibility/rules acknowledgment and an explicit promotion decision.
 - Run the Workbench audit and independent inspector on the production URL in a supported Chrome profile; capture the tool list, one successful end-to-end trace, one rejected unsafe/stale action, and a clean audit result.
 - Preserve the three-run Gemini report and rerun the agent suite against the production origin; review any real trajectory failures rather than tuning only for pass rate.
 - The tool name `learn_get_authoring_capabilities` exceeds the resource guide's 30-character recommendation, and large capability/session/snapshot results should be measured for pagination or summarization before release.

@@ -21,24 +21,28 @@ const healthResponse = await fetch(baseUrl + "/api/health");
 const health = await readJson(healthResponse);
 assert(health.schemaVersion === 4, "Worker health did not report schema V4.");
 
-const sessionResponse = await fetch(baseUrl + "/api/session");
-const session = await readJson(sessionResponse);
-const setCookie = sessionResponse.headers.get("set-cookie") || "";
-const cookie = setCookie.split(";")[0];
-assert(cookie.includes("ogram_guest_v1="), "Guest cookie was not issued.");
-assert(typeof session.csrfToken === "string", "CSRF token was not issued.");
+async function newSession() {
+  const response = await fetch(baseUrl + "/api/session");
+  const session = await readJson(response);
+  const setCookie = response.headers.get("set-cookie") || "";
+  const cookie = setCookie.split(";")[0];
+  assert(cookie.includes("ogram_guest_v1="), "Guest cookie was not issued.");
+  assert(typeof session.csrfToken === "string", "CSRF token was not issued.");
+  return {
+    cookie,
+    headers: {
+      "Content-Type": "application/json",
+      Origin: baseUrl,
+      Cookie: cookie,
+      "X-Learning-CSRF": session.csrfToken,
+    },
+  };
+}
 
-const mutationHeaders = {
-  "Content-Type": "application/json",
-  Origin: baseUrl,
-  Cookie: cookie,
-  "X-Learning-CSRF": session.csrfToken,
-};
-
-async function runFixture(language, exerciseId, source) {
+async function runFixture(session, language, exerciseId, source, expectedState) {
   const response = await fetch(baseUrl + "/api/code/run", {
     method: "POST",
-    headers: mutationHeaders,
+    headers: session.headers,
     body: JSON.stringify({ exerciseId, language, source }),
   });
   const result = await readJson(response);
@@ -53,8 +57,18 @@ async function runFixture(language, exerciseId, source) {
       result.evidence.sourceHash.length === 64,
     language + " fixture did not return a SHA-256 source hash.",
   );
+  assert(
+    result.sandboxState === expectedState,
+    language +
+      " fixture reported " +
+      result.sandboxState +
+      " instead of the expected " +
+      expectedState +
+      " state.",
+  );
   return {
     language,
+    phase: expectedState,
     status: result.evidence.status,
     tests: result.evidence.passedTests + "/" + result.evidence.totalTests,
     durationMs: result.durationMs,
@@ -62,46 +76,57 @@ async function runFixture(language, exerciseId, source) {
   };
 }
 
-const javascriptSource =
-  "export function sum(values) { return values.reduce((total, value) => total + value, 0); }";
+const fixtures = [
+  {
+    language: "javascript",
+    exerciseId: "fixture-js-sum-v1",
+    source:
+      "export function sum(values) { return values.reduce((total, value) => total + value, 0); }",
+  },
+  {
+    language: "typescript",
+    exerciseId: "fixture-ts-display-name-v1",
+    source:
+      "export function displayName(value: string | null): string { return value ?? \"Anonymous\"; }",
+  },
+  {
+    language: "python",
+    exerciseId: "fixture-python-positives-v1",
+    source:
+      "def positives(values):\n    return [value for value in values if value > 0]\n",
+  },
+];
+
 const results = [];
-results.push(
-  await runFixture(
-    "javascript",
-    "fixture-js-sum-v1",
-    javascriptSource,
-  ),
-);
-results.push(
-  await runFixture(
-    "typescript",
-    "fixture-ts-display-name-v1",
-    "export function displayName(value: string | null): string { return value ?? \"Anonymous\"; }",
-  ),
-);
-const warmResult = await runFixture(
-  "javascript",
-  "fixture-js-sum-v1",
-  javascriptSource,
-);
-assert(
-  warmResult.sandboxState === "warm",
-  "A repeated guest/exercise run did not reuse the warm sandbox.",
-);
-results.push({ ...warmResult, language: "javascript (repeat)" });
-results.push(
-  await runFixture(
-    "python",
-    "fixture-python-positives-v1",
-    "def positives(values):\n    return [value for value in values if value > 0]\n",
-  ),
-);
+let mediaSession;
+for (const fixture of fixtures) {
+  const session = await newSession();
+  mediaSession ||= session;
+  results.push(
+    await runFixture(
+      session,
+      fixture.language,
+      fixture.exerciseId,
+      fixture.source,
+      "cold",
+    ),
+  );
+  results.push(
+    await runFixture(
+      session,
+      fixture.language,
+      fixture.exerciseId,
+      fixture.source,
+      "warm",
+    ),
+  );
+}
 
 const mediaSource =
   process.env.LEARNING_MEDIA_URL || "https://httpbin.org/image/png";
 const mediaResponse = await fetch(baseUrl + "/api/assets/import", {
   method: "POST",
-  headers: mutationHeaders,
+  headers: mediaSession.headers,
   body: JSON.stringify({
     lessonId: "worker-smoke-media-v4",
     url: mediaSource,
@@ -120,7 +145,7 @@ assert(
   "Governed media did not return a content hash.",
 );
 const servedMediaResponse = await fetch(baseUrl + media.asset.url, {
-  headers: { Cookie: cookie },
+  headers: { Cookie: mediaSession.cookie },
 });
 assert(servedMediaResponse.ok, "Governed media could not be read back from R2.");
 const servedMedia = new Uint8Array(await servedMediaResponse.arrayBuffer());
@@ -135,7 +160,7 @@ const referencesResponse = await fetch(
   baseUrl + "/api/lesson-references/validate",
   {
     method: "POST",
-    headers: mutationHeaders,
+    headers: mediaSession.headers,
     body: JSON.stringify({
       assetIds: [media.asset.id],
       exerciseIds: [

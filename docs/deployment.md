@@ -136,11 +136,40 @@ npm run smoke:security
 
 Do not mark the smoke-test gate complete from unit tests or a Wrangler dry run; it requires the deployed custom container.
 
+The happy-path and adversarial scripts intentionally use five isolated
+guest/exercise sandboxes in total. With `max_instances: 10` and `sleepAfter: 10m`, run
+at most two full matrices back-to-back or wait for the ten-minute leases to expire
+before repeating them; otherwise a third matrix can wait for container capacity.
+
 ## 6. Browser acceptance
 
 Use a new profile in both supported hosts. Complete the personalized Codex path, algebra remediation path, one code lab per language, governed media, and migrated transformer session. Confirm keyboard navigation, MathML, diagram descriptions, transcripts/captions, failed-rich-content fallbacks, immutable evidence, and hidden unselected branches.
 
 After acceptance, record the deployment URL, commit SHA, UTC verification time, browser versions, Sandbox cold/warm timings, and tester initials in the release notes or submission record.
+
+## Verified staging release — September 2, 2026
+
+- Origin: `https://ogram-learning-canvas-staging.ervaucher.workers.dev`
+- Worker version: `259d3f54-9db9-4377-bf1d-5984c4f9ea7e`
+- Verification completed: `2026-09-02T18:58:18Z`
+- D1: `ogram-learning-canvas-staging-db`
+- R2: `ogram-learning-canvas-staging-lesson-media`
+- Container application: `ogram-learning-canvas-staging-learningsandbox-staging`
+- Secret: `GUEST_SIGNING_KEY` confirmed by name only; its value was never printed or stored
+
+`npm run deploy:staging:bootstrap` built and published the image, applied
+`0001_v4_runtime.sql`, and completed the final deploy. The live smoke evidence was:
+
+| Check | Result |
+|---|---|
+| Health | `status: ok`, schema v4, Assets/D1/R2/Sandbox present |
+| Cookie + CSRF | `HttpOnly`, `Secure`, `SameSite=Strict`; missing-token mutation rejected with 403 |
+| JavaScript | 3/3 tests; cold 2953 ms, warm 362 ms |
+| TypeScript | 2/2 tests; cold 13630 ms, warm 1094 ms |
+| Python | 2/2 tests; cold 3518 ms, warm 353 ms |
+| Governed media | 8090-byte PNG verified, stored in R2, read back, and accepted as a lesson reference |
+| Adversarial | All 13 checks passed, including isolation, reset, limits, concurrency, and rolling quota |
+| In-app browser | Correct identity/tools/content, no error overlay or browser logs, and the quantitative starter updated the brief |
 
 ## Rollback
 
