@@ -263,15 +263,14 @@ describe("learn.ogram v4", () => {
     });
 
     expect(screen.getByText(/writes javascript but is new/i)).toBeInTheDocument();
-    expect(screen.getByText(/twenty-minute study window/i)).toBeInTheDocument();
-    const useButtons = screen.getAllByRole("button", { name: /use this/i });
-    expect(useButtons).toHaveLength(2);
-    const correctButtons = screen.getAllByRole("button", {
+    expect(screen.queryByText(/twenty-minute study window/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/proposal 1 of 2/i)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /use this/i })).toHaveLength(1);
+    const correctButton = screen.getByRole("button", {
       name: /correct before using/i,
     });
-    expect(correctButtons).toHaveLength(2);
-    expect(screen.getAllByRole("button", { name: /don’t use/i })).toHaveLength(2);
-    fireEvent.click(correctButtons[0]!);
+    expect(screen.getAllByRole("button", { name: /don’t use/i })).toHaveLength(1);
+    fireEvent.click(correctButton);
     fireEvent.change(
       screen.getByRole("textbox", { name: /correct this learning signal/i }),
       {
@@ -284,10 +283,13 @@ describe("learn.ogram v4", () => {
     fireEvent.click(
       screen.getByRole("button", { name: /save correction \+ use/i }),
     );
-    fireEvent.click(useButtons[1]!);
+    expect(screen.getByText(/twenty-minute study window/i)).toBeInTheDocument();
+    expect(screen.getByText(/proposal 2 of 2/i)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /use this/i })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: /use this/i }));
 
-    expect(screen.getByText(/writes typescript and wants a concise/i)).toBeInTheDocument();
-    expect(screen.getByText(/corrected \+ approved/i)).toBeInTheDocument();
+    expect(screen.getByText(/your context choices are complete/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 approved · 0 left out/i)).toBeInTheDocument();
 
     const context = tool("learn_get_context").execute({ nonce }) as {
       acceptedClaimIds: string[];
@@ -298,6 +300,94 @@ describe("learn.ogram v4", () => {
       "claim-coding-baseline",
       "claim-time-box",
     ]);
+  });
+
+  it("ends on a clear completion screen after the final required response", async () => {
+    render(<App />);
+    await waitFor(() => expect(window.__OGRAM_WEBMCP_TOOLS__).toBeDefined());
+    let nonce = "";
+    await act(async () => {
+      nonce = (
+        tool("learn_begin_session").execute({ topic: "How transformers work" }) as {
+          nonce: string;
+        }
+      ).nonce;
+    });
+    await waitFor(() =>
+      expect(window.__OGRAM_WEBMCP_TOOLS__?.learn_get_session).toBeDefined(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue without personal context/i }),
+    );
+
+    const beforeDraft = tool("learn_get_session").execute({ nonce }) as {
+      revision: number;
+    };
+    await act(async () => {
+      tool("learn_prepare_lesson").execute({
+        nonce,
+        baseRevision: beforeDraft.revision,
+        idempotencyKey: "prepare-completion-ui-01",
+        template: "transformer_technical_beginner",
+      });
+    });
+    fireEvent.click(screen.getByRole("button", { name: /approve this lesson/i }));
+
+    await waitFor(() =>
+      expect(window.__OGRAM_WEBMCP_TOOLS__?.learn_get_session).toBeDefined(),
+    );
+    const approved = tool("learn_get_session").execute({ nonce }) as {
+      revision: number;
+      lesson: { draftRevision: number };
+    };
+    await act(async () => {
+      tool("learn_publish_lesson").execute({
+        nonce,
+        baseRevision: approved.revision,
+        draftRevision: approved.lesson.draftRevision,
+        idempotencyKey: "publish-completion-ui-01",
+      });
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /show practice scene 2 of 2/i }),
+    );
+    const choiceHeading = screen.getByRole("heading", {
+      name: /what is the model trained to produce/i,
+    });
+    const choiceBox = choiceHeading.closest(".learner-interaction");
+    if (!choiceBox) throw new Error("Expected the choice interaction.");
+    fireEvent.click(
+      within(choiceBox as HTMLElement).getByRole("radio", {
+        name: /probability distribution for the next token/i,
+      }),
+    );
+    fireEvent.click(
+      within(choiceBox as HTMLElement).getByRole("button", { name: /save my answer/i }),
+    );
+    expect(screen.queryByRole("heading", { name: /you finished the lesson/i })).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /show reflect scene 2 of 2/i }),
+    );
+    const reflectionHeading = screen.getByRole("heading", {
+      name: /how does a transformer turn text into a next-token prediction/i,
+    });
+    const reflectionBox = reflectionHeading.closest(".learner-interaction");
+    if (!reflectionBox) throw new Error("Expected the reflection interaction.");
+    fireEvent.change(within(reflectionBox as HTMLElement).getByRole("textbox"), {
+      target: {
+        value:
+          "Text becomes tokens and vectors; attention gathers relevant context through repeated blocks before the model predicts a distribution for the next token.",
+      },
+    });
+    fireEvent.click(
+      within(reflectionBox as HTMLElement).getByRole("button", { name: /save my answer/i }),
+    );
+
+    expect(screen.getByRole("heading", { name: /you finished the lesson/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start a new lesson/i })).toBeInTheDocument();
+    expect(screen.getByText(/lesson complete · evidence saved/i)).toBeInTheDocument();
   });
 
   it("renders progressive lesson construction as each region arrives", async () => {
@@ -337,7 +427,8 @@ describe("learn.ogram v4", () => {
       firstRegionId = started.regionIds[0]!;
     });
 
-    expect(screen.getByText(/0\/6 sections ready/i)).toBeInTheDocument();
+    expect(screen.getByText(/0 of 6 sections ready/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/folded notebook preview/i)).toBeInTheDocument();
     expect(screen.getByText(/new sections will appear here one by one/i)).toBeInTheDocument();
     expect(screen.queryByText(/json|catalog|region commits|governed components/i)).not.toBeInTheDocument();
 
@@ -353,13 +444,9 @@ describe("learn.ogram v4", () => {
       });
     });
 
-    expect(screen.getByText(/1\/6 sections ready/i)).toBeInTheDocument();
-    expect(await screen.findByText("The job in one sentence")).toBeInTheDocument();
-    await waitFor(() =>
-      expect(
-        document.querySelector('[data-json-render="ogram.learning.v1"]'),
-      ).toBeInTheDocument(),
-    );
-    expect(screen.getByLabelText("Ready")).toBeInTheDocument();
+    expect(screen.getByText(/1 of 6 sections ready/i)).toBeInTheDocument();
+    expect(await screen.findByText(/now shaping tokens become vectors/i)).toBeInTheDocument();
+    expect(document.querySelector('[data-json-render="ogram.learning.v1"]')).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".folded-notebook__sections li.is-ready")).toHaveLength(1);
   });
 });

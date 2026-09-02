@@ -63,6 +63,26 @@ interface LearningNotebookProps {
   registrationError: string | null;
 }
 
+function getLessonCompletion(state: AgentLearningCanvasState) {
+  if (state.session.stage !== "learning" || !state.lesson.draft) {
+    return { complete: false, evidenceSaved: 0, evidenceTotal: 0, sectionTotal: 0 };
+  }
+  const path = resolveLessonPath(state.lesson.draft, state.regions);
+  const visibleSet = new Set(path.visibleRegionIds);
+  const visibleRegions = state.regions.filter((region) => visibleSet.has(region.id));
+  const evidenceRegions = visibleRegions.filter((region) => region.interaction);
+  const evidenceSaved = evidenceRegions.filter((region) => region.response).length;
+  return {
+    complete:
+      evidenceRegions.length > 0 &&
+      evidenceSaved === evidenceRegions.length &&
+      path.lockedRegionIds.length === 0,
+    evidenceSaved,
+    evidenceTotal: evidenceRegions.length,
+    sectionTotal: visibleRegions.length,
+  };
+}
+
 function AgentBridge({
   registration,
   working,
@@ -128,6 +148,7 @@ function AppHeader({
   registration: NotebookRegistration;
   actions: CanvasActions;
 }) {
+  const lessonComplete = getLessonCompletion(state).complete;
   const stageLabel =
     state.session.stage === "ready"
       ? "Personal learning canvas"
@@ -135,7 +156,9 @@ function AppHeader({
         ? "Choose what shapes the lesson"
         : state.session.stage === "lesson_review"
           ? "Review your lesson"
-          : "Your lesson";
+          : lessonComplete
+            ? "Lesson complete"
+            : "Your lesson";
   return (
     <header className="app-header">
       <a className="wordmark" href="#main-canvas" aria-label="learn.ogram — skip to canvas">
@@ -677,6 +700,71 @@ function NotebookOutline({
   );
 }
 
+function FoldedNotebookPreview({
+  title,
+  regions,
+  activelyShaping,
+}: {
+  title: string;
+  regions: CanvasRegion[];
+  activelyShaping: boolean;
+}) {
+  const shaped = regions.filter((region) => region.status !== "skeleton").length;
+  const activeRegion =
+    regions.find((region) => region.status === "skeleton") ?? regions.at(-1);
+  const complete = regions.length > 0 && shaped === regions.length;
+
+  return (
+    <section className="folded-notebook" aria-label="Folded notebook preview">
+      <i className="folded-notebook__page folded-notebook__page--back" aria-hidden="true" />
+      <i className="folded-notebook__page folded-notebook__page--middle" aria-hidden="true" />
+      <div className="folded-notebook__cover">
+        <div className="folded-notebook__topline">
+          <span>Notebook preview · folded</span>
+          <span>{String(regions.length).padStart(2, "0")} sections</span>
+        </div>
+        <div className="folded-notebook__title">
+          <span aria-hidden="true">{complete ? "✓" : "↗"}</span>
+          <div>
+            <strong>{title}</strong>
+            <p>
+              {complete
+                ? "Every section is ready for your review."
+                : activelyShaping
+                  ? `Now shaping ${activeRegion?.title ?? "the next section"}.`
+                  : "The section plan will appear here without opening the notebook."}
+            </p>
+          </div>
+        </div>
+        <ol className="folded-notebook__sections" aria-label="Section readiness">
+          {regions.map((region) => (
+            <li
+              key={region.id}
+              className={
+                region.status !== "skeleton"
+                  ? "is-ready"
+                  : region.id === activeRegion?.id && activelyShaping
+                    ? "is-active"
+                    : ""
+              }
+              title={region.title}
+            >
+              <span>{String(region.order).padStart(2, "0")}</span>
+              <span className="sr-only">
+                {region.title} · {region.status !== "skeleton" ? "ready" : "waiting"}
+              </span>
+            </li>
+          ))}
+        </ol>
+        <div className="folded-notebook__progress">
+          <span>{shaped} of {regions.length} ready</span>
+          <span aria-hidden="true"><i style={{ width: `${regions.length ? (shaped / regions.length) * 100 : 0}%` }} /></span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ConstructionActivity({
   regions,
   constructionStarted,
@@ -730,9 +818,13 @@ function ContextReview({ state, actions }: { state: AgentLearningCanvasState; ac
   const [error, setError] = useState<string | null>(null);
   const pending = state.contextClaims.filter((claim) => claim.review === "pending");
   const reviewed = state.contextClaims.filter((claim) => claim.review !== "pending");
+  const currentClaim = pending[0];
+  const accepted = reviewed.filter(
+    (claim) => claim.review === "accepted" || claim.review === "corrected",
+  ).length;
+  const rejected = reviewed.filter((claim) => claim.review === "rejected").length;
   const construction = state.lesson.construction;
   const previewRegions = construction?.regions ?? state.regions;
-  const shapedRegions = previewRegions.filter((region) => region.status !== "skeleton").length;
   const skip = () => {
     try {
       setError(null);
@@ -753,10 +845,53 @@ function ContextReview({ state, actions }: { state: AgentLearningCanvasState; ac
         </p>
 
         {state.contextClaims.length ? (
-          <div className="context-list">
-            {[...pending, ...reviewed].map((claim) => (
-              <ContextCard key={claim.id} claim={claim} actions={actions} />
-            ))}
+          <div className="context-decision">
+            <div className="context-decision__progress">
+              <div>
+                <span>Context review</span>
+                <strong>
+                  {currentClaim
+                    ? `Proposal ${reviewed.length + 1} of ${state.contextClaims.length}`
+                    : "All proposals decided"}
+                </strong>
+              </div>
+              <ol aria-label="Context proposal progress">
+                {state.contextClaims.map((claim, index) => (
+                  <li
+                    key={claim.id}
+                    className={
+                      claim.review === "pending"
+                        ? claim.id === currentClaim?.id
+                          ? "is-current"
+                          : ""
+                        : claim.review === "rejected"
+                          ? "is-rejected"
+                          : "is-approved"
+                    }
+                  >
+                    <span className="sr-only">
+                      Proposal {index + 1}: {claim.review === "pending" ? "waiting" : claim.review}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+            {currentClaim ? (
+              <div className="context-decision__card" key={currentClaim.id}>
+                <ContextCard claim={currentClaim} actions={actions} />
+              </div>
+            ) : (
+              <div className="context-decision__summary" role="status">
+                <span aria-hidden="true">✓</span>
+                <div>
+                  <strong>Your context choices are complete.</strong>
+                  <p>
+                    {accepted} approved · {rejected} left out. The lesson will only use the
+                    signals you approved.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="consent-empty">
@@ -792,25 +927,89 @@ function ContextReview({ state, actions }: { state: AgentLearningCanvasState; ac
       </section>
       <aside className="preparation-preview">
         <div className="preview-heading">
-          <span>{construction?.document.title ?? "Notebook preview"}</span>
-          <span>
-            {construction
-              ? `${shapedRegions}/${previewRegions.length} sections ready`
-              : state.session.topic}
-          </span>
+          <span>Notebook preview</span>
+          <span>{state.session.topic}</span>
         </div>
         <ConstructionActivity
           regions={previewRegions}
           constructionStarted={Boolean(construction)}
           contextReady={pending.length === 0 && state.session.personalization !== "undecided"}
         />
-        <NotebookOutline
+        <FoldedNotebookPreview
+          title={construction?.document.title ?? state.session.topic ?? "Your lesson"}
           regions={previewRegions}
-          mode="shaping"
           activelyShaping={Boolean(construction)}
         />
       </aside>
     </main>
+  );
+}
+
+function LessonReviewPager({ regions }: { regions: LessonRegion[] }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const safeIndex = Math.min(activeIndex, Math.max(0, regions.length - 1));
+  const activeRegion = regions[safeIndex];
+
+  useEffect(() => {
+    setActiveIndex((current) => Math.min(current, Math.max(0, regions.length - 1)));
+  }, [regions.length]);
+
+  if (!activeRegion) return null;
+
+  return (
+    <div className="lesson-review-pager">
+      <nav className="lesson-review-pager__steps" aria-label="Lesson sections">
+        {regions.map((region, index) => (
+          <button
+            key={region.id}
+            type="button"
+            className={index === safeIndex ? "is-active" : ""}
+            aria-current={index === safeIndex ? "step" : undefined}
+            aria-label={`Review section ${index + 1}: ${region.title}`}
+            onClick={() => setActiveIndex(index)}
+          >
+            {String(index + 1).padStart(2, "0")}
+          </button>
+        ))}
+      </nav>
+      <article className="lesson-review-pager__card" key={activeRegion.id}>
+        <div>
+          <span>{activeRegion.label}</span>
+          <span>{activeRegion.kind}</span>
+        </div>
+        <h2>{activeRegion.title}</h2>
+        <p>{activeRegion.objective}</p>
+        <dl>
+          <div>
+            <dt>Screen</dt>
+            <dd>{safeIndex + 1} of {regions.length}</dd>
+          </div>
+          <div>
+            <dt>Format</dt>
+            <dd>{activeRegion.content.length} learning scene{activeRegion.content.length === 1 ? "" : "s"}{activeRegion.interaction ? " + practice" : ""}</dd>
+          </div>
+        </dl>
+      </article>
+      <div className="lesson-review-pager__controls">
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={safeIndex === 0}
+          onClick={() => setActiveIndex((current) => Math.max(0, current - 1))}
+        >
+          ← Previous
+        </button>
+        <span>{String(safeIndex + 1).padStart(2, "0")} / {String(regions.length).padStart(2, "0")}</span>
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={safeIndex === regions.length - 1}
+          onClick={() => setActiveIndex((current) => Math.min(regions.length - 1, current + 1))}
+        >
+          Next →
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -866,7 +1065,7 @@ function LessonReview({ state, actions }: { state: AgentLearningCanvasState; act
           <span id="outline-title">Lesson structure</span>
           <span>{draft.regions.length} sections</span>
         </div>
-        <NotebookOutline regions={draft.regions} mode="review" />
+        <LessonReviewPager regions={draft.regions} />
       </section>
     </main>
   );
@@ -1034,25 +1233,246 @@ const lessonSceneLabels: Record<LessonSceneType, string> = {
   interaction: "Practice",
 };
 
+interface LessonSceneSeed {
+  id: string;
+  label: string;
+  type: LessonSceneType;
+  block: RegionContent;
+}
+
+function splitTextForScreens(text: string, characterBudget = 480): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return [""];
+  const parts: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    if (!current) {
+      current = word;
+      continue;
+    }
+    if (current.length + word.length + 1 <= characterBudget) {
+      current += ` ${word}`;
+      continue;
+    }
+    parts.push(current);
+    current = word;
+  }
+  if (current) parts.push(current);
+  return parts;
+}
+
+function chunkForScreens<Value>(
+  values: Value[],
+  maximumItems: number,
+  characterBudget: number,
+  weight: (value: Value) => number,
+): Value[][] {
+  const chunks: Value[][] = [];
+  let current: Value[] = [];
+  let currentWeight = 0;
+
+  for (const value of values) {
+    const valueWeight = weight(value);
+    if (
+      current.length &&
+      (current.length >= maximumItems || currentWeight + valueWeight > characterBudget)
+    ) {
+      chunks.push(current);
+      current = [];
+      currentWeight = 0;
+    }
+    current.push(value);
+    currentWeight += valueWeight;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
+function sceneSeedsForBlock(block: RegionContent, blockIndex: number): LessonSceneSeed[] {
+  const id = `${block.type}-${blockIndex}`;
+
+  if (block.type === "prose") {
+    const textParts = splitTextForScreens(block.text);
+    const emphasisParts = block.emphasis
+      ? splitTextForScreens(block.emphasis, 300)
+      : [];
+    const textSeeds = textParts.map((text, index) => ({
+      id: `${id}-text-${index}`,
+      label: textParts.length > 1 ? `Concept ${index + 1}` : "Concept",
+      type: "prose" as const,
+      block: {
+        type: "prose" as const,
+        text,
+        ...(index === 0 && block.heading ? { heading: block.heading } : {}),
+        ...(index === textParts.length - 1 && emphasisParts.length === 1
+          ? { emphasis: emphasisParts[0] }
+          : {}),
+      },
+    }));
+    const emphasisSeeds = emphasisParts.length > 1
+      ? emphasisParts.map((emphasis, index) => ({
+          id: `${id}-takeaway-${index}`,
+          label: emphasisParts.length > 1 ? `Takeaway ${index + 1}` : "Takeaway",
+          type: "prose" as const,
+          block: {
+            type: "prose" as const,
+            text: "",
+            ...(index === 0 ? { heading: "Key takeaway" } : {}),
+            emphasis,
+          },
+        }))
+      : [];
+    return [...textSeeds, ...emphasisSeeds];
+  }
+
+  if (block.type === "key_points") {
+    const chunks = chunkForScreens(block.items, 3, 360, (item) => item.length);
+    return chunks.map((items, index) => ({
+      id: `${id}-${index}`,
+      label: chunks.length > 1 ? `Essentials ${index + 1}` : "Essentials",
+      type: block.type,
+      block: { ...block, items },
+    }));
+  }
+
+  if (block.type === "token_sequence") {
+    const chunks = chunkForScreens(block.tokens, 8, 120, (token) => token.length);
+    let tokenOffset = 0;
+    return chunks.map((tokens, index) => {
+      const highlightedIndex =
+        block.highlightedIndex !== undefined &&
+        block.highlightedIndex >= tokenOffset &&
+        block.highlightedIndex < tokenOffset + tokens.length
+          ? block.highlightedIndex - tokenOffset
+          : undefined;
+      tokenOffset += tokens.length;
+      return {
+        id: `${id}-${index}`,
+        label: chunks.length > 1 ? `Tokens ${index + 1}` : "Tokens",
+        type: block.type,
+        block: {
+          ...block,
+          tokens,
+          highlightedIndex,
+          caption: chunks.length > 1
+            ? `${block.caption} · part ${index + 1} of ${chunks.length}`
+            : block.caption,
+        },
+      };
+    });
+  }
+
+  if (block.type === "transformer_stack") {
+    const chunks = chunkForScreens(
+      block.stages,
+      4,
+      420,
+      (stage) => stage.label.length + stage.detail.length,
+    );
+    return chunks.map((stages, index) => ({
+      id: `${id}-${index}`,
+      label: chunks.length > 1 ? `Block ${index + 1}` : "Block",
+      type: block.type,
+      block: {
+        ...block,
+        stages,
+        caption: chunks.length > 1
+          ? `${block.caption} · part ${index + 1} of ${chunks.length}`
+          : block.caption,
+      },
+    }));
+  }
+
+  if (block.type === "comparison") {
+    const chunks = chunkForScreens(
+      block.rows,
+      2,
+      520,
+      (row) => row.label.length + row.left.length + row.right.length,
+    );
+    return chunks.map((rows, index) => ({
+      id: `${id}-${index}`,
+      label: chunks.length > 1 ? `Compare ${index + 1}` : "Compare",
+      type: block.type,
+      block: { ...block, rows },
+    }));
+  }
+
+  if (block.type === "source_cards") {
+    const overviewParts = splitTextForScreens(block.summary);
+    const overview: LessonSceneSeed[] = overviewParts.map((text, index) => ({
+      id: `${id}-overview-${index}`,
+      label: overviewParts.length > 1 ? `Research ${index + 1}` : "Research",
+      type: "prose",
+      block: {
+        type: "prose",
+        ...(index === 0 ? { heading: "Research synthesis" } : {}),
+        text,
+      },
+    }));
+    const sources: LessonSceneSeed[] = block.sources.map((source, index) => ({
+      id: `${id}-source-${index}`,
+      label: `Source ${index + 1}`,
+      type: block.type,
+      block: {
+        ...block,
+        summary: `Reference ${index + 1} of ${block.sources.length}`,
+        sources: [source],
+      },
+    }));
+    return [...overview, ...sources];
+  }
+
+  if (block.type === "code_example") {
+    const lines = block.code.split("\n");
+    const chunks = chunkForScreens(lines, 12, 1_800, (line) => line.length);
+    let lineOffset = 0;
+    return chunks.map((codeLines, index) => {
+      const startLine = lineOffset + 1;
+      const endLine = lineOffset + codeLines.length;
+      const highlightedLines = block.highlightedLines
+        ?.filter((line) => line >= startLine && line <= endLine)
+        .map((line) => line - lineOffset);
+      lineOffset = endLine;
+      return {
+        id: `${id}-${index}`,
+        label: chunks.length > 1 ? `Code ${index + 1}` : "Code",
+        type: block.type,
+        block: {
+          ...block,
+          code: codeLines.join("\n"),
+          highlightedLines,
+          caption: chunks.length > 1
+            ? `${block.caption} · lines ${startLine}–${endLine}`
+            : block.caption,
+        },
+      };
+    });
+  }
+
+  return [{ id, label: lessonSceneLabels[block.type], type: block.type, block }];
+}
+
 function buildLessonScenes(region: CanvasRegion): LessonScene[] {
-  const labelTotals = region.content.reduce<Record<string, number>>((totals, block) => {
-    const label = lessonSceneLabels[block.type];
-    totals[label] = (totals[label] ?? 0) + 1;
+  const seeds = region.content.flatMap((block, index) => sceneSeedsForBlock(block, index));
+  const labelTotals = seeds.reduce<Record<string, number>>((totals, seed) => {
+    totals[seed.label] = (totals[seed.label] ?? 0) + 1;
     return totals;
   }, {});
   const labelOccurrences: Record<string, number> = {};
-  const contentScenes = region.content.map((block, index) => {
-    const baseLabel = lessonSceneLabels[block.type];
+  const contentScenes = seeds.map((seed) => {
+    const baseLabel = seed.label;
     labelOccurrences[baseLabel] = (labelOccurrences[baseLabel] ?? 0) + 1;
     const label =
       labelTotals[baseLabel]! > 1
         ? `${baseLabel} ${labelOccurrences[baseLabel]}`
         : baseLabel;
     return {
-      id: `${region.id}-${block.type}-${index}`,
+      id: `${region.id}-${seed.id}`,
       label,
-      type: block.type,
-      blocks: [block],
+      type: seed.type,
+      blocks: [seed.block],
       interaction: false,
     };
   });
@@ -1150,7 +1570,7 @@ function RegionSection({
             <span>{scene?.label ?? "Section"}</span>
             <span>of {String(scenes.length).padStart(2, "0")}</span>
           </span>
-          <div className="lesson-scene-nav__steps">
+          <div className={`lesson-scene-nav__steps ${scenes.length > 4 ? "is-condensed" : ""}`}>
             {scenes.map((item, index) => (
               <button
                 key={item.id}
@@ -1394,6 +1814,56 @@ function LessonSlot({
   );
 }
 
+function LessonCompletionSlot({
+  title,
+  sectionTotal,
+  evidenceTotal,
+  actions,
+  onReview,
+}: {
+  title: string;
+  sectionTotal: number;
+  evidenceTotal: number;
+  actions: CanvasActions;
+  onReview: () => void;
+}) {
+  return (
+    <div
+      id="lesson-complete"
+      className="lesson-slot lesson-completion-slot"
+      data-panel-mode="completion"
+    >
+      <div className="lesson-panel lesson-completion-panel">
+        <section className="lesson-completion" aria-labelledby="lesson-completion-title">
+          <div className="lesson-completion__mark" aria-hidden="true">
+            <span>✓</span>
+            <i />
+          </div>
+          <p className="eyebrow">Lesson complete · evidence saved</p>
+          <h2 id="lesson-completion-title">You finished the lesson.</h2>
+          <p className="lesson-completion__lede">
+            “{title}” is complete. Your decisions and answers remain in this notebook until
+            you choose to begin another lesson.
+          </p>
+          <dl className="lesson-completion__facts">
+            <div><dt>Sections</dt><dd>{sectionTotal}</dd></div>
+            <div><dt>Evidence saved</dt><dd>{evidenceTotal}</dd></div>
+            <div><dt>Progress</dt><dd>100%</dd></div>
+          </dl>
+          <div className="lesson-completion__actions">
+            <button type="button" className="primary-button" onClick={actions.reset}>
+              Start a new lesson
+            </button>
+            <button type="button" className="secondary-button" onClick={onReview}>
+              Review this lesson
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; actions: CanvasActions }) {
   const notebookRef = useRef<HTMLDivElement>(null);
   const conceptMapRef = useRef<HTMLElement>(null);
@@ -1432,6 +1902,11 @@ function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; a
   const progress = evidenceRegions.length
     ? Math.round((answered / evidenceRegions.length) * 100)
     : 0;
+  const completion = useMemo(
+    () => getLessonCompletion(state),
+    [state.lesson.draft, state.regions, state.session.stage],
+  );
+  const completionWasRevealed = useRef(false);
 
   useEffect(() => {
     if (
@@ -1561,6 +2036,28 @@ function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; a
     });
   }, [state.focus.regionId]);
 
+  useEffect(() => {
+    if (!completion.complete) {
+      completionWasRevealed.current = false;
+      return;
+    }
+    if (completionWasRevealed.current) return;
+    completionWasRevealed.current = true;
+    const frame = window.requestAnimationFrame(() => {
+      const slot = document.getElementById("lesson-complete");
+      if (!slot) return;
+      const mapRect = conceptMapRef.current?.getBoundingClientRect();
+      const compactMapHeight = mapRect && mapRect.height <= 120 ? mapRect.height : 0;
+      window.scrollTo({
+        top: window.scrollY + slot.getBoundingClientRect().top - compactMapHeight - PANEL_TOP_GAP,
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [completion.complete]);
+
   const navigate = (regionId: string) => {
     actions.focusRegion(regionId);
     const slot = document.getElementById(`region-${regionId}`);
@@ -1571,6 +2068,22 @@ function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; a
       top: window.scrollY + slot.getBoundingClientRect().top - compactMapHeight - PANEL_TOP_GAP,
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
     });
+  };
+
+  const navigateCompletion = () => {
+    const slot = document.getElementById("lesson-complete");
+    if (!slot) return;
+    const mapRect = conceptMapRef.current?.getBoundingClientRect();
+    const compactMapHeight = mapRect && mapRect.height <= 120 ? mapRect.height : 0;
+    window.scrollTo({
+      top: window.scrollY + slot.getBoundingClientRect().top - compactMapHeight - PANEL_TOP_GAP,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  };
+
+  const reviewLesson = () => {
+    const firstRegion = visibleRegions[0];
+    if (firstRegion) navigate(firstRegion.id);
   };
 
   return (
@@ -1618,6 +2131,14 @@ function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; a
                 </button>
               </li>
             ))}
+            {completion.complete ? (
+              <li className="is-complete lesson-completion-nav">
+                <button type="button" onClick={navigateCompletion}>
+                  <span>✓</span>
+                  <span>Lesson complete</span>
+                </button>
+              </li>
+            ) : null}
           </ol>
         </nav>
         <div className="concept-map__progress">
@@ -1647,11 +2168,22 @@ function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; a
               chromeCollapsed={chromeCollapsed}
             />
           ))}
+          {completion.complete ? (
+            <LessonCompletionSlot
+              title={state.lesson.draft?.title ?? state.session.topic ?? "Your lesson"}
+              sectionTotal={completion.sectionTotal}
+              evidenceTotal={completion.evidenceTotal}
+              actions={actions}
+              onReview={reviewLesson}
+            />
+          ) : null}
         </div>
-        <footer className="notebook-end">
-          <span>End of notebook</span>
-          <p>Keep the conversation open. A natural question can reshape any focused region without restarting your learning path.</p>
-        </footer>
+        {!completion.complete ? (
+          <footer className="notebook-end">
+            <span>End of notebook</span>
+            <p>Keep the conversation open. A natural question can reshape any focused region without restarting your learning path.</p>
+          </footer>
+        ) : null}
       </div>
     </main>
   );

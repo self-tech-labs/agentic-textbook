@@ -410,7 +410,7 @@ const { registry: learningContentRegistry } = defineRegistry(learningContentCata
     Prose: ({ props }) => (
       <div className="prose-block">
         {props.heading ? <h3>{props.heading}</h3> : null}
-        <p>{props.text}</p>
+        {props.text ? <p>{props.text}</p> : null}
         {props.emphasis ? <blockquote>{props.emphasis}</blockquote> : null}
       </div>
     ),

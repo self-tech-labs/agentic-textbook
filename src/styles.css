@@ -746,12 +746,12 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 .preparation-layout {
   display: grid;
   grid-template-columns: minmax(400px, 0.95fr) minmax(440px, 1.05fr);
-  min-height: calc(100vh - var(--app-header-height));
+  min-height: calc(100svh - var(--app-header-height));
 }
 
 .context-review {
   min-width: 0;
-  padding: clamp(50px, 6vw, 90px) clamp(32px, 6vw, 90px);
+  padding: clamp(38px, 5svh, 72px) clamp(32px, 6vw, 90px);
   background: var(--paper);
   border-right: 1px solid var(--line);
 }
@@ -822,6 +822,113 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
   font-family: "Iowan Old Style", "Palatino Linotype", Baskerville, Georgia, serif;
   font-size: 19px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.context-decision {
+  max-width: 680px;
+  background: #fff;
+  border: 1px solid #bbb7ab;
+  box-shadow: 7px 7px 0 rgba(23, 75, 56, 0.08);
+}
+
+.context-decision__progress {
+  display: flex;
+  justify-content: space-between;
+  gap: 22px;
+  align-items: center;
+  padding: 14px 16px;
+  background: #f0ede4;
+  border-bottom: 1px solid #bbb7ab;
+}
+
+.context-decision__progress > div {
+  display: grid;
+  gap: 3px;
+}
+
+.context-decision__progress > div > span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.context-decision__progress > div > strong {
+  color: var(--green);
+  font-size: 12px;
+}
+
+.context-decision__progress ol {
+  display: flex;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.context-decision__progress li {
+  width: 23px;
+  height: 5px;
+  background: #c9c5ba;
+}
+
+.context-decision__progress li.is-current {
+  background: var(--lime);
+  box-shadow: 0 0 0 1px var(--green);
+}
+
+.context-decision__progress li.is-approved {
+  background: var(--green);
+}
+
+.context-decision__progress li.is-rejected {
+  background: #8b8b83;
+}
+
+.context-decision__card {
+  animation: context-card-arrives 320ms cubic-bezier(0.2, 0.9, 0.25, 1.12) both;
+}
+
+.context-decision__card .context-card {
+  border: 0;
+  border-left: 4px solid var(--lime);
+}
+
+.context-decision__summary {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  min-height: 210px;
+  padding: 28px;
+  background: #f4f9f4;
+  border-left: 4px solid var(--green);
+}
+
+.context-decision__summary > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  color: var(--green);
+  font-size: 22px;
+  font-weight: 850;
+  background: var(--lime);
+  border: 1px solid var(--green);
+  border-radius: 50%;
+}
+
+.context-decision__summary strong {
+  font-size: 18px;
+}
+
+.context-decision__summary p {
+  margin: 7px 0 0;
+  color: #545a53;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .context-card__provenance {
@@ -962,8 +1069,12 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 }
 
 .preparation-preview {
+  display: grid;
+  grid-template-rows: auto auto minmax(280px, 1fr);
+  align-content: start;
   min-width: 0;
-  padding: clamp(34px, 5vw, 70px);
+  min-height: calc(100svh - var(--app-header-height));
+  padding: clamp(30px, 4.5svh, 58px) clamp(34px, 5vw, 70px);
   background: #e9e5d9;
 }
 
@@ -1076,6 +1187,188 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
   display: block;
   height: 100%;
   background: var(--green);
+  transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.folded-notebook {
+  position: relative;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 280px;
+  margin-top: 22px;
+  padding: 0 10px 12px;
+  isolation: isolate;
+}
+
+.folded-notebook__page {
+  position: absolute;
+  right: 18px;
+  bottom: 0;
+  left: 18px;
+  z-index: -2;
+  height: 42px;
+  content: "";
+  background: var(--paper);
+  border: 1px solid #aaa69a;
+}
+
+.folded-notebook__page--back {
+  right: 0;
+  left: 0;
+  bottom: 3px;
+  background: #d5d0c2;
+  transform: rotate(0.65deg);
+}
+
+.folded-notebook__page--middle {
+  right: 9px;
+  left: 9px;
+  bottom: 8px;
+  background: #f5f1e7;
+  transform: rotate(-0.35deg);
+}
+
+.folded-notebook__cover {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  min-height: 100%;
+  padding: clamp(19px, 3vw, 30px);
+  color: #f8fbf6;
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, rgba(183, 243, 19, 0.13), transparent 45%),
+    var(--green);
+  border: 1px solid #0c3627;
+  box-shadow: inset 7px 0 0 rgba(0, 0, 0, 0.12);
+}
+
+.folded-notebook__cover::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 150px;
+  height: 150px;
+  pointer-events: none;
+  content: "";
+  opacity: 0.2;
+  background-image: radial-gradient(circle, var(--lime) 1px, transparent 1.5px);
+  background-size: 11px 11px;
+  mask-image: linear-gradient(225deg, #000, transparent 72%);
+}
+
+.folded-notebook__topline,
+.folded-notebook__progress {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.folded-notebook__topline {
+  padding-bottom: 13px;
+  color: #d6e5db;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.24);
+}
+
+.folded-notebook__title {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 15px;
+  align-items: center;
+  padding: clamp(22px, 4svh, 38px) 0;
+}
+
+.folded-notebook__title > span {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 850;
+  background: var(--lime);
+  border-radius: 50%;
+}
+
+.folded-notebook__title strong {
+  display: block;
+  max-width: 540px;
+  font-family: "Iowan Old Style", "Palatino Linotype", Baskerville, Georgia, serif;
+  font-size: clamp(21px, 3vw, 30px);
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+
+.folded-notebook__title p {
+  max-width: 530px;
+  margin: 7px 0 0;
+  color: #cfddd3;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.folded-notebook__sections {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(30px, 1fr));
+  gap: 5px;
+  padding: 0 0 16px;
+  margin: 0;
+  list-style: none;
+}
+
+.folded-notebook__sections li {
+  display: grid;
+  min-width: 0;
+  height: 28px;
+  place-items: center;
+  color: #b8c9bd;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.folded-notebook__sections li.is-ready {
+  color: var(--ink);
+  background: var(--lime);
+  border-color: var(--lime);
+}
+
+.folded-notebook__sections li.is-active {
+  color: var(--lime);
+  border-color: var(--lime);
+  animation: agent-pulse 1.2s ease-in-out infinite;
+}
+
+.folded-notebook__progress {
+  padding-top: 12px;
+  color: #d6e5db;
+  border-top: 1px solid rgba(255, 255, 255, 0.24);
+}
+
+.folded-notebook__progress > span:last-child {
+  display: block;
+  width: min(48%, 240px);
+  height: 4px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.folded-notebook__progress i {
+  display: block;
+  height: 100%;
+  background: var(--lime);
   transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -1209,11 +1502,11 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 .lesson-review {
   display: grid;
   grid-template-columns: minmax(360px, 0.85fr) minmax(430px, 1.15fr);
-  min-height: calc(100vh - var(--app-header-height));
+  min-height: calc(100svh - var(--app-header-height));
 }
 
 .lesson-review__intro {
-  padding: clamp(50px, 6vw, 92px) clamp(32px, 6vw, 90px);
+  padding: clamp(38px, 5svh, 72px) clamp(32px, 6vw, 90px);
   background: var(--paper);
   border-right: 1px solid var(--line);
 }
@@ -1278,8 +1571,149 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 }
 
 .lesson-review__map {
-  padding: clamp(34px, 5vw, 70px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: calc(100svh - var(--app-header-height));
+  padding: clamp(30px, 4.5svh, 58px) clamp(34px, 5vw, 70px);
   background: #e9e5d9;
+}
+
+.lesson-review-pager {
+  display: grid;
+  grid-template-rows: auto minmax(250px, 1fr) auto;
+  min-width: 0;
+  margin-top: 18px;
+  background: var(--paper);
+  border: 1px solid #aaa69b;
+  box-shadow: 7px 7px 0 rgba(23, 75, 56, 0.09);
+}
+
+.lesson-review-pager__steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(34px, 1fr));
+  border-bottom: 1px solid #aaa69b;
+}
+
+.lesson-review-pager__steps button {
+  min-width: 0;
+  min-height: 42px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 800;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.lesson-review-pager__steps button:last-child {
+  border-right: 0;
+}
+
+.lesson-review-pager__steps button:hover,
+.lesson-review-pager__steps button:focus-visible {
+  color: var(--green);
+  background: var(--green-soft);
+}
+
+.lesson-review-pager__steps button.is-active {
+  color: var(--ink);
+  background: var(--lime);
+}
+
+.lesson-review-pager__card {
+  display: grid;
+  align-content: center;
+  min-width: 0;
+  padding: clamp(24px, 5vw, 54px);
+  animation: context-card-arrives 300ms cubic-bezier(0.2, 0.9, 0.25, 1.12) both;
+}
+
+.lesson-review-pager__card > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  color: var(--green);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lesson-review-pager__card h2 {
+  max-width: 620px;
+  margin: 18px 0 14px;
+  font-size: clamp(30px, 4vw, 48px);
+  line-height: 1;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.lesson-review-pager__card > p {
+  max-width: 620px;
+  margin: 0;
+  color: #4e534c;
+  font-family: "Iowan Old Style", "Palatino Linotype", Baskerville, Georgia, serif;
+  font-size: clamp(17px, 2.2vw, 22px);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.lesson-review-pager__card dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 30px;
+  margin: 28px 0 0;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+}
+
+.lesson-review-pager__card dl > div {
+  display: flex;
+  gap: 8px;
+}
+
+.lesson-review-pager__card dt,
+.lesson-review-pager__card dd {
+  margin: 0;
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.lesson-review-pager__card dt {
+  color: var(--muted);
+}
+
+.lesson-review-pager__card dd {
+  color: var(--green);
+  font-weight: 800;
+}
+
+.lesson-review-pager__controls {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 13px;
+  border-top: 1px solid var(--line);
+}
+
+.lesson-review-pager__controls > span {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+}
+
+.lesson-review-pager__controls button:last-child {
+  justify-self: end;
+}
+
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
 }
 
 /* Published notebook */
@@ -2522,6 +2956,150 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
   line-height: 1.5;
 }
 
+.lesson-completion-slot {
+  --lesson-scene-count: 0;
+  height: var(--lesson-available-height);
+  min-height: var(--lesson-available-height);
+  scroll-snap-align: start;
+}
+
+.lesson-completion-panel {
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, rgba(183, 243, 19, 0.14), transparent 44%),
+    var(--paper);
+  border-color: var(--green);
+  box-shadow: 8px 8px 0 rgba(23, 75, 56, 0.14);
+}
+
+.lesson-completion {
+  position: relative;
+  display: grid;
+  align-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: clamp(26px, 7cqw, 76px);
+  overflow: hidden;
+}
+
+.lesson-completion::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: min(34cqw, 280px);
+  height: min(34cqw, 280px);
+  pointer-events: none;
+  content: "";
+  opacity: 0.18;
+  background-image: radial-gradient(circle, var(--green) 1px, transparent 1.5px);
+  background-size: 12px 12px;
+  mask-image: linear-gradient(225deg, #000, transparent 72%);
+}
+
+.lesson-completion__mark {
+  position: relative;
+  width: 66px;
+  height: 66px;
+  margin-bottom: clamp(18px, 3svh, 30px);
+}
+
+.lesson-completion__mark > span {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 66px;
+  height: 66px;
+  place-items: center;
+  color: var(--ink);
+  font-size: 28px;
+  font-weight: 900;
+  background: var(--lime);
+  border: 1px solid var(--green);
+  border-radius: 50%;
+}
+
+.lesson-completion__mark > i {
+  position: absolute;
+  inset: -8px;
+  border: 1px solid rgba(23, 75, 56, 0.32);
+  border-radius: 50%;
+}
+
+.lesson-completion h2 {
+  position: relative;
+  z-index: 1;
+  max-width: 720px;
+  margin: 12px 0 16px;
+  font-size: clamp(40px, 7cqw, 72px);
+  line-height: 0.96;
+  letter-spacing: -0.06em;
+  text-wrap: balance;
+}
+
+.lesson-completion__lede {
+  position: relative;
+  z-index: 1;
+  max-width: 690px;
+  margin: 0;
+  color: #4f554e;
+  font-family: "Iowan Old Style", "Palatino Linotype", Baskerville, Georgia, serif;
+  font-size: clamp(17px, 2.4cqw, 22px);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.lesson-completion__facts {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 150px));
+  margin: clamp(22px, 4svh, 38px) 0 0;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.lesson-completion__facts > div {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.lesson-completion__facts dt {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lesson-completion__facts dd {
+  margin: 0;
+  color: var(--green);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 17px;
+  font-weight: 850;
+}
+
+.lesson-completion__actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: clamp(20px, 3.5svh, 34px);
+}
+
+.lesson-completion__actions button {
+  min-width: 170px;
+}
+
+.lesson-completion-nav button > span:first-child {
+  font-weight: 900;
+}
+
 @keyframes skeleton-pulse {
   0%, 100% { opacity: 0.52; }
   50% { opacity: 1; }
@@ -2530,6 +3108,11 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 @keyframes construction-arrives {
   0% { opacity: 0.3; transform: translateY(12px); }
   100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes context-card-arrives {
+  0% { opacity: 0; transform: translateY(14px) scale(0.985); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes canvas-line-in {
@@ -2580,6 +3163,74 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 
 }
 
+@media (min-width: 841px) and (max-height: 900px) {
+  .context-review,
+  .lesson-review__intro {
+    padding-block: 28px;
+  }
+
+  .context-review h1,
+  .lesson-review__intro h1 {
+    margin: 10px 0 14px;
+    font-size: clamp(38px, 4vw, 52px);
+    line-height: 0.96;
+  }
+
+  .context-review__lede {
+    margin-bottom: 20px;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .context-decision__progress {
+    padding-block: 10px;
+  }
+
+  .context-card {
+    padding: 15px 18px;
+  }
+
+  .context-card > p {
+    margin-block: 10px;
+    font-size: 16px;
+    line-height: 1.35;
+  }
+
+  .context-card__actions {
+    margin-top: 13px;
+  }
+
+  .context-card__actions > button {
+    min-height: 40px;
+  }
+
+  .text-link-button {
+    margin-top: 14px;
+  }
+
+  .preparation-preview,
+  .lesson-review__map {
+    padding-block: 24px;
+  }
+
+  .construction-activity {
+    margin-top: 14px;
+    padding-block: 14px 17px;
+  }
+
+  .folded-notebook {
+    margin-top: 16px;
+  }
+
+  .lesson-facts {
+    margin-top: 22px;
+  }
+
+  .lesson-facts > div {
+    padding-block: 10px;
+  }
+}
+
 @media (max-width: 840px) {
   :root {
     --compact-map-height: 52px;
@@ -2619,13 +3270,19 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 
   .context-review,
   .lesson-review__intro {
+    min-height: calc(100svh - var(--app-header-height));
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
 
   .preparation-preview,
   .lesson-review__map {
+    min-height: calc(100svh - var(--app-header-height));
     padding: 42px;
+  }
+
+  .lesson-review-pager {
+    min-height: min(620px, calc(100svh - 150px));
   }
 
   .learning-layout {
@@ -2764,6 +3421,70 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
     font-size: 41px;
   }
 
+  .context-review__lede {
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .context-decision__progress {
+    align-items: flex-start;
+  }
+
+  .context-decision__progress ol {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+  }
+
+  .context-decision__progress li {
+    flex: 1 1 14px;
+    width: auto;
+    max-width: 23px;
+  }
+
+  .context-card {
+    padding: 18px;
+  }
+
+  .context-card > p {
+    font-size: 17px;
+  }
+
+  .folded-notebook {
+    min-height: 320px;
+  }
+
+  .folded-notebook__cover {
+    padding: 20px 18px;
+  }
+
+  .folded-notebook__title {
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .folded-notebook__title > span {
+    width: 36px;
+    height: 36px;
+  }
+
+  .lesson-review-pager__card {
+    padding: 24px 20px;
+  }
+
+  .lesson-review-pager__card h2 {
+    font-size: 32px;
+  }
+
+  .lesson-review-pager__controls {
+    gap: 8px;
+  }
+
+  .lesson-review-pager__controls .secondary-button {
+    min-height: 36px;
+    padding-inline: 9px;
+    font-size: 11px;
+  }
+
   .context-card header,
   .region-header,
   .sandbox-card__header {
@@ -2818,6 +3539,42 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 
   .notebook {
     padding: 0 22px 60px;
+  }
+
+  .lesson-completion {
+    padding: 22px 18px;
+  }
+
+  .lesson-completion__mark,
+  .lesson-completion__mark > span {
+    width: 52px;
+    height: 52px;
+  }
+
+  .lesson-completion__mark > span {
+    font-size: 22px;
+  }
+
+  .lesson-completion h2 {
+    font-size: clamp(36px, 12cqw, 52px);
+  }
+
+  .lesson-completion__facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .lesson-completion__facts > div {
+    padding: 10px 8px;
+  }
+
+  .lesson-completion__actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .lesson-completion__actions button {
+    width: 100%;
   }
 
   .notebook-cover {
@@ -2922,6 +3679,50 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 
   .region-attribution .text-button {
     margin-left: 0;
+  }
+}
+
+@media (max-width: 600px) and (max-height: 900px) {
+  .context-review {
+    padding-block: 28px;
+  }
+
+  .context-review h1 {
+    margin: 10px 0 14px;
+    font-size: 38px;
+    line-height: 0.98;
+  }
+
+  .context-review__lede {
+    margin-bottom: 20px;
+    font-size: 14px;
+    line-height: 1.42;
+  }
+
+  .context-decision__progress {
+    padding-block: 9px;
+  }
+
+  .context-card {
+    padding: 14px 16px;
+  }
+
+  .context-card > p {
+    margin-block: 10px;
+    font-size: 16px;
+    line-height: 1.35;
+  }
+
+  .context-card__actions {
+    margin-top: 12px;
+  }
+
+  .context-card__actions > button {
+    min-height: 42px;
+  }
+
+  .text-link-button {
+    margin-top: 14px;
   }
 }
 
@@ -3127,6 +3928,21 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
   font-size: 8px;
 }
 
+.lesson-scene-nav__steps.is-condensed {
+  flex: 1 1 auto;
+  max-width: 520px;
+}
+
+.lesson-scene-nav__steps.is-condensed button {
+  flex: 1 1 30px;
+  justify-content: center;
+  padding-inline: 5px;
+}
+
+.lesson-scene-nav__steps.is-condensed button span:last-child {
+  display: none;
+}
+
 .region-scene {
   display: grid;
   align-content: center;
@@ -3135,6 +3951,10 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
   padding: clamp(12px, 2.2svh, 24px) 0;
   overflow: clip;
   animation: lesson-scene-pop 360ms cubic-bezier(0.18, 0.88, 0.25, 1.2) both;
+}
+
+.region-scene :is(p, li, td, th, figcaption, blockquote) {
+  overflow-wrap: anywhere;
 }
 
 .region-scene .region-content,
@@ -3160,6 +3980,7 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 .lesson-panel .region-scene .prose-block > p {
   font-size: clamp(17px, 2.65cqw, 23px);
   line-height: 1.42;
+  text-wrap: pretty;
 }
 
 .lesson-panel .region-scene .prose-block blockquote {
@@ -3247,6 +4068,30 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
   margin: 0;
   padding: clamp(16px, 3svh, 28px);
   box-shadow: 5px 5px 0 #ddd8cb;
+}
+
+.lesson-panel .region-scene--source_cards .research-block {
+  width: min(100%, 780px);
+  padding: clamp(15px, 2.4svh, 23px);
+}
+
+.lesson-panel .region-scene--source_cards .research-block > p {
+  margin: 10px 0 12px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  line-height: 1.35;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lesson-panel .region-scene--source_cards .research-block li {
+  padding: clamp(11px, 1.8svh, 16px) 0;
+}
+
+.lesson-panel .region-scene--source_cards .research-block li p {
+  font-size: clamp(12px, 1.8cqw, 14px);
+  line-height: 1.42;
 }
 
 .lesson-panel .region-scene .learner-interaction h3 {
