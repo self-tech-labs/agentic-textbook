@@ -15,12 +15,15 @@
   },
   "d1_databases": [
     {
-      "binding": "DB"
+      "binding": "DB",
+      "database_name": "ogram-learning-canvas-db",
+      "database_id": "a3741a96-4cd1-4b76-b1c7-65890e468fbe"
     }
   ],
   "r2_buckets": [
     {
-      "binding": "LESSON_MEDIA"
+      "binding": "LESSON_MEDIA",
+      "bucket_name": "ogram-learning-canvas-lesson-media"
     }
   ],
   "containers": [

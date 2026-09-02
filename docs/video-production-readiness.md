@@ -86,5 +86,7 @@ first, keep clips atomic, and surround—never replace—the real product record
 - [x] Docker engine responds for the Cloudflare container image build.
 - [x] Staging deployed and health, CSRF, media, three-language cold/warm, and
   adversarial checks pass.
-- [ ] Fresh, sanitized staging walkthrough rehearsed in the final window layout.
+- [x] Production deployed at `https://ogram-learning-canvas.ervaucher.workers.dev`
+  with the same health, CSRF, media, language, and adversarial checks passing.
+- [ ] Fresh, sanitized production walkthrough rehearsed in the final window layout.
 - [ ] Narration, captions, contact sheets, loudness, full decode, and privacy QA pass.

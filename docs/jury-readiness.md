@@ -1,15 +1,15 @@
 # Jury-readiness verification record
 
-Verified September 2, 2026 from baseline `cd7cf98421140afea5092c330ab5686444994402`.
+Verified September 2, 2026 through application commit `8c7d1d08dba26a74f4b225df1f582a78e1f51fae`.
 This record is technical evidence, not an eligibility attestation or a Devpost submission.
 
 ## Result
 
-The local product, WebMCP journey, and deployed staging runtime are release-candidate
-quality. Cloudflare OAuth, Workers Paid/Containers, Docker, the isolated D1/R2
-resources, the custom Sandbox image, migration, and signing-secret attachment are all
-verified. Real Cloudflare Sandbox, media, security, and in-app-browser staging results
-are recorded below. No production promotion or eligibility attestation is claimed.
+The local product, WebMCP journey, deployed staging runtime, and public production
+runtime are release-candidate quality. Cloudflare OAuth, Workers Paid/Containers,
+Docker, isolated D1/R2 resources, custom Sandbox images, migrations, and signing-secret
+attachments are verified. Production promotion is complete; no eligibility attestation
+or Devpost submission is claimed.
 
 | Surface | Evidence | Status |
 |---|---|---|
@@ -27,10 +27,11 @@ are recorded below. No production promotion or eligibility attestation is claime
 | Container build runtime | Docker Server 28.3.3 responds; the pinned Sandbox image built, pushed, and rolled out | Pass |
 | Staging Worker and secret | `ogram-learning-canvas-staging`, D1, R2, the custom container, and `GUEST_SIGNING_KEY` are provisioned; secret value was never printed or stored | Pass |
 | Public staging URL | `https://ogram-learning-canvas-staging.ervaucher.workers.dev` serves Worker version `259d3f54-9db9-4377-bf1d-5984c4f9ea7e`; schema-v4 health and CSRF checks pass | Pass |
+| Public production URL | `https://ogram-learning-canvas.ervaucher.workers.dev` serves Worker version `8c2a1d11-6710-4f40-8325-0d5cde414122`; production D1, R2, Container, secret, schema-v4 health, and CSRF checks pass | Pass |
 | Deployed runtime and media | JavaScript, TypeScript, and Python each pass cold and warm fixture runs; verified PNG import, R2 readback, and lesson-reference validation pass | Pass |
 | Deployed adversarial suite | All 13 origin/CSRF, isolation, filesystem, reset, injection, limit, concurrency, and quota checks pass | Pass |
 | Staging browser runtime | Correct page identity and WebMCP tools, meaningful first screen, no overlay or browser log, and a successful quantitative-starter interaction | Pass |
-| Remote branch | Commit `444f65b75ca15e9298af98960dbed00eb1b835f6` is pushed to `origin/codex/jury-ready-deep-ux` | Pass |
+| Remote branch | Application commit `8c7d1d08dba26a74f4b225df1f582a78e1f51fae` is pushed and merged into `staging`; PR #7 promotes `staging` to `main` | Pass |
 
 ## Material fixes in this candidate
 
@@ -55,10 +56,10 @@ native combination with an actionable message instead of producing nine false er
 ## Remaining release gates
 
 1. The owner attests eligibility and rules acceptance.
-2. Rehearse the sanitized full Codex + Ogram Learn staging walkthrough, then record,
+2. Rehearse the sanitized full Codex + Ogram Learn production walkthrough, then record,
    caption, privacy-review, and publish the narrated demo under three minutes.
-3. If a separate production origin is desired, promote explicitly and repeat the
-   incognito/WebMCP acceptance there; staging is not silently treated as production.
+3. Repeat the in-app-browser, Workbench, and independent-inspector acceptance on the
+   production origin and preserve the final evidence.
 
 Intentionally not performed: `$start-hackathon`, hosted Nekuda Workbench AI evaluation,
-Devpost form mutation, final submission, Workers plan purchase, or production promotion.
+Devpost form mutation, final submission, or repository visibility change.

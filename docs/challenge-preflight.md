@@ -28,9 +28,11 @@ provisioned. `npm run deploy:staging:bootstrap` published the custom container, 
 `0001_v4_runtime.sql`, and deployed Worker version
 `259d3f54-9db9-4377-bf1d-5984c4f9ea7e`. Health, cookie/CSRF, governed media, all three
 language cold/warm paths, the adversarial suite, and an in-app-browser surface check
-passed against the public staging origin. Production promotion remains intentionally
-unperformed until the owner completes the remaining personal attestation and release
-decision.
+passed against the public staging origin. The owner then explicitly requested technical
+promotion: production Worker version `8c2a1d11-6710-4f40-8325-0d5cde414122` was deployed
+at `https://ogram-learning-canvas.ervaucher.workers.dev`, and health, cookie/CSRF,
+governed media, all three language cold/warm paths, and the 13-check adversarial suite
+passed there. The separate eligibility/rules attestation remains personal and unchecked.
 
 Optional confidence checks, not Devpost requirements: replay the tool surface with a
 second local inspector extension and preserve one production-origin trace. Do not
