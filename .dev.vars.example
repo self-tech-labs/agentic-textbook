@@ -1,2 +1,2 @@
-# Generate a local-only value with: openssl rand -hex 32
+# Local Worker secret only. Generate a new value with `openssl rand -hex 32`.
 GUEST_SIGNING_KEY=replace-with-at-least-32-random-characters

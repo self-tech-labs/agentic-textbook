@@ -37,10 +37,10 @@ npx wrangler whoami
 docker info
 ```
 
-Create the production signing secret through Wrangler’s encrypted secret prompt:
+Create the staging signing secret through Wrangler’s encrypted secret prompt:
 
 ```bash
-npx wrangler secret put GUEST_SIGNING_KEY
+npx wrangler secret put GUEST_SIGNING_KEY --env staging
 ```
 
 Never place the production value in `wrangler.jsonc`, `.dev.vars.example`, logs, or screenshots.
@@ -49,19 +49,33 @@ Never place the production value in `wrangler.jsonc`, `.dev.vars.example`, logs,
 
 ## 3. First staging deployment
 
-Only continue after every Gate 0 item in `challenge-preflight.md` that requires owner confirmation is checked.
+Only continue after Cloudflare authentication, Workers Paid/Containers access,
+and the intended account are confirmed. The owner eligibility attestation remains
+required before production promotion or submission, but it does not block an
+isolated technical staging test.
 
 ```bash
-npm run deploy:bootstrap
+npm run deploy:staging:bootstrap
 ```
 
-The bootstrap sequence builds, deploys once so draft resources exist, applies the D1 migration remotely, and deploys the same build again. Subsequent releases use:
+The staging environment has the explicit Worker name `ogram-learning-canvas-staging`
+and its own draft D1, R2, Durable Object, and Container bindings. The bootstrap
+sequence builds, deploys once so those resources exist, applies the D1 migration
+remotely, and deploys the same build again. Subsequent staging releases use:
 
 ```bash
-npm run deploy
+npm run deploy:staging
 ```
 
-Record the resulting public Worker URL. If the account has multiple environments, perform this sequence in a non-production staging account/config first and promote only after the smoke matrix passes.
+Record the resulting public Worker URL. Only after the full smoke matrix passes,
+create the production secret and bootstrap or update the default production
+Worker explicitly:
+
+```bash
+npx wrangler secret put GUEST_SIGNING_KEY --env=""
+npm run deploy:production:bootstrap
+# Later releases: npm run deploy:production
+```
 
 ## 4. HTTP checks
 

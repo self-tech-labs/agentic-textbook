@@ -233,7 +233,14 @@ describe("learn.ogram v4", () => {
     expect(lessonSlots?.[0]).toHaveAttribute("data-canvas-region", "transformer-goal");
     expect(lessonSlots?.[0]).toHaveAttribute("data-panel-mode", "screen");
     expect(lessonSlots?.[0]?.querySelectorAll(".lesson-scene-marker")).toHaveLength(2);
+    expect(lessonSlots?.[0]?.querySelector(".lesson-scene-marker")).toHaveStyle({
+      scrollSnapStop: "normal",
+    });
     expect(lessonSlots?.[0]?.querySelector(".lesson-panel > section")).toBeInTheDocument();
+    const conceptMap = screen.getByLabelText("Notebook concept map");
+    expect(
+      within(conceptMap).getByRole("button", { name: "What a transformer learns" }),
+    ).toHaveAttribute("aria-label", "What a transformer learns");
     expect(
       await screen.findByText(/query–key scores are normalized with softmax/i),
     ).toBeInTheDocument();

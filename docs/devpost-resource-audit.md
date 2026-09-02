@@ -25,13 +25,18 @@ The shortest strong demo is: **saved brief → capability discovery → reviewed
 - Ran the deterministic suite in real headless Chrome with WebMCP enabled: **3/3 cases passed** for brief discovery, capability discovery, and session bootstrap.
 - Added current-spec `untrustedContentHint` annotations to learner-authored and externally sourced tool results while retaining `readOnlyHint` on reads.
 - Added regression coverage for the annotation boundary, bootstrap-field descriptions, native stage-tool rotation, and fail-closed registration errors; the full suite now passes **64 tests**.
-- Verified TypeScript, the production build, the **109.28 KB gzip** initial-JavaScript budget, and Cloudflare packaging.
+- Verified TypeScript, the production build, the **109.31 KB gzip** initial-JavaScript budget, and both production and isolated-staging Cloudflare packaging.
 - Corrected the recording script so it distinguishes details visible in the lesson-review UI from metadata visible in the tool trace.
 - Used nekuda Workbench against the live local page: it discovered the expected three bootstrap tools, ran `learn_get_start_brief`, recognized its result as untrusted, and passed a saved unit test in 2 ms.
 - Raised the Workbench audit from **72/100** (seven missing field-description warnings) to **100/100** with zero failures and zero warnings.
 - Ran the Gemini agent suite three times from fresh pages: **21/21 expected tool steps passed** across nine case executions, including the bootstrap-to-session transition.
 
 The first live Gemini run revealed that two authored trajectories assumed mid-session state even though `webmcp-evals` opens a fresh page for every case. It also exposed a genuine integration race: a stage-changing tool could return before React finished rotating the native tool set. An app-scoped barrier now waits for the exact next stage and rejects the originating tool call on registration failure or timeout. The agent suite tests only reachable fresh-page journeys. The runner loads the ignored local `.env` and treats provider, trajectory, and report errors as failures rather than false green results.
+
+The published `webmcp-evals@0.0.4` native `gemini` backend does not implement
+live browser execution. The verified browser suite therefore runs Gemini 3.5 Flash
+through the package's implemented Vercel-AI loop with the Google provider; the
+runner rejects the unsupported native combination before generating false errors.
 
 ## The five tweeted resources
 

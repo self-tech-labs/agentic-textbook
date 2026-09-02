@@ -1990,7 +1990,8 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
   height: 1px;
   pointer-events: none;
   scroll-snap-align: start;
-  scroll-snap-stop: always;
+  /* Allow deliberate concept-map and scene-nav jumps to pass intermediate pages. */
+  scroll-snap-stop: normal;
 }
 
 .lesson-panel {

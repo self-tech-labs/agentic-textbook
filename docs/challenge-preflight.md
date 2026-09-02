@@ -9,7 +9,7 @@ Implementation status updated: September 2, 2026. Rules last checked against Dev
 - [x] JavaScript, TypeScript, and Python pass their server-side fixture tests in fresh local containers.
 - [x] Governed HTTPS media passes MIME/magic-byte validation, immutable R2 storage, authenticated readback, and publish-reference validation locally.
 - [x] Local adversarial smoke passes for CSRF/origin, network and secret isolation, package installation, filesystem escape, reset, shell metacharacters, source/output/time limits, concurrency, and rolling quota.
-- [x] TypeScript, 64 automated tests, production build, 109.28 KB initial-JavaScript budget, and Cloudflare dry run pass.
+- [x] TypeScript, 64 automated tests, production build, 109.31 KB initial-JavaScript budget, and both production and isolated-staging Cloudflare dry runs pass.
 - [x] GoogleChromeLabs `webmcp-evals` deterministic smoke passes 3/3 cases in WebMCP-enabled Chrome.
 - [x] Local nekuda Workbench tool discovery, read-only execution, saved unit test, and 100/100 audit pass.
 - [ ] Submitting owner confirms personal/entity eligibility and acknowledges the official rules.
@@ -17,10 +17,13 @@ Implementation status updated: September 2, 2026. Rules last checked against Dev
 - [ ] Staging Worker, D1 database, R2 bucket, custom container, and signing secret are provisioned.
 - [ ] The same three-language Sandbox smoke test passes against staging.
 - [ ] Production/incognito run passes in ChatGPT’s in-app browser and a WebMCP-capable Chrome build.
-- [ ] nekuda Workbench inspect/run/audit/replay pass is captured against the production URL.
-- [x] Gemini agent-trajectory suite passes 21/21 expected tool steps across three fresh-page samples, including dynamic bootstrap-to-session tool rotation.
+- [x] Gemini 3.5 Flash agent-trajectory suite passes 21/21 expected tool steps across three fresh-page samples through GoogleChromeLabs `webmcp-evals`, including dynamic bootstrap-to-session tool rotation.
 
-The owner eligibility item is a legal/personal attestation and must not be checked by an agent. The current local Cloudflare OAuth token is expired, and Workers Paid/Containers entitlement has not been confirmed. Production deployment remains blocked until every Gate 0 item is checked.
+The owner eligibility item is a legal/personal attestation and must not be checked by an agent. On September 2 the local Cloudflare OAuth token was expired and non-interactively unrefreshable; the local Docker daemon also did not respond, so Workers Paid/Containers entitlement and the real Sandbox runtime remain unverified. Production deployment remains blocked until every Gate 0 item is checked.
+
+Optional confidence checks, not Devpost requirements: replay the tool surface with a
+second local inspector extension and preserve one production-origin trace. Do not
+use a hosted Workbench AI evaluation for this release.
 
 ## Deadline
 

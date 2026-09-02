@@ -1796,7 +1796,7 @@ function LessonSlot({
           key={scene.id}
           className="lesson-scene-marker"
           data-scene-marker={index}
-          style={{ "--scene-index": index } as CSSProperties}
+          style={{ "--scene-index": index, scrollSnapStop: "normal" } as CSSProperties}
           aria-hidden="true"
         />
       ))}
@@ -2115,11 +2115,13 @@ function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; a
                   type="button"
                   onClick={() => navigate(region.id)}
                   disabled={lockedRegionSet.has(region.id)}
-                  aria-label={
+                  aria-label={`${region.title}${
                     lockedRegionSet.has(region.id)
-                      ? region.title + " · locked until you complete the current decision"
-                      : undefined
-                  }
+                      ? " · locked until you complete the current decision"
+                      : region.response
+                        ? " · completed"
+                        : ""
+                  }`}
                 >
                   <span>{String(region.order).padStart(2, "0")}</span>
                   <span>{region.title}</span>
@@ -2133,7 +2135,7 @@ function LivingNotebook({ state, actions }: { state: AgentLearningCanvasState; a
             ))}
             {completion.complete ? (
               <li className="is-complete lesson-completion-nav">
-                <button type="button" onClick={navigateCompletion}>
+                <button type="button" onClick={navigateCompletion} aria-label="Lesson complete">
                   <span>✓</span>
                   <span>Lesson complete</span>
                 </button>

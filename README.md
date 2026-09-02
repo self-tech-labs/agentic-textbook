@@ -23,7 +23,7 @@ V4.1 blocks—Vega-Lite, multi-select, ordering, matching, cloze, uploads, and m
 Install dependencies and run the frontend-only experience:
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -109,7 +109,11 @@ The agent-journey suite in `evals/webmcp-agent-journeys.json` also checks tool
 selection, fresh-page starting states, and the bootstrap-to-session tool
 rotation. Run three samples before release with
 `npm run eval:webmcp:agent -- --runs 3`. The default runner needs
-`GOOGLE_GENERATIVE_AI_API_KEY`; alternatively, select another backend/model
+`GOOGLE_AI` (the legacy `GEMINI_API_KEY` and
+`GOOGLE_GENERATIVE_AI_API_KEY` names remain accepted) and runs Gemini 3.5 Flash
+through the official CLI's implemented Vercel-AI browser loop. The package's
+native `gemini` backend currently implements static-schema evals but not live
+browser evals. Alternatively, select another backend/model
 supported by `webmcp-evals` with arguments such as
 `npm run eval:webmcp:agent -- --backend ollama --model <model>`. The wrapper
 loads an ignored local `.env` when present and fails the command when the CLI
@@ -135,6 +139,7 @@ contracts/                         transport-facing JSON Schemas
 docs/architecture.md               runtime and trust-boundary design
 docs/demo-script.md                Sep 3 vertical-slice walkthrough
 docs/deployment.md                 Cloudflare setup and release checks
+docs/jury-readiness.md             latest verified matrix, evidence, and blockers
 ```
 
 ## Deployment status
