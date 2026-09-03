@@ -35,6 +35,10 @@ const LazyTrustedContentRenderer = lazy(() =>
   })),
 );
 
+const CODEX_LEARN_URL = `codex://browser?url=${encodeURIComponent(
+  "https://learn.ogram.ch",
+)}`;
+
 function DeferredTrustedContent({
   blocks,
   mode = "full",
@@ -183,81 +187,245 @@ function AppHeader({
   );
 }
 
-const readyLoopSteps = [
-  {
-    number: "01",
-    label: "Name the goal",
-    description: "Name the topic and the finish line in the conversation beside this page.",
-    canvasLabel: "Goal captured",
-  },
-  {
-    number: "02",
-    label: "Choose context",
-    description: "You can allow relevant context from this chat, past work, projects, or connected sources—then review every claim here.",
-    canvasLabel: "Context reviewed",
-  },
-  {
-    number: "03",
-    label: "Watch it form",
-    description: "Sections arrive one by one while the learning path takes shape.",
-    canvasLabel: "Flexible sections",
-  },
-  {
-    number: "04",
-    label: "Focus + adjust",
-    description: "Select a section, ask naturally, and only that part changes.",
-    canvasLabel: "Section in focus",
-  },
-] as const;
+type LessonPath = "catalog" | "custom";
+type UpdateBrief = (patch: Partial<LessonBriefV1>) => void;
 
-function ReadyLoop() {
-  const [activeStep, setActiveStep] = useState(2);
-  const active = readyLoopSteps[activeStep]!;
+function AgentEntry({ registration }: { registration: NotebookRegistration }) {
+  const status = registration.registering
+    ? "Checking WebMCP"
+    : registration.supported
+      ? "WebMCP connected"
+      : "Open with a WebMCP agent";
+
   return (
-    <aside className="ready-specimen" aria-labelledby="learning-loop-title">
-      <div className="ready-specimen__heading">
-        <span>Click through the loop</span>
-        <strong id="learning-loop-title">One lesson, two roles</strong>
+    <section
+      className={`agent-entry ${registration.supported ? "agent-entry--connected" : ""}`}
+      aria-label="Agent connection"
+    >
+      <div className="agent-entry__body">
+        <span className="agent-entry__status" aria-live="polite">
+          <i aria-hidden="true" />
+          {status}
+        </span>
+        {!registration.registering && !registration.supported ? (
+          <a className="codex-launch-badge" href={CODEX_LEARN_URL}>
+            <strong>Open in Codex</strong>
+            <i aria-hidden="true">↗</i>
+          </a>
+        ) : null}
       </div>
-      <div className={`loop-model loop-model--${activeStep + 1}`} aria-live="polite">
-        <div className="loop-model__actors" aria-hidden="true">
-          <span>You decide</span>
-          <i>↔</i>
-          <span>Lesson adapts</span>
+      {!registration.registering && !registration.supported ? (
+        <details className="agent-steps">
+          <summary>
+            <span>How it works</span>
+            <i aria-hidden="true">+</i>
+          </summary>
+          <ol>
+            <li>
+              <span>1</span>
+              <p>Open this page in your agent</p>
+            </li>
+            <li>
+              <span>2</span>
+              <p>Choose a lesson</p>
+            </li>
+            <li>
+              <span>3</span>
+              <p>Ask it to begin</p>
+            </li>
+          </ol>
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
+function BriefCoreFields({
+  brief,
+  updateBrief,
+  clearStarterOnTopicChange,
+}: {
+  brief: LessonBriefV1;
+  updateBrief: UpdateBrief;
+  clearStarterOnTopicChange: boolean;
+}) {
+  return (
+    <>
+      <label className="lesson-brief__wide">
+        <span>Topic</span>
+        <input
+          value={brief.topic}
+          placeholder="What would you like to understand?"
+          required
+          onChange={(event) =>
+            updateBrief({
+              topic: event.target.value,
+              ...(clearStarterOnTopicChange
+                ? { starterId: null, blueprintId: "open_topic_v1" }
+                : {}),
+            })
+          }
+        />
+      </label>
+      <label className="lesson-brief__wide">
+        <span>Goal</span>
+        <textarea
+          rows={2}
+          value={brief.desiredOutcome}
+          placeholder="By the end, I want to be able to…"
+          required
+          onChange={(event) => updateBrief({ desiredOutcome: event.target.value })}
+        />
+      </label>
+    </>
+  );
+}
+
+function BriefPreferenceFields({
+  brief,
+  updateBrief,
+  toggleMode,
+}: {
+  brief: LessonBriefV1;
+  updateBrief: UpdateBrief;
+  toggleMode: (mode: PreferredLearningMode) => void;
+}) {
+  return (
+    <>
+      <label>
+        <span>Level</span>
+        <select
+          value={brief.currentLevel}
+          onChange={(event) =>
+            updateBrief({
+              currentLevel: event.target.value as LessonBriefV1["currentLevel"],
+            })
+          }
+        >
+          <option value="beginner">Beginner</option>
+          <option value="intermediate">Intermediate</option>
+          <option value="advanced">Advanced</option>
+        </select>
+      </label>
+      <label>
+        <span>Time</span>
+        <div className="lesson-time-field">
+          <input
+            type="number"
+            min={5}
+            max={90}
+            step={1}
+            value={brief.availableMinutes}
+            onChange={(event) =>
+              updateBrief({
+                availableMinutes: Math.min(
+                  90,
+                  Math.max(5, Number(event.target.value) || 5),
+                ),
+              })
+            }
+          />
+          <span>minutes</span>
         </div>
-        <div className="loop-model__canvas">
-          <header>
-            <span>Learning canvas</span>
-            <i>{active.number}</i>
-          </header>
-          <strong>{active.canvasLabel}</strong>
-          <div className="loop-model__lines" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </div>
-          {activeStep === 1 ? <span className="loop-model__approval">✓ learner approved</span> : null}
-          {activeStep === 2 ? <span className="loop-model__building">taking shape</span> : null}
-          {activeStep === 3 ? <span className="loop-model__focus">focused</span> : null}
+      </label>
+      <fieldset className="lesson-brief__wide mode-picker">
+        <legend>Format</legend>
+        <div>
+          {(
+            [
+              ["visual", "Visual"],
+              ["quantitative", "Quantitative"],
+              ["code", "Code"],
+              ["scenario", "Scenario"],
+              ["reading", "Reading"],
+            ] as const
+          ).map(([mode, label]) => (
+            <label key={mode}>
+              <input
+                type="checkbox"
+                checked={brief.preferredModes.includes(mode)}
+                onChange={() => toggleMode(mode)}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
         </div>
-        <p>{active.description}</p>
+      </fieldset>
+      <label className="lesson-brief__wide">
+        <span>
+          Accessibility <small>optional</small>
+        </span>
+        <input
+          value={brief.accessibilityNotes}
+          placeholder="For example: avoid colour-only cues"
+          onChange={(event) => updateBrief({ accessibilityNotes: event.target.value })}
+        />
+      </label>
+    </>
+  );
+}
+
+function PersonalizationSwitch({
+  brief,
+  updateBrief,
+}: {
+  brief: LessonBriefV1;
+  updateBrief: UpdateBrief;
+}) {
+  return (
+    <label className="personalization-switch">
+      <input
+        type="checkbox"
+        checked={brief.personalizeFromRecentTasks}
+        onChange={(event) =>
+          updateBrief({ personalizeFromRecentTasks: event.target.checked })
+        }
+      />
+      <span aria-hidden="true">
+        <i />
+      </span>
+      <div>
+        <strong>Use recent Codex tasks</strong>
+        <small>You approve every signal.</small>
       </div>
-      <ol className="loop-steps">
-        {readyLoopSteps.map((step, index) => (
-          <li key={step.number} className={activeStep === index ? "is-active" : ""}>
-            <button
-              type="button"
-              aria-current={activeStep === index ? "step" : undefined}
-              onClick={() => setActiveStep(index)}
-            >
-              <span>{step.number}</span>
-              <span>{step.label}</span>
-              <i aria-hidden="true">{activeStep === index ? "—" : "+"}</i>
-            </button>
-          </li>
-        ))}
-      </ol>
-    </aside>
+    </label>
+  );
+}
+
+function ReadyFooter() {
+  return (
+    <footer className="ready-footer">
+      <details className="ready-footer__how">
+        <summary>
+          <span>Under the hood</span>
+          <i aria-hidden="true">+</i>
+        </summary>
+        <div>
+          <p>
+            This page exposes WebMCP tools to your agent, which builds the lesson and
+            updates the canvas you review.
+          </p>
+          <p>
+            <code>codex://</code> opens the page directly in Codex.
+          </p>
+          <a
+            href="https://learn.chatgpt.com/docs/webmcp"
+            target="_blank"
+            rel="noreferrer"
+          >
+            WebMCP docs ↗
+          </a>
+        </div>
+      </details>
+      <nav aria-label="Ogram links">
+        <a href="https://ogram.ch" target="_blank" rel="noreferrer">
+          ogram.ch ↗
+        </a>
+        <a href="https://parsing.swiss" target="_blank" rel="noreferrer">
+          parsing.swiss ↗
+        </a>
+      </nav>
+    </footer>
   );
 }
 
@@ -269,8 +437,23 @@ function ReadyCanvas({
   registrationError: string | null;
 }) {
   const [copied, setCopied] = useState(false);
-  const [brief, setBrief] = useState<LessonBriefV1>(() => loadLessonBrief());
+  const initialBriefRef = useRef<LessonBriefV1 | null>(null);
+  if (initialBriefRef.current === null) {
+    initialBriefRef.current = loadLessonBrief();
+  }
+  const initialBrief = initialBriefRef.current;
+  const [brief, setBrief] = useState<LessonBriefV1>(initialBrief);
+  const [lessonPath, setLessonPath] = useState<LessonPath | null>(() =>
+    initialBrief.starterId
+      ? "catalog"
+      : initialBrief.topic.trim() || initialBrief.desiredOutcome.trim()
+        ? "custom"
+        : null,
+  );
   const starter = "Use the lesson brief I prepared on this page.";
+  const selectedStarter = LESSON_STARTERS.find(
+    (candidate) => candidate.id === brief.starterId,
+  );
 
   useEffect(() => {
     saveLessonBrief(brief);
@@ -307,210 +490,161 @@ function ReadyCanvas({
       setCopied(false);
     }
   };
+
+  const chooseCustomPath = () => {
+    setLessonPath("custom");
+    setBrief((current) =>
+      current.starterId
+        ? {
+            ...current,
+            topic: "",
+            desiredOutcome: "",
+            currentLevel: "beginner",
+            availableMinutes: 15,
+            preferredModes: ["visual"],
+            accessibilityNotes: "",
+            starterId: null,
+            blueprintId: "open_topic_v1",
+            updatedAt: new Date().toISOString(),
+          }
+        : current,
+    );
+  };
+
+  const briefIsReady =
+    (lessonPath === "catalog" && selectedStarter !== undefined) ||
+    (lessonPath === "custom" &&
+      brief.topic.trim().length > 0 &&
+      brief.desiredOutcome.trim().length > 0);
+
   return (
     <main id="main-canvas" className="ready-canvas">
-      <div className="ready-canvas__index" aria-hidden="true">
-        <span>01</span>
-        <span>topic</span>
-        <span>02</span>
-        <span>context</span>
-        <span>03</span>
-        <span>build</span>
-        <span>04</span>
-        <span>learn + reshape</span>
-      </div>
       <section className="ready-hero" aria-labelledby="ready-title">
-        <p className="eyebrow">A flexible, learner-owned canvas</p>
         <h1 id="ready-title">
-          Bring any question.
-          <br />
-          <em>Shape how you learn it.</em>
+          What do you want <em>to learn?</em>
         </h1>
-        <p className="ready-hero__lede">
-          Build a short brief for a conceptual explanation, quantitative walkthrough,
-          executable code lab, or branching scenario. You approve the exact path before
-          learning begins.
-        </p>
 
-        {!registration.registering && !registration.supported ? (
-          <div className="browser-notice" role="status">
-            <span className="browser-notice__mark" aria-hidden="true">↗</span>
-            <div>
-              <strong>Open this page in Codex Desktop’s built-in browser.</strong>
-              <p>Site tools are not available in this browser. The notebook remains read-only here.</p>
-            </div>
+        <AgentEntry registration={registration} />
+
+        <section className="lesson-paths" aria-labelledby="lesson-paths-title">
+          <h2 id="lesson-paths-title">Start a lesson</h2>
+          <div className="lesson-path-picker">
+            <button
+              type="button"
+              className={lessonPath === "catalog" ? "is-selected" : ""}
+              aria-pressed={lessonPath === "catalog"}
+              onClick={() => setLessonPath("catalog")}
+            >
+              <i aria-hidden="true">≡</i>
+              <strong>Choose a course</strong>
+              <b aria-hidden="true">→</b>
+            </button>
+            <button
+              type="button"
+              className={lessonPath === "custom" ? "is-selected" : ""}
+              aria-pressed={lessonPath === "custom"}
+              onClick={chooseCustomPath}
+            >
+              <i aria-hidden="true">+</i>
+              <strong>Use my own topic</strong>
+              <b aria-hidden="true">→</b>
+            </button>
           </div>
+        </section>
+
+        {lessonPath ? (
+          <form
+            className="lesson-brief lesson-builder"
+            onSubmit={(event) => event.preventDefault()}
+          >
+            <div className="lesson-brief__heading">
+              <strong>{lessonPath === "catalog" ? "Courses" : "Your lesson"}</strong>
+            </div>
+
+            {lessonPath === "catalog" ? (
+              <>
+                <div className="starter-registry" aria-label="Ready-made courses">
+                  {LESSON_STARTERS.map((lessonStarter) => {
+                    const selected = brief.starterId === lessonStarter.id;
+                    return (
+                      <button
+                        key={lessonStarter.id}
+                        type="button"
+                        className={selected ? "starter-card is-selected" : "starter-card"}
+                        aria-pressed={selected}
+                        onClick={() => setBrief(briefFromStarter(lessonStarter))}
+                      >
+                        <strong>{lessonStarter.title}</strong>
+                        <i aria-hidden="true">{selected ? "✓" : "↗"}</i>
+                      </button>
+                    );
+                  })}
+                </div>
+                {selectedStarter ? (
+                  <details className="brief-options">
+                    <summary>
+                      <strong>Customize</strong>
+                      <i aria-hidden="true">+</i>
+                    </summary>
+                    <div className="lesson-brief__grid">
+                      <BriefCoreFields
+                        brief={brief}
+                        updateBrief={updateBrief}
+                        clearStarterOnTopicChange={false}
+                      />
+                      <BriefPreferenceFields
+                        brief={brief}
+                        updateBrief={updateBrief}
+                        toggleMode={toggleMode}
+                      />
+                    </div>
+                    <PersonalizationSwitch brief={brief} updateBrief={updateBrief} />
+                  </details>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div className="lesson-brief__grid lesson-brief__grid--core">
+                  <BriefCoreFields
+                    brief={brief}
+                    updateBrief={updateBrief}
+                    clearStarterOnTopicChange
+                  />
+                </div>
+                <details className="brief-options brief-options--custom">
+                  <summary>
+                    <strong>Preferences</strong>
+                    <i aria-hidden="true">+</i>
+                  </summary>
+                  <div className="lesson-brief__grid">
+                    <BriefPreferenceFields
+                      brief={brief}
+                      updateBrief={updateBrief}
+                      toggleMode={toggleMode}
+                    />
+                  </div>
+                  <PersonalizationSwitch brief={brief} updateBrief={updateBrief} />
+                </details>
+              </>
+            )}
+          </form>
         ) : null}
 
-        <form className="lesson-brief" onSubmit={(event) => event.preventDefault()}>
-          <div className="lesson-brief__heading">
-            <div>
-              <span>Lesson brief · saved locally</span>
-              <strong>What should this lesson help you do?</strong>
-            </div>
-            <span>V1</span>
-          </div>
-
-          <div className="starter-registry" aria-label="Lesson starters">
-            {LESSON_STARTERS.map((lessonStarter) => {
-              const selected = brief.starterId === lessonStarter.id;
-              return (
-                <button
-                  key={lessonStarter.id}
-                  type="button"
-                  className={selected ? "starter-card is-selected" : "starter-card"}
-                  aria-pressed={selected}
-                  onClick={() => setBrief(briefFromStarter(lessonStarter))}
-                >
-                  <span>{lessonStarter.eyebrow}</span>
-                  <strong>{lessonStarter.title}</strong>
-                  <p>{lessonStarter.description}</p>
-                  <i aria-hidden="true">{selected ? "✓" : "↗"}</i>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="lesson-brief__grid">
-            <label className="lesson-brief__wide">
-              <span>Topic or question</span>
-              <input
-                value={brief.topic}
-                placeholder="What would you like to understand?"
-                onChange={(event) =>
-                  updateBrief({
-                    topic: event.target.value,
-                    starterId: null,
-                    blueprintId: "open_topic_v1",
-                  })
-                }
-              />
-            </label>
-            <label className="lesson-brief__wide">
-              <span>Desired outcome</span>
-              <textarea
-                rows={2}
-                value={brief.desiredOutcome}
-                placeholder="By the end, I want to be able to…"
-                onChange={(event) =>
-                  updateBrief({ desiredOutcome: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              <span>Current level</span>
-              <select
-                value={brief.currentLevel}
-                onChange={(event) =>
-                  updateBrief({
-                    currentLevel: event.target.value as LessonBriefV1["currentLevel"],
-                  })
-                }
-              >
-                <option value="beginner">Beginner</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="advanced">Advanced</option>
-              </select>
-            </label>
-            <label>
-              <span>Available time</span>
-              <div className="lesson-time-field">
-                <input
-                  type="number"
-                  min={5}
-                  max={90}
-                  step={1}
-                  value={brief.availableMinutes}
-                  onChange={(event) =>
-                    updateBrief({
-                      availableMinutes: Math.min(
-                        90,
-                        Math.max(5, Number(event.target.value) || 5),
-                      ),
-                    })
-                  }
-                />
-                <span>minutes</span>
-              </div>
-            </label>
-            <fieldset className="lesson-brief__wide mode-picker">
-              <legend>Preferred modes</legend>
-              <div>
-                {(
-                  [
-                    ["visual", "Visual"],
-                    ["quantitative", "Quantitative"],
-                    ["code", "Code"],
-                    ["scenario", "Scenario"],
-                    ["reading", "Reading"],
-                  ] as const
-                ).map(([mode, label]) => (
-                  <label key={mode}>
-                    <input
-                      type="checkbox"
-                      checked={brief.preferredModes.includes(mode)}
-                      onChange={() => toggleMode(mode)}
-                    />
-                    <span>{label}</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-            <label className="lesson-brief__wide">
-              <span>Accessibility notes <small>optional</small></span>
-              <input
-                value={brief.accessibilityNotes}
-                placeholder="For example: avoid colour-only cues or include transcripts"
-                onChange={(event) =>
-                  updateBrief({ accessibilityNotes: event.target.value })
-                }
-              />
-            </label>
-          </div>
-
-          <label className="personalization-switch">
-            <input
-              type="checkbox"
-              checked={brief.personalizeFromRecentTasks}
-              onChange={(event) =>
-                updateBrief({
-                  personalizeFromRecentTasks: event.target.checked,
-                })
-              }
-            />
-            <span aria-hidden="true"><i /></span>
-            <div>
-              <strong>Personalize from recent Codex tasks</strong>
-              <small>
-                On by default. Codex may derive up to eight short signals from at most ten
-                task summaries from the last 30 days. You review every claim; transcripts,
-                prompts, code, and task IDs are never added to the lesson.
-              </small>
-            </div>
-          </label>
-        </form>
-
-        <div className="starter-prompt" aria-label="Instruction for the adjacent conversation">
-          <div className="starter-prompt__topline">
-            <span>Continue in the conversation</span>
-            <button type="button" className="text-button" onClick={copy}>
+        {briefIsReady ? (
+          <div
+            className="starter-prompt starter-prompt--revealed"
+            aria-label="Ask your agent"
+          >
+            <p>{starter}</p>
+            <button type="button" className="primary-button" onClick={copy}>
               {copied ? "Copied" : "Copy prompt"}
             </button>
           </div>
-          <p>{starter}</p>
-          {!brief.topic.trim() || !brief.desiredOutcome.trim() ? (
-            <small>Add a topic and outcome before asking Codex to begin.</small>
-          ) : (
-            <small>
-              Codex can read this brief through the page tool; the prompt does not need to
-              repeat your details.
-            </small>
-          )}
-        </div>
+        ) : null}
 
         {registrationError ? <p className="inline-error">{registrationError}</p> : null}
       </section>
-      <ReadyLoop />
+      <ReadyFooter />
     </main>
   );
 }
@@ -2214,11 +2348,13 @@ export function LearningNotebook({
   return (
     <div className="app-shell">
       <AppHeader state={state} registration={registration} actions={actions} />
-      <AgentBridge
-        registration={registration}
-        working={working}
-        constructionProgress={constructionProgress}
-      />
+      {state.session.stage === "ready" ? null : (
+        <AgentBridge
+          registration={registration}
+          working={working}
+          constructionProgress={constructionProgress}
+        />
+      )}
       {state.session.stage === "ready" ? (
         <ReadyCanvas registration={registration} registrationError={registrationError} />
       ) : state.session.stage === "context_review" ? (

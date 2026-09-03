@@ -20,26 +20,76 @@ describe("learn.ogram v4", () => {
     });
   });
 
-  it("starts as a passive personal canvas with no in-page conversation", async () => {
+  it("starts with three clear actions and reveals details on demand", async () => {
     render(<App />);
 
     expect(
-      screen.getByRole("heading", { name: /bring any question/i }),
+      screen.getByRole("heading", { name: /what do you want to learn/i }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /ask codex/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/use the lesson brief i prepared/i)).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: /topic or question/i })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: /personalize from recent codex tasks/i })).toBeChecked();
+    expect(screen.getByText(/start a lesson/i)).toBeInTheDocument();
+    expect(screen.queryByText(/use the lesson brief i prepared/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /^topic$/i })).not.toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.getByText(/open this page in codex desktop/i)).toBeInTheDocument(),
+      expect(screen.getByText(/open with a webmcp agent/i)).toBeInTheDocument(),
     );
+    expect(screen.getByRole("link", { name: /open in codex/i })).toHaveAttribute(
+      "href",
+      "codex://browser?url=https%3A%2F%2Flearn.ogram.ch",
+    );
+    expect(screen.getByRole("link", { name: /ogram\.ch/i })).toHaveAttribute(
+      "href",
+      "https://ogram.ch",
+    );
+    expect(screen.getByRole("link", { name: /parsing\.swiss/i })).toHaveAttribute(
+      "href",
+      "https://parsing.swiss",
+    );
+    const underHoodSummary = screen.getByText(/under the hood/i).closest("summary");
+    if (!underHoodSummary) throw new Error("Expected the technical details summary.");
+    expect(underHoodSummary.closest("details")).not.toHaveAttribute("open");
+    fireEvent.click(underHoodSummary);
+    expect(screen.getByText(/exposes webmcp tools/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /webmcp docs/i })).toHaveAttribute(
+      "href",
+      "https://learn.chatgpt.com/docs/webmcp",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /use my own topic/i }));
+    const topic = screen.getByRole("textbox", { name: /^topic$/i });
+    const goal = screen.getByRole("textbox", { name: /^goal$/i });
+    expect(screen.queryByText(/use the lesson brief i prepared/i)).not.toBeInTheDocument();
+    fireEvent.change(topic, { target: { value: "How neural networks learn" } });
+    fireEvent.change(goal, { target: { value: "Explain gradient descent" } });
+    expect(screen.getByText(/use the lesson brief i prepared/i)).toBeInTheDocument();
+    const preferencesSummary = screen.getByText(/^preferences$/i).closest("summary");
+    if (!preferencesSummary) throw new Error("Expected the learning preferences summary.");
+    fireEvent.click(preferencesSummary);
+    expect(
+      screen.getByRole("checkbox", { name: /use recent codex tasks/i }),
+    ).toBeChecked();
 
     await waitFor(() => expect(tool("learn_begin_session")).toBeDefined());
     await waitFor(() => expect(screen.getByText(/^preview$/i)).toBeInTheDocument());
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: /choose context/i }));
-    expect(screen.getByText(/context reviewed/i)).toBeInTheDocument();
-    expect(screen.getByText(/past work, projects/i)).toBeInTheDocument();
+  it("reveals ready-made courses before their detailed brief", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /choose a course/i }));
+    expect(screen.getByRole("button", { name: /build a better codex workflow/i })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /^topic$/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /build a better codex workflow/i }));
+    expect(screen.getByText(/use the lesson brief i prepared/i)).toBeInTheDocument();
+
+    const detailsSummary = screen.getByText(/^customize$/i).closest("summary");
+    if (!detailsSummary) throw new Error("Expected the course details summary.");
+    expect(detailsSummary.closest("details")).not.toHaveAttribute("open");
+    fireEvent.click(detailsSummary);
+    expect(screen.getByRole("textbox", { name: /^topic$/i })).toHaveValue(
+      "How to use the Codex app effectively",
+    );
   });
 
   it("does not race native registration during React development remounts", async () => {
@@ -67,7 +117,8 @@ describe("learn.ogram v4", () => {
       "learn_begin_session",
     ]);
     expect(screen.queryByText(/site-tool registration failed/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/open this page in codex desktop/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/webmcp connected/i)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /open in codex/i })).not.toBeInTheDocument();
   });
 
   it("settles native stage tools before a begin call resolves", async () => {
