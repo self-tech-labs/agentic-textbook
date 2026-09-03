@@ -1,11 +1,11 @@
-# Agentic Textbook
+# The Agentic Textbook
 
-Agentic Textbook is a WebMCP learning platform built around a productive division of labour: the learner brings their preferred agent, and the application brings the conditions in which good learning can happen.
+The Agentic Textbook is a WebMCP learning platform built around a productive division of labour: the learner brings their preferred agent, and the application brings the conditions in which good learning can happen.
 
 WebMCP turns the textbook from a static artifact into a meeting point between complementary systems:
 
 - **The learner's agent brings context and generative capacity.** In a bring-your-own-agent (BYOA) model, the learner can use the agent they already trust. With explicit permission, that agent can bring relevant, learner-approved context—interests, prior knowledge, goals, professional background, or the current conversation—and use its model capabilities to create, explain, and adapt material on demand.
-- **Agentic Textbook brings the pedagogical runtime.** The app supplies a governed canvas, lesson structure, sequencing, remediation paths, exercises, evidence, accessibility rules, and learning-science-backed primitives. The subject can change; the contract for a coherent learning experience remains stable.
+- **The Agentic Textbook brings the pedagogical runtime.** The app supplies a governed canvas, lesson structure, sequencing, remediation paths, exercises, evidence, accessibility rules, and learning-science-backed primitives. The subject can change; the contract for a coherent learning experience remains stable.
 - **The service layer makes the experience operable.** Local-first learner state, minimized operational metadata, content-addressed media, quotas, provenance, and isolated code execution provide a privacy-conscious foundation for running a real learning platform. That boundary also creates room for efficient caching and reuse without handing raw learner history to the service.
 
 In the middle is the lesson itself. The learner can ask the agent to slow down, explain a difficult point in more detail, rephrase it, approach it from another angle, add a formula or diagram, create or attach an illustration, generate an exercise, or revise one focused part of the canvas. The same contract can grow toward generated video and more immersive learning experiences without giving up pedagogical or learner control.
