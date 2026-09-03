@@ -299,6 +299,8 @@ describe("learn.ogram v4", () => {
     expect(iframe.getAttribute("srcdoc")).toContain("connect-src 'none'");
     expect(iframe.getAttribute("srcdoc")).toContain("form-action 'none'");
     expect(iframe.getAttribute("srcdoc")).toContain("navigate-to 'none'");
+    expect(widget.closest(".lesson-slot")).toHaveClass("lesson-slot--flow");
+    expect(widget.closest(".lesson-slot")).toHaveAttribute("data-panel-mode", "flow");
     expect(within(attentionRegion).getByRole("button", { name: "Undo" })).toBeInTheDocument();
   });
 
