@@ -51,4 +51,31 @@ describe("SandboxedWidget", () => {
     fireEvent.click(screen.getByRole("button", { name: /start again/i }));
     expect(screen.getByTitle(widget.title)).toBeInTheDocument();
   });
+
+  it("applies bounded height updates reported by the sandbox", () => {
+    render(<SandboxedWidget widget={widget} />);
+    const iframe = screen.getByTitle(widget.title) as HTMLIFrameElement;
+    const resize = (height: number) => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: iframe.contentWindow,
+          data: {
+            channel: "learn-ogram-widget-v3",
+            widgetId: widget.widgetId,
+            type: "resize",
+            height,
+          },
+        }),
+      );
+    };
+
+    act(() => resize(520));
+    expect(iframe).toHaveStyle({ height: "520px" });
+
+    act(() => resize(2_000));
+    expect(iframe).toHaveStyle({ height: "720px" });
+
+    act(() => resize(20));
+    expect(iframe).toHaveStyle({ height: "180px" });
+  });
 });

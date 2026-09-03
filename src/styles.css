@@ -4128,16 +4128,16 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 
 .region-scene--sandbox_widget,
 .region-scene--sandbox_widget .region-content,
-.region-scene--sandbox_widget .trusted-content,
-.region-scene--sandbox_widget .sandbox-card {
-  height: 100%;
+.region-scene--sandbox_widget .trusted-content {
+  min-height: 0;
 }
 
 .region-scene--sandbox_widget .sandbox-card {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto;
+  height: auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .region-scene--sandbox_widget .sandbox-card__header {
@@ -4151,16 +4151,54 @@ html.lesson-chrome-collapsed .agent-bridge:not(.agent-bridge--working) {
 
 .region-scene--sandbox_widget .sandbox-frame-wrap {
   height: auto;
-  min-height: 0;
+  min-height: 180px;
 }
 
 .region-scene--sandbox_widget .sandbox-frame {
-  height: 100% !important;
-  min-height: 0;
+  min-height: 180px;
 }
 
 .region-scene--sandbox_widget .text-alternative summary {
   padding-block: 9px;
+}
+
+/*
+ * Agent-authored widgets report their natural height from inside the sandbox.
+ * A widget can exceed the sticky panel's remaining viewport space, so place the
+ * active widget scene in document flow instead of clipping it into the deck.
+ * The page remains the only vertical scroll owner.
+ */
+.lesson-slot--flow {
+  height: auto;
+  min-height: 0;
+  content-visibility: visible;
+}
+
+.lesson-slot--flow + .lesson-slot {
+  margin-top: 0;
+}
+
+.lesson-slot--flow .lesson-panel {
+  position: relative;
+  top: auto;
+  height: auto;
+  min-height: var(--lesson-available-height);
+  margin-top: calc(var(--lesson-active-scene) * var(--lesson-scene-step));
+  overflow: visible;
+}
+
+.lesson-slot--flow .notebook-region {
+  grid-template-rows: auto auto minmax(max-content, 1fr) auto;
+  height: auto;
+  min-height: var(--lesson-available-height);
+  overflow: visible;
+}
+
+.lesson-slot--flow .region-scene--sandbox_widget,
+.lesson-slot--flow .region-scene--sandbox_widget .region-content,
+.lesson-slot--flow .region-scene--sandbox_widget .trusted-content {
+  height: auto;
+  overflow: visible;
 }
 
 .lesson-panel .region-attribution {

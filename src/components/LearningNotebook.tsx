@@ -1641,6 +1641,8 @@ function LessonSlot({
     Number.isInteger(activeScene) && activeScene >= 0 && activeScene < scenes.length
       ? activeScene
       : 0;
+  const panelMode =
+    scenes[safeActiveScene]?.type === "sandbox_widget" ? "flow" : "screen";
   const previousSceneCountRef = useRef(scenes.length);
 
   useEffect(() => {
@@ -1786,10 +1788,11 @@ function LessonSlot({
     <div
       ref={slotRef}
       id={`region-${region.id}`}
-      className={`lesson-slot lesson-slot--screen ${focused ? "lesson-slot--focused" : ""}`}
+      className={`lesson-slot lesson-slot--${panelMode} ${focused ? "lesson-slot--focused" : ""}`}
       data-canvas-region={region.id}
-      data-panel-mode="screen"
+      data-panel-mode={panelMode}
       data-active-scene={safeActiveScene}
+      style={{ "--lesson-active-scene": safeActiveScene } as CSSProperties}
     >
       {scenes.map((scene, index) => (
         <span
