@@ -6,13 +6,10 @@ packet once the access notes below are resolved.
 ## Primary links
 
 - Live project: https://ogram-learning-canvas.ervaucher.workers.dev
-- Source repository: https://github.com/self-tech-labs/ogram-learning-webmcp
-- Release PR to `main`: https://github.com/self-tech-labs/ogram-learning-webmcp/pull/7
+- Source repository: https://github.com/self-tech-labs/agentic-textbook
+- Release PR to `main`: https://github.com/self-tech-labs/agentic-textbook/pull/7
 
-The live project is public and needs no account or local setup. The repository is
-currently **private**. Do not give the repository URL to judges as a public source link
-until the owner either makes it public or confirms the event's private-repository access
-procedure. Repository visibility was deliberately not changed during deployment.
+The live project and source repository are public and need no account or local setup.
 
 ## Release provenance
 

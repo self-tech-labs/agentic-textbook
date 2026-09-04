@@ -90,7 +90,7 @@ That staged disclosure is important to the pitch. The number **15** is less pers
 - The V4 candidate, deployment evidence, and final surface polish are merged into `staging`; PR #7 promotes the complete release to the default `main` branch.
 - The verified production URL is `https://ogram-learning-canvas.ervaucher.workers.dev`; a public sub-three-minute demo video is still outstanding.
 - Cloudflare Workers Paid/Containers, isolated staging, production D1/R2 resources, and both deployed security/runtime smoke matrices passed on September 2. The owner's eligibility/rules acknowledgment remains personal and outstanding.
-- The canonical repository is `https://github.com/self-tech-labs/ogram-learning-webmcp`, but it is currently private and must be made public or explicitly shared with judges before it is used as a submission link.
+- The canonical repository is public at `https://github.com/self-tech-labs/agentic-textbook` and is ready to use as the submission source link.
 - Run the Workbench audit and independent inspector on the production URL in a supported Chrome profile; capture the tool list, one successful end-to-end trace, one rejected unsafe/stale action, and a clean audit result.
 - Preserve the three-run Gemini report and rerun the agent suite against the production origin; review any real trajectory failures rather than tuning only for pass rate.
 - The tool name `learn_get_authoring_capabilities` exceeds the resource guide's 30-character recommendation, and large capability/session/snapshot results should be measured for pagination or summarization before release.

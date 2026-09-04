@@ -177,7 +177,7 @@ After acceptance, record the deployment URL, commit SHA, UTC verification time, 
 - Worker version: `8c2a1d11-6710-4f40-8325-0d5cde414122`
 - Verification completed: `2026-09-02T19:40:15Z`
 - Source application commit: `8c7d1d08dba26a74f4b225df1f582a78e1f51fae`
-- Promotion PR: `https://github.com/self-tech-labs/ogram-learning-webmcp/pull/7`
+- Promotion PR: `https://github.com/self-tech-labs/agentic-textbook/pull/7`
 - D1: `ogram-learning-canvas-db`
 - R2: `ogram-learning-canvas-lesson-media`
 - Container application: `ogram-learning-canvas-learningsandbox`
